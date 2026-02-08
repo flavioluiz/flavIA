@@ -5,7 +5,6 @@ from pathlib import Path
 
 from rich.console import Console
 from rich.markdown import Markdown
-from rich.panel import Panel
 
 from flavia.config import Settings, reset_settings, load_settings
 from flavia.agent import RecursiveAgent, AgentProfile
@@ -39,15 +38,20 @@ def create_agent_from_settings(settings: Settings) -> RecursiveAgent:
 
 def print_welcome(settings: Settings) -> None:
     """Print welcome message."""
-    config_status = "[green]configured[/green]" if settings.agents_config else "[yellow]default[/yellow]"
+    banner = r"""
+__ _                Welcome to
+ / _| | __ ___   __   Isle of Knowledge.
+| |_| |/ _` \ \ / /
+|  _| | (_| |\ V /    ██╗  █████╗
+|_| |_|\__,_| \_/     ██║ ██╔══██╗
+                      ██║ ███████║
+                      ██║ ██╔══██║
+                      ██║ ██║  ██║
+                      ╚═╝ ╚═╝  ╚═╝
 
-    console.print(Panel.fit(
-        "[bold blue]flavIA[/bold blue]\n"
-        f"Model: {settings.default_model}\n"
-        f"Directory: {settings.base_dir}\n"
-        f"Agent: {config_status}",
-        title="Welcome",
-    ))
+ > flavIA: Your Scholarly Companion ready.
+"""
+    console.print(banner)
     console.print("\nType [bold]/help[/bold] for commands\n")
 
 
