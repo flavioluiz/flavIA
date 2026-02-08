@@ -30,6 +30,7 @@ flavia --telegram
 
 - **PDF to Text Conversion**: Automatically converts PDFs to searchable markdown
 - **AI-Assisted Setup**: Analyzes your content and creates specialized agents
+- **Multi-Provider Support**: Use OpenAI, OpenRouter, Anthropic, or any OpenAI-compatible API
 - **Academic Focus**: Built-in support for summarizing, explaining, finding citations
 - **Recursive Agents**: Spawn specialist sub-agents for complex tasks
 - **Works Anywhere**: Each folder can have its own configuration
@@ -105,11 +106,18 @@ flavia
 flavia --telegram
 
 # Options
-flavia -v              # Verbose mode
-flavia --model 0       # Use specific model
-flavia --list-models   # Show available models
-flavia --list-tools    # Show available tools
-flavia --config        # Show configuration paths
+flavia -v                    # Verbose mode
+flavia --model 0             # Use specific model by index
+flavia -m openai:gpt-4o      # Use specific provider:model
+flavia --list-models         # Show available models
+flavia --list-providers      # Show configured providers
+flavia --list-tools          # Show available tools
+flavia --config              # Show configuration paths
+
+# Provider management
+flavia --setup-provider      # Interactive provider wizard
+flavia --test-provider       # Test default provider connection
+flavia --test-provider openai  # Test specific provider
 ```
 
 ## CLI Commands
@@ -120,7 +128,8 @@ flavia --config        # Show configuration paths
 | `/reset` | Reset conversation and reload config |
 | `/setup` | Reconfigure agents (re-analyze content) |
 | `/quit` | Exit |
-| `/models` | List available models |
+| `/models` | List available models with provider info |
+| `/providers` | List configured LLM providers |
 | `/tools` | List available tools |
 
 ## How It Works
@@ -207,18 +216,72 @@ Would you like me to explain any specific part in more detail?
 
 ```
 .flavia/
-├── .env           # API keys (don't commit!)
-├── models.yaml    # Available models
-└── agents.yaml    # Agent configuration
+├── .env            # API keys (don't commit!)
+├── models.yaml     # Available models (legacy)
+├── providers.yaml  # Multi-provider configuration (new)
+└── agents.yaml     # Agent configuration
+```
+
+### Multi-Provider Configuration
+
+flavIA supports multiple LLM providers. Use the interactive wizard:
+
+```bash
+flavia --setup-provider
+```
+
+Or create `providers.yaml` manually:
+
+```yaml
+# .flavia/providers.yaml
+providers:
+  synthetic:
+    name: "Synthetic"
+    api_base_url: "https://api.synthetic.new/openai/v1"
+    api_key: "${SYNTHETIC_API_KEY}"  # Reference env var
+    models:
+      - id: "hf:moonshotai/Kimi-K2.5"
+        name: "Kimi-K2.5"
+        default: true
+
+  openai:
+    name: "OpenAI"
+    api_base_url: "https://api.openai.com/v1"
+    api_key: "${OPENAI_API_KEY}"
+    models:
+      - id: "gpt-4o"
+        name: "GPT-4o"
+
+  openrouter:
+    name: "OpenRouter"
+    api_base_url: "https://openrouter.ai/api/v1"
+    api_key: "${OPENROUTER_API_KEY}"
+    headers:  # Custom headers for OpenRouter
+      HTTP-Referer: "${OPENROUTER_SITE_URL}"
+      X-Title: "${OPENROUTER_APP_NAME}"
+    models:
+      - id: "anthropic/claude-3.5-sonnet"
+        name: "Claude 3.5 Sonnet"
+
+default_provider: synthetic
+```
+
+Use models with `provider:model_id` format:
+
+```bash
+flavia -m openai:gpt-4o
+flavia -m openrouter:anthropic/claude-3.5-sonnet
 ```
 
 ### Environment Variables (`.flavia/.env`)
 
 ```bash
-# Required
+# Provider API keys (referenced in providers.yaml)
 SYNTHETIC_API_KEY=your_api_key_here
+OPENAI_API_KEY=your_openai_key
+OPENROUTER_API_KEY=your_openrouter_key
 
-# Optional
+# Legacy single-provider config (still works)
 API_BASE_URL=https://api.synthetic.new/openai/v1
 DEFAULT_MODEL=hf:moonshotai/Kimi-K2.5
 AGENT_MAX_DEPTH=3
@@ -284,14 +347,21 @@ flavia/
     └── flavia/
         ├── cli.py              # Entry point
         ├── setup_wizard.py     # AI-assisted setup + PDF conversion
-        ├── config/             # Configuration loader
+        ├── config/
+        │   ├── loader.py       # Config file discovery
+        │   ├── settings.py     # Settings management
+        │   └── providers.py    # Multi-provider support
+        ├── setup/
+        │   └── provider_wizard.py  # Interactive provider setup
         ├── agent/              # Agent implementation
         ├── tools/
         │   ├── read/           # File reading tools
         │   ├── spawn/          # Agent spawning tools
         │   └── setup/          # Setup-only tools (PDF conversion)
         ├── interfaces/         # CLI and Telegram
-        └── defaults/           # Default configs
+        └── defaults/
+            ├── models.yaml     # Default models
+            └── providers.yaml  # Default provider templates
 ```
 
 ## Development
