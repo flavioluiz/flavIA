@@ -54,9 +54,12 @@ class BaseAgent(ABC):
 
     def _create_openai_client(self) -> OpenAI:
         """Create OpenAI client with compatibility fallback for older SDK versions."""
+        # Get provider-specific configuration for this model
+        api_base_url, api_key = self.settings.get_api_config_for_model(self.model_id)
+        
         kwargs = {
-            "api_key": self.settings.api_key,
-            "base_url": self.settings.api_base_url,
+            "api_key": api_key,
+            "base_url": api_base_url,
         }
         try:
             return OpenAI(**kwargs)

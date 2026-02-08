@@ -294,6 +294,13 @@ models:
 """
         (config_dir / "models.yaml").write_text(models_content)
 
+        # Create providers.yaml
+        from flavia.config.loader import DEFAULTS_DIR
+        providers_source = DEFAULTS_DIR / "providers.yaml"
+        if providers_source.exists():
+            import shutil
+            shutil.copy(providers_source, config_dir / "providers.yaml")
+
         # Create academic-focused default agents.yaml
         agents_content = """\
 # flavIA Agent Configuration
@@ -414,6 +421,13 @@ models:
 """
     (config_dir / "models.yaml").write_text(models_content)
 
+    # Create providers.yaml
+    from flavia.config.loader import DEFAULTS_DIR
+    providers_source = DEFAULTS_DIR / "providers.yaml"
+    if providers_source.exists():
+        import shutil
+        shutil.copy(providers_source, config_dir / "providers.yaml")
+
     # Create .gitignore
     (config_dir / ".gitignore").write_text(".env\nconverted/\n")
 
@@ -477,6 +491,7 @@ def _print_success(config_dir: Path, has_pdfs: bool = False):
         "[bold green]Setup complete![/bold green]\n\n"
         f"Configuration created at:\n"
         f"  [cyan]{config_dir}/.env[/cyan] - API keys\n"
+        f"  [cyan]{config_dir}/providers.yaml[/cyan] - Providers\n"
         f"  [cyan]{config_dir}/models.yaml[/cyan] - Models\n"
         f"  [cyan]{config_dir}/agents.yaml[/cyan] - Agents\n"
         f"{extra_info}\n"

@@ -9,6 +9,7 @@ import yaml
 from dotenv import load_dotenv
 
 from .loader import get_config_paths, ConfigPaths
+from .providers import ProviderConfig, load_providers, get_provider_for_model
 
 
 @dataclass
@@ -49,6 +50,7 @@ class Settings:
     # Loaded configs
     models: list[ModelConfig] = field(default_factory=list)
     agents_config: dict[str, Any] = field(default_factory=dict)
+    providers: dict[str, ProviderConfig] = field(default_factory=dict)
 
     def get_model_by_index(self, index: int) -> Optional[ModelConfig]:
         """Get model by index."""
@@ -76,6 +78,24 @@ class Settings:
             model = self.get_model_by_index(model_ref)
             return model.id if model else self.default_model
         return model_ref
+
+    def get_provider_for_model(self, model_id: str) -> Optional[ProviderConfig]:
+        """Get the provider configuration for a specific model."""
+        return get_provider_for_model(self.providers, model_id)
+    
+    def get_api_config_for_model(self, model_id: str) -> tuple[str, str]:
+        """
+        Get API endpoint and key for a specific model.
+        
+        Returns:
+            Tuple of (endpoint, api_key)
+        """
+        provider = self.get_provider_for_model(model_id)
+        if provider:
+            return provider.endpoint, provider.get_api_key()
+        
+        # Fallback to legacy settings
+        return self.api_base_url, self.api_key
 
 
 def load_models(models_file: Optional[Path]) -> list[ModelConfig]:
@@ -165,6 +185,9 @@ def load_settings() -> Settings:
         telegram_whitelist_configured=whitelist_configured,
     )
 
+    # Load providers first
+    settings.providers = load_providers(paths.providers_file)
+    
     # Load models and agents config
     settings.models = load_models(paths.models_file)
     settings.agents_config = load_agents_config(paths.agents_file)

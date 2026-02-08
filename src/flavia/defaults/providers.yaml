@@ -1,0 +1,68 @@
+# LLM Provider Configurations
+# This file defines available LLM providers and their models
+
+providers:
+  # Synthetic.new - default provider with free hosted models
+  - name: synthetic
+    endpoint: https://api.synthetic.new/openai/v1
+    api_key_env: SYNTHETIC_API_KEY
+    models:
+      - id: "hf:moonshotai/Kimi-K2.5"
+        name: "Kimi-K2.5"
+        description: "Moonshot AI Kimi K2.5"
+        default: true
+        max_tokens: 8192
+
+      - id: "hf:zai-org/GLM-4.7"
+        name: "GLM-4.7"
+        description: "Zhipu AI GLM-4.7"
+        max_tokens: 8192
+
+      - id: "hf:MiniMaxAI/MiniMax-M2.1"
+        name: "MiniMax-M2.1"
+        max_tokens: 8192
+
+      - id: "hf:moonshotai/Kimi-K2-Thinking"
+        name: "Kimi-K2-Thinking"
+        description: "With reasoning capability"
+        max_tokens: 8192
+
+  # OpenAI - commercial provider (requires API key)
+  # Uncomment and configure to use:
+  # - name: openai
+  #   endpoint: https://api.openai.com/v1
+  #   api_key_env: OPENAI_API_KEY
+  #   models:
+  #     - id: "gpt-4o"
+  #       name: "GPT-4o"
+  #       description: "OpenAI GPT-4o"
+  #       max_tokens: 128000
+  #     - id: "gpt-4o-mini"
+  #       name: "GPT-4o-mini"
+  #       description: "OpenAI GPT-4o-mini (faster, cheaper)"
+  #       max_tokens: 128000
+  #     - id: "gpt-4-turbo"
+  #       name: "GPT-4 Turbo"
+  #       max_tokens: 128000
+  #     - id: "gpt-3.5-turbo"
+  #       name: "GPT-3.5 Turbo"
+  #       max_tokens: 16385
+
+  # OpenRouter - aggregates multiple providers
+  # Uncomment and configure to use:
+  # - name: openrouter
+  #   endpoint: https://openrouter.ai/api/v1
+  #   api_key_env: OPENROUTER_API_KEY
+  #   models:
+  #     - id: "anthropic/claude-3.5-sonnet"
+  #       name: "Claude 3.5 Sonnet"
+  #       description: "Anthropic Claude 3.5 Sonnet via OpenRouter"
+  #       max_tokens: 200000
+  #     - id: "openai/gpt-4o"
+  #       name: "GPT-4o (OpenRouter)"
+  #       description: "OpenAI GPT-4o via OpenRouter"
+  #       max_tokens: 128000
+  #     - id: "google/gemini-pro-1.5"
+  #       name: "Gemini Pro 1.5"
+  #       description: "Google Gemini Pro 1.5 via OpenRouter"
+  #       max_tokens: 1000000

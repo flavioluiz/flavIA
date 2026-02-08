@@ -85,6 +85,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Show configuration locations and exit",
     )
+    
+    parser.add_argument(
+        "--configure-provider",
+        action="store_true",
+        help="Interactive provider configuration",
+    )
 
     parser.add_argument(
         "--version",
@@ -213,6 +219,12 @@ def main() -> int:
     if args.init:
         from flavia.setup_wizard import run_setup_wizard
         success = run_setup_wizard()
+        return 0 if success else 1
+    
+    # Provider configuration command
+    if args.configure_provider:
+        from flavia.provider_wizard import run_provider_wizard
+        success = run_provider_wizard()
         return 0 if success else 1
 
     # Load settings

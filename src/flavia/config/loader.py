@@ -24,6 +24,7 @@ class ConfigPaths:
     env_file: Optional[Path] = None
     models_file: Optional[Path] = None
     agents_file: Optional[Path] = None
+    providers_file: Optional[Path] = None
 
     def __post_init__(self):
         """Resolve file paths from directories."""
@@ -31,6 +32,7 @@ class ConfigPaths:
         self.env_file = self._find_file(".env")
         self.models_file = self._find_file("models.yaml")
         self.agents_file = self._find_file("agents.yaml")
+        self.providers_file = self._find_file("providers.yaml")
 
     def _find_file(self, filename: str) -> Optional[Path]:
         """Find a config file in priority order."""
@@ -158,6 +160,26 @@ models:
 """
         (config_dir / "models.yaml").write_text(models_content)
 
+        # Create providers.yaml (copy from defaults)
+        providers_source = DEFAULTS_DIR / "providers.yaml"
+        if providers_source.exists():
+            import shutil
+            shutil.copy(providers_source, config_dir / "providers.yaml")
+        else:
+            # Fallback if default doesn't exist
+            providers_content = """\
+# LLM Provider Configurations
+providers:
+  - name: synthetic
+    endpoint: https://api.synthetic.new/openai/v1
+    api_key_env: SYNTHETIC_API_KEY
+    models:
+      - id: "hf:moonshotai/Kimi-K2.5"
+        name: "Kimi-K2.5"
+        default: true
+"""
+            (config_dir / "providers.yaml").write_text(providers_content)
+
         # Create agents.yaml
         agents_content = """\
 # Agent configuration for this project
@@ -210,9 +232,10 @@ main:
         (config_dir / ".gitignore").write_text(gitignore_content)
 
         print(f"\nCreated configuration files:")
-        print(f"  {config_dir}/.env          - API keys and settings")
-        print(f"  {config_dir}/models.yaml   - Available models")
-        print(f"  {config_dir}/agents.yaml   - Agent definitions")
+        print(f"  {config_dir}/.env            - API keys and settings")
+        print(f"  {config_dir}/providers.yaml  - Provider configurations")
+        print(f"  {config_dir}/models.yaml     - Available models")
+        print(f"  {config_dir}/agents.yaml     - Agent definitions")
         print(f"\nNext steps:")
         print(f"  1. Edit {config_dir}/.env and add your API key")
         print(f"  2. Run 'flavia' to start the CLI")
