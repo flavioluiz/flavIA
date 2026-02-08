@@ -1,5 +1,6 @@
 """Interactive CLI interface for flavIA."""
 
+import logging
 from pathlib import Path
 
 from rich.console import Console
@@ -71,6 +72,10 @@ def print_help() -> None:
 
 def run_cli(settings: Settings) -> None:
     """Run the interactive CLI."""
+    # Keep CLI output clean even if logging is configured elsewhere.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("openai").setLevel(logging.WARNING)
+
     print_welcome(settings)
 
     agent = create_agent_from_settings(settings)

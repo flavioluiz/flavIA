@@ -1,16 +1,19 @@
 """Telegram bot interface for flavIA."""
 
 import logging
-from typing import Optional
 
 from flavia.config import Settings
 from flavia.agent import RecursiveAgent, AgentProfile
 
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
-)
 logger = logging.getLogger(__name__)
+
+
+def _configure_logging() -> None:
+    """Configure logging for Telegram bot runtime."""
+    logging.basicConfig(
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        level=logging.INFO,
+    )
 
 
 class TelegramBot:
@@ -172,5 +175,6 @@ class TelegramBot:
 
 def run_telegram_bot(settings: Settings) -> None:
     """Run the Telegram bot."""
+    _configure_logging()
     bot = TelegramBot(settings)
     bot.run()

@@ -41,7 +41,7 @@ class RecursiveAgent(BaseAgent):
             self.messages.append(self._assistant_message_to_dict(response))
 
             if not response.tool_calls:
-                return response.content or ""
+                return response.content or "I could not produce a textual response. Please try rephrasing your question."
 
             tool_results, spawns = self._process_tool_calls_with_spawns(response.tool_calls)
             self.messages.extend(tool_results)
