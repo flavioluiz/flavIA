@@ -4,6 +4,7 @@ import json
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
+import httpx
 from openai import OpenAI
 
 from flavia.config import Settings
@@ -36,10 +37,7 @@ class BaseAgent(ABC):
             resolved_model=self.model_id,
         )
 
-        self.client = OpenAI(
-            api_key=settings.api_key,
-            base_url=settings.api_base_url,
-        )
+        self.client = self._create_openai_client()
 
         self.tool_schemas = self._build_tool_schemas()
         self.messages: list[dict[str, Any]] = []
@@ -53,6 +51,20 @@ class BaseAgent(ABC):
             models=self.settings.models,
             subagents=self.profile.subagents,
         )
+
+    def _create_openai_client(self) -> OpenAI:
+        """Create OpenAI client with compatibility fallback for older SDK versions."""
+        kwargs = {
+            "api_key": self.settings.api_key,
+            "base_url": self.settings.api_base_url,
+        }
+        try:
+            return OpenAI(**kwargs)
+        except TypeError as exc:
+            if "unexpected keyword argument 'proxies'" not in str(exc):
+                raise
+            # Compatibility fallback for environments where OpenAI SDK and httpx versions mismatch.
+            return OpenAI(**kwargs, http_client=httpx.Client())
 
     def _init_system_prompt(self) -> None:
         """Initialize the system prompt."""
