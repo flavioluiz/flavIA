@@ -174,6 +174,9 @@ def create_setup_agent(base_dir: Path, include_pdf_tool: bool = False, pdf_files
         agent_id="setup",
     )
     agent.context.setup_mode = True
+    # Rebuild tool schemas after enabling setup mode so setup-only tools become available.
+    agent.tool_schemas = agent._build_tool_schemas()
+    agent.reset()
 
     return agent, None
 
@@ -402,18 +405,30 @@ models:
 
     # Build the task message
     if convert_pdfs and pdf_files:
-        task = (
-            f"First, convert the PDF files to markdown using convert_pdfs. "
-            f"The files are: {', '.join(pdf_files)}. "
-            f"Then analyze the converted content and create an appropriate agents.yaml "
-            f"configuration specialized for this academic material."
-        )
         console.print("\n[bold]Converting PDFs and analyzing content...[/bold]\n")
+        try:
+            conversion_result = agent._execute_tool(
+                "convert_pdfs",
+                {
+                    "pdf_files": pdf_files,
+                    "output_format": "md",
+                    "preserve_structure": True,
+                },
+            )
+            console.print(Markdown(f"```text\n{conversion_result}\n```"))
+        except Exception as e:
+            console.print(f"[yellow]Warning: PDF conversion step failed: {e}[/yellow]")
+
+        task = (
+            "Analyze the converted content in the 'converted/' directory and create an "
+            "appropriate agents.yaml configuration specialized for this academic material. "
+            "Use create_agents_config to write the file."
+        )
     else:
         task = (
             "Analyze this directory and create an appropriate agents.yaml configuration. "
             "Look for documents, understand the subject matter, and create an agent "
-            "specialized for this academic/research content."
+            "specialized for this academic/research content. Use create_agents_config to write the file."
         )
         console.print("\n[bold]Analyzing content...[/bold]\n")
 
