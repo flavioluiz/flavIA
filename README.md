@@ -273,6 +273,9 @@ flavia -m openai:gpt-4o
 flavia -m openrouter:anthropic/claude-3.5-sonnet
 ```
 
+When providers are enabled, numeric model indexes (for example `flavia -m 0`)
+follow the combined order shown by `flavia --list-models`.
+
 ### Environment Variables (`.flavia/.env`)
 
 ```bash
@@ -300,6 +303,9 @@ TELEGRAM_ALLOW_ALL_USERS=true
 1. `.flavia/` in current directory (highest)
 2. `~/.config/flavia/` (user defaults)
 3. Package defaults (lowest)
+
+For `providers.yaml`, higher-priority files can override both provider definitions
+and `default_provider`.
 
 ## Use Cases
 

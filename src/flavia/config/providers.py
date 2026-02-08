@@ -260,7 +260,7 @@ def merge_providers(*registries: ProviderRegistry) -> ProviderRegistry:
     Merge multiple provider registries.
 
     Later registries take precedence for providers with the same ID.
-    The first non-None default_provider_id is used.
+    The last non-None default_provider_id is used.
     """
     merged_providers: dict[str, ProviderConfig] = {}
     default_provider_id: Optional[str] = None
@@ -269,7 +269,7 @@ def merge_providers(*registries: ProviderRegistry) -> ProviderRegistry:
         for provider_id, provider in registry.providers.items():
             merged_providers[provider_id] = provider
 
-        if registry.default_provider_id and not default_provider_id:
+        if registry.default_provider_id:
             default_provider_id = registry.default_provider_id
 
     return ProviderRegistry(providers=merged_providers, default_provider_id=default_provider_id)

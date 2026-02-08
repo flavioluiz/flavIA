@@ -6,6 +6,7 @@ import pytest
 
 from flavia.agent.base import BaseAgent
 from flavia.agent.profile import AgentProfile
+from flavia.config.providers import ModelConfig, ProviderConfig, ProviderRegistry
 from flavia.config.settings import Settings
 
 
@@ -60,3 +61,33 @@ def test_openai_client_does_not_swallow_unrelated_typeerror(monkeypatch):
 
     with pytest.raises(TypeError, match="boom"):
         DummyAgent(settings=_make_settings(), profile=_make_profile())
+
+
+def test_provider_without_api_key_fails_instead_of_falling_back():
+    settings = Settings(
+        api_key="legacy-key",
+        api_base_url="https://api.synthetic.new/openai/v1",
+        providers=ProviderRegistry(
+            providers={
+                "openai": ProviderConfig(
+                    id="openai",
+                    name="OpenAI",
+                    api_base_url="https://api.openai.com/v1",
+                    api_key="",
+                    models=[ModelConfig(id="gpt-4o", name="GPT-4o", default=True)],
+                )
+            },
+            default_provider_id="openai",
+        ),
+    )
+    profile = AgentProfile(
+        context="test",
+        model="openai:gpt-4o",
+        base_dir=Path.cwd(),
+        tools=[],
+        subagents={},
+        name="main",
+    )
+
+    with pytest.raises(ValueError, match="API key not configured for provider 'openai'"):
+        DummyAgent(settings=settings, profile=profile)

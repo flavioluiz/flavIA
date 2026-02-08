@@ -12,10 +12,7 @@ from rich.table import Table
 
 from flavia.config.loader import ensure_user_config
 from flavia.config.providers import (
-    ProviderConfig,
-    ModelConfig,
     expand_env_vars,
-    load_providers_from_file,
 )
 
 console = Console()
@@ -184,7 +181,7 @@ def _get_api_key(provider_name: str, env_var: str) -> tuple[str, str]:
         return resolved, key_input
     else:
         # Direct value - suggest using env var
-        console.print(f"\n[yellow]Tip: Set {env_var}={key_input[:8]}... in your shell[/yellow]")
+        console.print(f"\n[yellow]Tip: Set {env_var} in your shell[/yellow]")
         console.print(f"[dim]Then use ${{{env_var}}} in config to avoid storing secrets[/dim]")
 
         if Confirm.ask(f"Store as ${{{env_var}}} reference instead?", default=True):
@@ -264,12 +261,14 @@ def _save_provider_config(
     provider_config: dict,
     location: str,
     set_default: bool = True,
+    target_dir: Optional[Path] = None,
 ) -> Path:
     """Save provider configuration to file."""
     if location == "global":
         config_dir = ensure_user_config()
     else:
-        config_dir = Path.cwd() / ".flavia"
+        base_dir = target_dir if target_dir is not None else Path.cwd()
+        config_dir = base_dir / ".flavia"
         config_dir.mkdir(parents=True, exist_ok=True)
 
     providers_file = config_dir / "providers.yaml"
@@ -403,7 +402,13 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
         headers,
     )
 
-    saved_path = _save_provider_config(provider_id, provider_config, location, set_default)
+    saved_path = _save_provider_config(
+        provider_id,
+        provider_config,
+        location,
+        set_default,
+        target_dir=target_dir,
+    )
 
     console.print(
         Panel.fit(

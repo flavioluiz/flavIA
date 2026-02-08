@@ -12,7 +12,6 @@ from .loader import get_config_paths, ConfigPaths
 from .providers import (
     ProviderConfig,
     ProviderRegistry,
-    ModelConfig as ProviderModelConfig,
     load_providers_from_file,
     create_fallback_provider,
     merge_providers,

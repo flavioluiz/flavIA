@@ -61,7 +61,10 @@ class BaseAgent(ABC):
         Args:
             provider: Optional ProviderConfig to use. If None, falls back to settings.
         """
-        if provider and provider.api_key:
+        if provider:
+            if not provider.api_key:
+                raise ValueError(f"API key not configured for provider '{provider.id}'")
+
             # Use provider configuration
             kwargs: dict[str, Any] = {
                 "api_key": provider.api_key,

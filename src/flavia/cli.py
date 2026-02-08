@@ -124,11 +124,18 @@ def apply_args_to_settings(args: argparse.Namespace, settings: Settings) -> Sett
     if args.model is not None:
         try:
             index = int(args.model)
-            model = settings.get_model_by_index(index)
-            if model:
-                settings.default_model = model.id
+            if settings.providers.providers:
+                provider, provider_model = settings.providers.resolve_model(index)
+                if provider and provider_model:
+                    settings.default_model = f"{provider.id}:{provider_model.id}"
+                else:
+                    print(f"Warning: Model index {index} not found, using default")
             else:
-                print(f"Warning: Model index {index} not found, using default")
+                model = settings.get_model_by_index(index)
+                if model:
+                    settings.default_model = model.id
+                else:
+                    print(f"Warning: Model index {index} not found, using default")
         except ValueError:
             settings.default_model = args.model
 
@@ -342,8 +349,22 @@ def main() -> int:
     if args.test_provider is not None:
         return test_provider_cli(settings, args.test_provider)
 
-    # Check API key
-    if not settings.api_key:
+    # Check API key for the model that will actually be used by the main agent.
+    active_model_ref: str | int = settings.default_model
+    main_agent_config = settings.agents_config.get("main", {})
+    if isinstance(main_agent_config, dict) and "model" in main_agent_config:
+        active_model_ref = main_agent_config["model"]
+
+    selected_provider, _ = settings.resolve_model_with_provider(active_model_ref)
+    if selected_provider is not None:
+        if not selected_provider.api_key:
+            print(f"Error: API key not configured for provider '{selected_provider.id}'")
+            if selected_provider.api_key_env_var:
+                print(f"Set {selected_provider.api_key_env_var} and try again")
+            else:
+                print("Run 'flavia --setup-provider' to configure this provider")
+            return 1
+    elif not settings.api_key:
         print("Error: API key not configured")
         print("\nTo configure, either:")
         print("  1. Run 'flavia --init' and edit .flavia/.env")
