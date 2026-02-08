@@ -101,7 +101,8 @@ def test_bot_token(token: str) -> tuple[bool, str]:
             return False, f"Invalid token: {error}"
 
     except Exception as e:
-        return False, f"Connection error: {e}"
+        # Avoid echoing bot token if it appears in transport errors.
+        return False, f"Connection error: {str(e).replace(token, '***')}"
 
 
 def _get_config_file_path(location: str, target_dir: Optional[Path] = None) -> Path:
@@ -364,13 +365,22 @@ def prompt_telegram_setup_if_needed(target_dir: Optional[Path] = None) -> bool:
         )
     )
 
-    if Confirm.ask("\n[bold]Set up Telegram bot now?[/bold]", default=True):
-        return run_telegram_wizard(target_dir)
-    else:
+    try:
+        should_setup = Confirm.ask("\n[bold]Set up Telegram bot now?[/bold]", default=True)
+    except (EOFError, KeyboardInterrupt):
         console.print(
-            "\n[dim]To configure later, run:[/dim]\n"
-            "  flavia --setup-telegram\n\n"
-            "[dim]Or manually add to .flavia/.env:[/dim]\n"
-            "  TELEGRAM_BOT_TOKEN=your_token_here"
+            "\n[yellow]Interactive setup unavailable (stdin is not interactive).[/yellow]\n"
+            "[dim]Run flavia --setup-telegram in an interactive terminal.[/dim]"
         )
         return False
+
+    if should_setup:
+        return run_telegram_wizard(target_dir)
+
+    console.print(
+        "\n[dim]To configure later, run:[/dim]\n"
+        "  flavia --setup-telegram\n\n"
+        "[dim]Or manually add to .flavia/.env:[/dim]\n"
+        "  TELEGRAM_BOT_TOKEN=your_token_here"
+    )
+    return False

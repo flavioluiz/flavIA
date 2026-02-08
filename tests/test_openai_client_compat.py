@@ -91,3 +91,51 @@ def test_provider_without_api_key_fails_instead_of_falling_back():
 
     with pytest.raises(ValueError, match="API key not configured for provider 'openai'"):
         DummyAgent(settings=settings, profile=profile)
+
+
+def test_auth_error_message_uses_selected_provider_env_var(monkeypatch):
+    class FakeAuthError(Exception):
+        pass
+
+    class _FakeCompletions:
+        @staticmethod
+        def create(**kwargs):
+            raise FakeAuthError("bad auth")
+
+    class _FakeChat:
+        completions = _FakeCompletions()
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.chat = _FakeChat()
+
+    settings = Settings(
+        providers=ProviderRegistry(
+            providers={
+                "openai": ProviderConfig(
+                    id="openai",
+                    name="OpenAI",
+                    api_base_url="https://api.openai.com/v1",
+                    api_key="bad-key",
+                    api_key_env_var="OPENAI_API_KEY",
+                    models=[ModelConfig(id="gpt-4o", name="GPT-4o", default=True)],
+                )
+            },
+            default_provider_id="openai",
+        )
+    )
+    profile = AgentProfile(
+        context="test",
+        model="openai:gpt-4o",
+        base_dir=Path.cwd(),
+        tools=[],
+        subagents={},
+        name="main",
+    )
+
+    monkeypatch.setattr("flavia.agent.base.OpenAI", FakeOpenAI)
+    monkeypatch.setattr("flavia.agent.base.AuthenticationError", FakeAuthError)
+
+    agent = DummyAgent(settings=settings, profile=profile)
+    with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+        agent._call_llm([{"role": "user", "content": "hello"}])

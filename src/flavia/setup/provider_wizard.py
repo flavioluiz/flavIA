@@ -14,6 +14,7 @@ from rich.table import Table
 
 from flavia.config.loader import ensure_user_config
 from flavia.config.providers import (
+    ModelConfig as ProviderModelConfig,
     expand_env_vars,
 )
 
@@ -370,7 +371,7 @@ def _fetch_and_select_models(
         console.print("  [m] Show more models")
 
     choice = Prompt.ask(
-        "\nEnter numbers separated by comma, 'a' for all, or 's' to search",
+        "\nEnter numbers separated by comma, 'a' for all, 's' to search, or 'm' for more",
         default="a",
     )
 
@@ -415,6 +416,8 @@ def _search_models(models: list[dict]) -> list[dict]:
     for i, model in enumerate(matches[:20], 1):
         table.add_row(f"  [{i}]", f"{model['name']}", f"[dim]{model['id']}[/dim]")
     console.print(table)
+    if len(matches) > 20:
+        console.print(f"[dim](Showing first 20 of {len(matches)} matches)[/dim]")
 
     choice = Prompt.ask(
         "Enter numbers to select (comma-separated), or 'a' for all matches",
@@ -422,7 +425,7 @@ def _search_models(models: list[dict]) -> list[dict]:
     )
 
     if choice.lower() == "a":
-        return matches[:20]
+        return matches
 
     selected = []
     for part in choice.split(","):
@@ -474,6 +477,62 @@ def _add_custom_model() -> Optional[dict]:
     is_default = Confirm.ask("Set as default?", default=False)
 
     return {"id": model_id, "name": model_name, "default": is_default}
+
+
+def _to_provider_model(model: object) -> ProviderModelConfig:
+    """Normalize model input into ProviderModelConfig."""
+    if isinstance(model, ProviderModelConfig):
+        return model
+
+    if isinstance(model, dict):
+        model_id = str(model.get("id", "")).strip()
+        if not model_id:
+            raise ValueError("Model id is required")
+        return ProviderModelConfig(
+            id=model_id,
+            name=model.get("name", model_id),
+            max_tokens=int(model.get("max_tokens", 128000)),
+            default=bool(model.get("default", False)),
+            description=model.get("description", ""),
+        )
+
+    model_id = str(getattr(model, "id", "")).strip()
+    if not model_id:
+        raise ValueError("Model id is required")
+
+    return ProviderModelConfig(
+        id=model_id,
+        name=getattr(model, "name", model_id),
+        max_tokens=int(getattr(model, "max_tokens", 128000)),
+        default=bool(getattr(model, "default", False)),
+        description=getattr(model, "description", ""),
+    )
+
+
+def _normalize_provider_models(provider) -> None:
+    """Ensure provider.models only contains ProviderModelConfig values."""
+    normalized: list[ProviderModelConfig] = []
+    for model in provider.models:
+        try:
+            normalized.append(_to_provider_model(model))
+        except Exception:
+            continue
+    provider.models = normalized
+
+
+def _ensure_single_default(models: list[ProviderModelConfig]) -> None:
+    """Keep exactly one default model when models are present."""
+    if not models:
+        return
+
+    default_indexes = [idx for idx, model in enumerate(models) if model.default]
+    if not default_indexes:
+        models[0].default = True
+        return
+
+    default_index = default_indexes[0]
+    for idx, model in enumerate(models):
+        model.default = idx == default_index
 
 
 def _select_location() -> str:
@@ -748,6 +807,9 @@ def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
         console.print(f"[red]Provider '{provider_id}' not found.[/red]")
         return False
 
+    _normalize_provider_models(provider)
+    _ensure_single_default(provider.models)
+
     console.print(
         Panel.fit(
             f"[bold blue]Manage Models[/bold blue]\n\n"
@@ -780,14 +842,12 @@ def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
         if choice == "a":
             custom = _add_custom_model()
             if custom:
-                provider.models.append(
-                    type(provider.models[0])(
-                        id=custom["id"],
-                        name=custom["name"],
-                        default=custom.get("default", False),
-                    )
-                    if provider.models else custom
-                )
+                model = _to_provider_model(custom)
+                if model.default:
+                    for existing in provider.models:
+                        existing.default = False
+                provider.models.append(model)
+                _ensure_single_default(provider.models)
                 console.print(f"[green]Added model: {custom['name']}[/green]")
 
         elif choice == "f":
@@ -805,19 +865,16 @@ def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
                     default="merge",
                 )
                 if action == "replace":
-                    provider.models.clear()
-                    for m in new_models:
-                        provider.models.append(
-                            type(provider.models[0])(id=m["id"], name=m["name"], default=m.get("default", False))
-                            if provider.models else m
-                        )
+                    provider.models = [_to_provider_model(m) for m in new_models]
+                    _ensure_single_default(provider.models)
                 elif action == "merge":
                     existing_ids = {m.id for m in provider.models}
                     added = 0
                     for m in new_models:
                         if m["id"] not in existing_ids:
-                            provider.models.append(m)
+                            provider.models.append(_to_provider_model(m))
                             added += 1
+                    _ensure_single_default(provider.models)
                     console.print(f"[green]Added {added} new models.[/green]")
 
         elif choice == "r":
@@ -833,6 +890,7 @@ def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
             for model in removed:
                 provider.models.remove(model)
                 console.print(f"[yellow]Removed: {model.name}[/yellow]")
+            _ensure_single_default(provider.models)
 
         elif choice == "d":
             index_str = Prompt.ask("Enter model number to set as default")
@@ -971,9 +1029,14 @@ def _save_provider_changes(settings, provider_id: str, provider) -> bool:
     # Convert models to serializable format
     models_data = []
     for m in provider.models:
-        model_dict = {"id": m.id if hasattr(m, 'id') else m["id"], "name": m.name if hasattr(m, 'name') else m["name"]}
-        if (hasattr(m, 'default') and m.default) or (isinstance(m, dict) and m.get("default")):
+        model = _to_provider_model(m)
+        model_dict = {"id": model.id, "name": model.name}
+        if model.default:
             model_dict["default"] = True
+        if model.max_tokens != 128000:
+            model_dict["max_tokens"] = model.max_tokens
+        if model.description:
+            model_dict["description"] = model.description
         models_data.append(model_dict)
 
     # Update provider config

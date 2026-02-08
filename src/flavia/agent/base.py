@@ -118,17 +118,41 @@ class BaseAgent(ABC):
             kwargs["tools"] = self.tool_schemas
             kwargs["tool_choice"] = "auto"
 
+        provider_hint = self.provider.id if self.provider else "default"
+        api_key_hint = (
+            self.provider.api_key_env_var
+            if self.provider and self.provider.api_key_env_var
+            else "SYNTHETIC_API_KEY"
+        )
+        base_url_hint = (
+            "the provider API base URL in providers.yaml"
+            if self.provider
+            else "API_BASE_URL"
+        )
+
         try:
             response = self.client.chat.completions.create(**kwargs)
             return response.choices[0].message
         except AuthenticationError as e:
-            raise RuntimeError(f"Authentication failed: Invalid API key. Check your SYNTHETIC_API_KEY configuration. Details: {e}") from e
+            raise RuntimeError(
+                f"Authentication failed for provider '{provider_hint}': "
+                f"invalid API key. Check {api_key_hint}. Details: {e}"
+            ) from e
         except APIConnectionError as e:
-            raise RuntimeError(f"Connection failed: Unable to reach the API server. Check your network and API_BASE_URL. Details: {e}") from e
+            raise RuntimeError(
+                f"Connection failed for provider '{provider_hint}': unable to reach API server. "
+                f"Check your network and {base_url_hint}. Details: {e}"
+            ) from e
         except APITimeoutError as e:
-            raise RuntimeError(f"Request timed out: The API server took too long to respond. Details: {e}") from e
+            raise RuntimeError(
+                f"Request timed out for provider '{provider_hint}': "
+                f"the API server took too long to respond. Details: {e}"
+            ) from e
         except APIStatusError as e:
-            raise RuntimeError(f"API error (status {e.status_code}): {e.message}") from e
+            raise RuntimeError(
+                f"API error from provider '{provider_hint}' "
+                f"(status {e.status_code}): {e.message}"
+            ) from e
 
     def _assistant_message_to_dict(self, message: Any) -> dict[str, Any]:
         """Normalize assistant message to API-safe chat message dict."""
