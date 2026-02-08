@@ -105,11 +105,12 @@ flavia
 flavia --telegram
 
 # Options
-flavia -v              # Verbose mode
-flavia --model 0       # Use specific model
-flavia --list-models   # Show available models
-flavia --list-tools    # Show available tools
-flavia --config        # Show configuration paths
+flavia -v                    # Verbose mode
+flavia --model 0             # Use specific model
+flavia --list-models         # Show available models
+flavia --list-tools          # Show available tools
+flavia --config              # Show configuration paths
+flavia --configure-provider  # Interactive provider setup wizard
 ```
 
 ## CLI Commands
@@ -203,22 +204,174 @@ Would you like me to explain any specific part in more detail?
 
 ## Configuration
 
+### LLM Provider Configuration
+
+flavIA supports multiple LLM providers, allowing you to use different models and services. Providers can be configured globally or per-project.
+
+#### Using the Provider Configuration Wizard
+
+The easiest way to configure providers is using the interactive wizard:
+
+```bash
+flavia --configure-provider
+```
+
+This wizard will guide you through:
+1. Choosing where to save the configuration (local project or global)
+2. Adding known providers (Synthetic.new, OpenAI, OpenRouter)
+3. Adding custom providers
+4. Selecting models for each provider
+5. Configuring API keys
+
+#### Provider Configuration File (`providers.yaml`)
+
+You can also manually create or edit the `providers.yaml` file:
+
+```yaml
+# providers.yaml - LLM Provider Configurations
+providers:
+  # Free hosted models via Synthetic.new
+  - name: synthetic
+    endpoint: https://api.synthetic.new/openai/v1
+    api_key_env: SYNTHETIC_API_KEY  # Read from environment variable
+    models:
+      - id: "hf:moonshotai/Kimi-K2.5"
+        name: "Kimi-K2.5"
+        description: "Moonshot AI Kimi K2.5"
+        max_tokens: 8192
+        default: true
+
+      - id: "hf:zai-org/GLM-4.7"
+        name: "GLM-4.7"
+        description: "Zhipu AI GLM-4.7"
+        max_tokens: 8192
+
+  # OpenAI (commercial provider)
+  - name: openai
+    endpoint: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    models:
+      - id: "gpt-4o"
+        name: "GPT-4o"
+        description: "OpenAI GPT-4o"
+        max_tokens: 128000
+
+      - id: "gpt-4o-mini"
+        name: "GPT-4o-mini"
+        description: "Faster and cheaper"
+        max_tokens: 128000
+
+  # OpenRouter (multi-provider aggregator)
+  - name: openrouter
+    endpoint: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    models:
+      - id: "anthropic/claude-3.5-sonnet"
+        name: "Claude 3.5 Sonnet"
+        max_tokens: 200000
+
+      - id: "google/gemini-pro-1.5"
+        name: "Gemini Pro 1.5"
+        max_tokens: 1000000
+```
+
+#### Provider Configuration Options
+
+Each provider can specify:
+
+- **`name`** (required): Unique identifier for the provider
+- **`endpoint`** (required): Base API URL endpoint
+- **`api_key`** (optional): Direct API key value (not recommended - use `api_key_env` instead)
+- **`api_key_env`** (optional): Name of environment variable containing the API key
+- **`models`** (optional): List of models provided by this provider
+  - **`id`** (required): Model identifier
+  - **`name`** (optional): Human-readable model name
+  - **`description`** (optional): Model description
+  - **`max_tokens`** (optional): Maximum token limit
+  - **`default`** (optional): Whether this is the default model (one per provider)
+
+#### API Key Configuration
+
+You can configure API keys in two ways:
+
+**1. Environment Variables (Recommended)**
+
+Set the API key in your `.flavia/.env` file or shell environment:
+
+```bash
+# .flavia/.env
+SYNTHETIC_API_KEY=your_synthetic_key_here
+OPENAI_API_KEY=sk-your_openai_key_here
+OPENROUTER_API_KEY=sk-or-v1-your_key_here
+```
+
+**2. Direct Value (Less Secure)**
+
+Store the key directly in `providers.yaml` (not recommended for shared configs):
+
+```yaml
+providers:
+  - name: openai
+    endpoint: https://api.openai.com/v1
+    api_key: "sk-your_key_here"  # Not recommended
+```
+
+#### Provider Configuration Locations
+
+Provider configurations are loaded with the following priority:
+
+1. **Local** (highest priority): `.flavia/providers.yaml` in your current project
+2. **Global**: `~/.config/flavia/providers.yaml` for all projects
+3. **Package defaults** (lowest priority): Built-in default configurations
+
+This allows you to:
+- Use different providers for different projects (local configuration)
+- Set up default providers for all projects (global configuration)
+- Start with sensible defaults (package defaults)
+
+#### Example: Using Different Providers per Project
+
+**Research Project A** (uses free Synthetic.new models):
+```bash
+cd ~/research/project-a
+flavia --configure-provider  # Choose local, add synthetic provider
+flavia  # Uses Synthetic.new models
+```
+
+**Production Project B** (uses OpenAI GPT-4):
+```bash
+cd ~/work/project-b
+flavia --configure-provider  # Choose local, add openai provider
+flavia  # Uses OpenAI models
+```
+
+**Global Default** (fallback for all other projects):
+```bash
+flavia --configure-provider  # Choose global
+# Configures providers available to all projects by default
+```
+
 ### Directory Structure
 
 ```
 .flavia/
-├── .env           # API keys (don't commit!)
-├── models.yaml    # Available models
-└── agents.yaml    # Agent configuration
+├── .env              # API keys (don't commit!)
+├── providers.yaml    # Provider configurations (local)
+├── models.yaml       # Available models
+└── agents.yaml       # Agent configuration
 ```
 
 ### Environment Variables (`.flavia/.env`)
 
 ```bash
-# Required
+# Required (if not using providers.yaml)
 SYNTHETIC_API_KEY=your_api_key_here
 
-# Optional
+# Optional - Provider API keys (when using providers.yaml)
+OPENAI_API_KEY=sk-your_openai_key
+OPENROUTER_API_KEY=sk-or-v1-your_key
+
+# Legacy settings (used as fallback if no provider matches)
 API_BASE_URL=https://api.synthetic.new/openai/v1
 DEFAULT_MODEL=hf:moonshotai/Kimi-K2.5
 AGENT_MAX_DEPTH=3
@@ -234,9 +387,12 @@ TELEGRAM_ALLOW_ALL_USERS=true
 
 ### Configuration Priority
 
-1. `.flavia/` in current directory (highest)
-2. `~/.config/flavia/` (user defaults)
-3. Package defaults (lowest)
+Provider configurations are loaded in this order (highest to lowest):
+
+1. `.flavia/providers.yaml` in current directory
+2. `~/.config/flavia/providers.yaml` (user defaults)
+3. Package default providers
+4. Legacy environment variables (`SYNTHETIC_API_KEY`, `API_BASE_URL`)
 
 ## Use Cases
 
