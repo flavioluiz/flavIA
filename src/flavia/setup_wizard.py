@@ -7,10 +7,11 @@ from typing import Optional, List
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
-from rich.prompt import Confirm
+from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 console = Console()
+MAX_SETUP_REVISIONS = 5
 
 
 # System prompt for the setup agent
@@ -240,15 +241,37 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
         default=True,
     )
 
+    user_guidance = ""
     if analyze or convert_pdfs:
+        user_guidance = _ask_user_guidance()
         return _run_ai_setup(
             target_dir,
             config_dir,
             convert_pdfs=convert_pdfs,
             pdf_files=[p.name for p in pdf_files] if convert_pdfs else None,
+            user_guidance=user_guidance,
         )
     else:
         return _run_basic_setup(target_dir, config_dir)
+
+
+def _ask_user_guidance() -> str:
+    """Ask the user for optional setup guidance for the LLM."""
+    wants_guidance = Confirm.ask(
+        "[bold]Do you want to add brief guidance for agent creation?[/bold]\n"
+        "  (e.g., preferred style, focus areas, sub-agents, constraints)",
+        default=False,
+    )
+    if not wants_guidance:
+        return ""
+
+    guidance = Prompt.ask(
+        "Enter your guidance (single line, optional)",
+        default="",
+    ).strip()
+    if guidance:
+        console.print("[dim]Guidance noted and will be used for agent generation.[/dim]")
+    return guidance
 
 
 def _run_basic_setup(target_dir: Path, config_dir: Path) -> bool:
@@ -364,6 +387,8 @@ def _run_ai_setup(
     config_dir: Path,
     convert_pdfs: bool = False,
     pdf_files: List[str] = None,
+    user_guidance: str = "",
+    interactive_review: bool = True,
 ) -> bool:
     """Run AI-assisted setup."""
     console.print("\n[dim]Initializing AI setup agent...[/dim]")
@@ -417,7 +442,7 @@ models:
     # Create .gitignore
     (config_dir / ".gitignore").write_text(".env\nconverted/\n")
 
-    # Build the task message
+    # Convert PDFs first when requested
     if convert_pdfs and pdf_files:
         console.print("\n[bold]Converting PDFs and analyzing content...[/bold]\n")
         try:
@@ -432,31 +457,71 @@ models:
             console.print(Markdown(f"```text\n{conversion_result}\n```"))
         except Exception as e:
             console.print(f"[yellow]Warning: PDF conversion step failed: {e}[/yellow]")
-
-        task = (
-            "Analyze the converted content in the 'converted/' directory and create an "
-            "appropriate agents.yaml configuration specialized for this academic material. "
-            "Use create_agents_config to write the file."
-        )
     else:
-        task = (
-            "Analyze this directory and create an appropriate agents.yaml configuration. "
-            "Look for documents, understand the subject matter, and create an agent "
-            "specialized for this academic/research content. Use create_agents_config to write the file."
-        )
         console.print("\n[bold]Analyzing content...[/bold]\n")
 
-    try:
-        response = agent.run(task)
-        console.print(Markdown(response))
+    agents_file = config_dir / "agents.yaml"
+    revision_notes: list[str] = []
 
-        # Verify the file was created
-        if (config_dir / "agents.yaml").exists():
-            _print_success(config_dir, has_pdfs=convert_pdfs)
-            return True
-        else:
-            console.print("\n[yellow]AI did not create the config file. Creating default...[/yellow]")
-            return _run_basic_setup(target_dir, config_dir)
+    try:
+        for attempt in range(1, MAX_SETUP_REVISIONS + 1):
+            if agents_file.exists():
+                agents_file.unlink()
+
+            task = _build_setup_task(
+                convert_pdfs=convert_pdfs,
+                user_guidance=user_guidance,
+                revision_notes=revision_notes,
+            )
+
+            response = agent.run(task)
+            console.print(Markdown(response))
+
+            if not agents_file.exists():
+                console.print("\n[yellow]AI did not create the config file.[/yellow]")
+                if not interactive_review:
+                    console.print("[yellow]Creating default configuration...[/yellow]")
+                    return _run_basic_setup(target_dir, config_dir)
+
+                if Confirm.ask("Use default configuration instead?", default=True):
+                    return _run_basic_setup(target_dir, config_dir)
+
+                feedback = Prompt.ask(
+                    "What should be changed in the next proposal?",
+                    default="",
+                ).strip()
+                if feedback:
+                    revision_notes.append(feedback)
+                    continue
+                console.print("[yellow]No feedback provided. Creating default configuration.[/yellow]")
+                return _run_basic_setup(target_dir, config_dir)
+
+            if not interactive_review:
+                _print_success(config_dir, has_pdfs=convert_pdfs)
+                return True
+
+            _show_agents_preview(agents_file)
+            if Confirm.ask("Accept this agent configuration?", default=True):
+                _print_success(config_dir, has_pdfs=convert_pdfs)
+                return True
+
+            if Confirm.ask("Use default configuration instead?", default=False):
+                return _run_basic_setup(target_dir, config_dir)
+
+            feedback = Prompt.ask(
+                "Describe the changes you want in the next version",
+                default="",
+            ).strip()
+            if not feedback:
+                console.print("[yellow]No feedback provided. Creating default configuration.[/yellow]")
+                return _run_basic_setup(target_dir, config_dir)
+
+            revision_notes.append(feedback)
+            if attempt < MAX_SETUP_REVISIONS:
+                console.print("\n[dim]Regenerating configuration with your feedback...[/dim]\n")
+
+        console.print("\n[yellow]Maximum revision attempts reached. Creating default configuration...[/yellow]")
+        return _run_basic_setup(target_dir, config_dir)
 
     except KeyboardInterrupt:
         console.print("\n[yellow]Setup interrupted.[/yellow]")
@@ -465,6 +530,55 @@ models:
         console.print(f"\n[red]Error during AI setup: {e}[/red]")
         console.print("[yellow]Falling back to basic setup...[/yellow]")
         return _run_basic_setup(target_dir, config_dir)
+
+
+def _build_setup_task(
+    convert_pdfs: bool,
+    user_guidance: str,
+    revision_notes: List[str],
+) -> str:
+    """Build setup task including optional user guidance and revision feedback."""
+    if convert_pdfs:
+        base = (
+            "Analyze the converted content in the 'converted/' directory and create an "
+            "appropriate agents.yaml configuration specialized for this academic material. "
+            "Use create_agents_config to write the file."
+        )
+    else:
+        base = (
+            "Analyze this directory and create an appropriate agents.yaml configuration. "
+            "Look for documents, understand the subject matter, and create an agent "
+            "specialized for this academic/research content. Use create_agents_config to write the file."
+        )
+
+    parts = [base]
+    if user_guidance:
+        parts.append(f"User guidance:\n{user_guidance}")
+    if revision_notes:
+        notes = "\n".join(f"- {note}" for note in revision_notes)
+        parts.append(
+            "Revision feedback from user (apply all points below in this new proposal):\n"
+            f"{notes}"
+        )
+    return "\n\n".join(parts)
+
+
+def _show_agents_preview(agents_file: Path, max_lines: int = 80) -> None:
+    """Show a preview of generated agents.yaml for user validation."""
+    try:
+        content = agents_file.read_text(encoding="utf-8")
+    except Exception:
+        console.print(f"[yellow]Could not read {agents_file} for preview.[/yellow]")
+        return
+
+    lines = content.splitlines()
+    truncated = len(lines) > max_lines
+    preview = "\n".join(lines[:max_lines])
+    if truncated:
+        preview += "\n... (truncated)"
+
+    console.print("\n[bold]Proposed agents.yaml:[/bold]")
+    console.print(Markdown(f"```yaml\n{preview}\n```"))
 
 
 def _print_success(config_dir: Path, has_pdfs: bool = False):
