@@ -120,6 +120,9 @@ flavia --manage-provider     # Manage models (add/remove/fetch)
 flavia --manage-provider openai  # Manage specific provider
 flavia --test-provider       # Test default provider connection
 flavia --test-provider openai  # Test specific provider
+
+# Telegram setup
+flavia --setup-telegram      # Configure Telegram bot token and access
 ```
 
 ## CLI Commands
@@ -329,6 +332,52 @@ TELEGRAM_ALLOW_ALL_USERS=true
 
 For `providers.yaml`, higher-priority files can override both provider definitions
 and `default_provider`.
+
+### Telegram Bot Setup
+
+Turn your research assistant into a Telegram bot accessible from anywhere.
+
+**Quick setup:**
+
+```bash
+flavia --setup-telegram
+```
+
+The wizard will guide you through:
+
+1. **Getting a bot token from @BotFather**
+   - Open Telegram and search for `@BotFather`
+   - Send `/newbot` and follow the prompts
+   - Copy the token (looks like `123456789:ABCdefGHI...`)
+
+2. **Configuring access control**
+   - **Restricted** (recommended): Only specific user IDs can use the bot
+   - **Public**: Anyone who finds your bot can use it (uses your API credits!)
+
+3. **Finding your user ID**
+   - Search for `@userinfobot` on Telegram
+   - Send any message to get your user ID
+
+**Manual configuration** (in `.flavia/.env`):
+
+```bash
+# Bot token from @BotFather
+TELEGRAM_BOT_TOKEN=123456789:ABCdefGHI...
+
+# Option 1: Restrict to specific users (recommended)
+TELEGRAM_ALLOWED_USER_IDS=123456789,987654321
+
+# Option 2: Allow anyone (use with caution!)
+TELEGRAM_ALLOW_ALL_USERS=true
+```
+
+**Starting the bot:**
+
+```bash
+flavia --telegram
+```
+
+If not configured, you'll be prompted to run the setup wizard.
 
 ## Use Cases
 

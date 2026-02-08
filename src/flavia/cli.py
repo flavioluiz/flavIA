@@ -93,6 +93,12 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--setup-telegram",
+        action="store_true",
+        help="Configure Telegram bot (token and access control)",
+    )
+
+    parser.add_argument(
         "--manage-provider",
         type=str,
         metavar="PROVIDER_ID",
@@ -333,6 +339,12 @@ def main() -> int:
         success = run_provider_wizard()
         return 0 if success else 1
 
+    # Setup telegram wizard
+    if args.setup_telegram:
+        from flavia.setup.telegram_wizard import run_telegram_wizard
+        success = run_telegram_wizard()
+        return 0 if success else 1
+
     # Load settings
     settings = load_settings()
     settings = apply_args_to_settings(args, settings)
@@ -389,6 +401,12 @@ def main() -> int:
 
     # Run appropriate interface
     if args.telegram:
+        from flavia.setup.telegram_wizard import prompt_telegram_setup_if_needed
+        if not prompt_telegram_setup_if_needed():
+            return 1
+        # Reload settings after potential telegram setup
+        settings = load_settings()
+        settings = apply_args_to_settings(args, settings)
         from flavia.interfaces import run_telegram_bot
         run_telegram_bot(settings)
     else:
