@@ -2,7 +2,10 @@
 
 from pathlib import Path
 
-from flavia.setup_wizard import create_setup_agent, _run_ai_setup
+import yaml
+
+from flavia.config.settings import Settings
+from flavia.setup_wizard import create_setup_agent, _run_ai_setup, _run_basic_setup, run_setup_wizard
 
 
 def test_create_setup_agent_exposes_setup_tools(monkeypatch, tmp_path):
@@ -109,3 +112,36 @@ def test_run_ai_setup_allows_user_revision_and_regenerates(monkeypatch, tmp_path
     assert "User guidance" in run_tasks[0]
     assert "Revision feedback from user" in run_tasks[1]
     assert "Inclua um subagente de resumos e citações" in run_tasks[1]
+
+
+def test_run_basic_setup_writes_selected_model_to_env_and_agents(tmp_path):
+    config_dir = tmp_path / ".flavia"
+
+    success = _run_basic_setup(tmp_path, config_dir, selected_model="openai:gpt-4o")
+
+    assert success is True
+    env_text = (config_dir / ".env").read_text(encoding="utf-8")
+    assert "DEFAULT_MODEL=openai:gpt-4o" in env_text
+
+    agents_data = yaml.safe_load((config_dir / "agents.yaml").read_text(encoding="utf-8"))
+    assert agents_data["main"]["model"] == "openai:gpt-4o"
+
+
+def test_run_setup_wizard_passes_selected_model_to_basic_setup(monkeypatch, tmp_path):
+    captured: dict[str, str] = {}
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("flavia.config.load_settings", lambda: Settings(default_model="hf:moonshotai/Kimi-K2.5"))
+    monkeypatch.setattr("flavia.setup_wizard._select_model_for_setup", lambda _settings: "openai:gpt-4o")
+    monkeypatch.setattr("flavia.setup_wizard._test_selected_model_connection", lambda _settings, _model: (False, False))
+    monkeypatch.setattr("flavia.setup_wizard.find_pdf_files", lambda _directory: [])
+    monkeypatch.setattr("flavia.setup_wizard.Confirm.ask", lambda *args, **kwargs: False)
+
+    def _fake_run_basic_setup(_target_dir, _config_dir, selected_model=None):
+        captured["model"] = selected_model
+        return True
+
+    monkeypatch.setattr("flavia.setup_wizard._run_basic_setup", _fake_run_basic_setup)
+
+    assert run_setup_wizard(tmp_path) is True
+    assert captured["model"] == "openai:gpt-4o"

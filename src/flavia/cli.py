@@ -12,8 +12,10 @@ Usage:
 
 import argparse
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
+import yaml
 from flavia.config import load_settings, Settings
 from flavia import tools as _  # Register tools
 from flavia.venv_bootstrap import ensure_project_venv_and_reexec
@@ -316,6 +318,102 @@ def test_provider_cli(settings: Settings, provider_id: str) -> int:
         return 1
 
 
+def _get_active_model_ref(settings: Settings) -> str | int:
+    """Get model reference that main agent will use."""
+    active_model_ref: str | int = settings.default_model
+    main_agent_config = settings.agents_config.get("main", {})
+    if isinstance(main_agent_config, dict) and "model" in main_agent_config:
+        active_model_ref = main_agent_config["model"]
+    return active_model_ref
+
+
+def _get_connection_checks_file(settings: Settings) -> Path:
+    """Resolve file used to persist startup connection checks."""
+    from flavia.config.loader import ensure_user_config
+
+    paths = settings.config_paths
+    if paths and paths.local_dir:
+        return paths.local_dir / ".connection_checks.yaml"
+    if paths and paths.user_dir:
+        return paths.user_dir / ".connection_checks.yaml"
+
+    return ensure_user_config() / ".connection_checks.yaml"
+
+
+def _load_connection_checks(checks_file: Path) -> dict:
+    """Load persisted connection check metadata."""
+    if not checks_file.exists():
+        return {}
+
+    try:
+        with open(checks_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except Exception:
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+    checks = data.get("checks", {})
+    return checks if isinstance(checks, dict) else {}
+
+
+def _save_connection_checks(checks_file: Path, checks: dict) -> None:
+    """Persist connection check metadata."""
+    try:
+        checks_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(checks_file, "w", encoding="utf-8") as f:
+            yaml.dump({"checks": checks}, f, default_flow_style=False, sort_keys=False)
+    except Exception:
+        # Best-effort cache: startup should continue even if write fails.
+        pass
+
+
+def _ensure_default_connection_checked_once(settings: Settings) -> None:
+    """Check active provider/model connectivity once and cache the attempt."""
+    from flavia.setup.provider_wizard import test_provider_connection
+
+    active_model_ref = _get_active_model_ref(settings)
+    provider, model_id = settings.resolve_model_with_provider(active_model_ref)
+    if provider is None:
+        return
+    if not provider.api_key:
+        return
+
+    checks_file = _get_connection_checks_file(settings)
+    checks = _load_connection_checks(checks_file)
+    check_key = f"{provider.id}|{provider.api_base_url}|{model_id}"
+    if check_key in checks:
+        return
+
+    print(
+        "\n[Startup Check] Verifying default provider/model connection "
+        f"({provider.id}:{model_id})..."
+    )
+    success, message = test_provider_connection(
+        provider.api_key,
+        provider.api_base_url,
+        model_id,
+        provider.headers if provider.headers else None,
+    )
+
+    checks[check_key] = {
+        "tested_at": datetime.now(timezone.utc).isoformat(),
+        "success": bool(success),
+        "model": model_id,
+        "provider": provider.id,
+    }
+    _save_connection_checks(checks_file, checks)
+
+    if success:
+        print(f"[Startup Check] OK: {message}")
+    else:
+        print(f"[Startup Check] WARNING: {message}")
+        print(
+            "[Startup Check] Continuing startup; failures will also appear "
+            "when sending messages."
+        )
+
+
 def main() -> int:
     """Main entry point."""
     ensure_project_venv_and_reexec(sys.argv[1:])
@@ -377,10 +475,7 @@ def main() -> int:
         return 0 if success else 1
 
     # Check API key for the model that will actually be used by the main agent.
-    active_model_ref: str | int = settings.default_model
-    main_agent_config = settings.agents_config.get("main", {})
-    if isinstance(main_agent_config, dict) and "model" in main_agent_config:
-        active_model_ref = main_agent_config["model"]
+    active_model_ref = _get_active_model_ref(settings)
 
     selected_provider, _ = settings.resolve_model_with_provider(active_model_ref)
     if selected_provider is not None:
@@ -407,9 +502,11 @@ def main() -> int:
         # Reload settings after potential telegram setup
         settings = load_settings()
         settings = apply_args_to_settings(args, settings)
+        _ensure_default_connection_checked_once(settings)
         from flavia.interfaces import run_telegram_bot
         run_telegram_bot(settings)
     else:
+        _ensure_default_connection_checked_once(settings)
         from flavia.interfaces import run_cli
         run_cli(settings)
 

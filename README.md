@@ -60,9 +60,11 @@ To disable this behavior (for debugging), set `FLAVIA_DISABLE_AUTO_VENV=1`.
 cd ~/research/machine-learning-papers
 
 # Initialize - flavIA will:
-# 1. Find PDFs and offer to convert them
-# 2. Analyze the content (if API key is already configured)
-# 3. Create a specialized agent
+# 1. Ask which model/provider to use in the initial setup
+# 2. Try a connection test for the selected model/provider
+# 3. Find PDFs and offer to convert them
+# 4. Analyze the content (if API key is already configured)
+# 5. Create a specialized agent
 flavia --init
 ```
 
@@ -82,6 +84,9 @@ Found 12 PDF file(s):
   gpt3_paper.pdf                          3.2 MB
   ...
 
+Use default model/provider? [Y/n]
+Connection check...
+
 Convert PDFs to text for analysis? [Y/n]
 Have the AI analyze and suggest agent configuration? [Y/n]
 
@@ -95,6 +100,10 @@ Then edit your API key and start:
 nano .flavia/.env  # Add your API key
 flavia             # Start chatting!
 ```
+
+`flavia --init` now writes the selected model/provider into:
+- `.flavia/.env` as `DEFAULT_MODEL=provider:model`
+- `.flavia/agents.yaml` as `main.model`
 
 ## Usage
 
@@ -124,6 +133,9 @@ flavia --test-provider openai  # Test specific provider
 # Telegram setup
 flavia --setup-telegram      # Configure Telegram bot token and access
 ```
+
+When running `flavia` (CLI or Telegram), flavIA validates connectivity for the active default
+provider/model at least once and caches the result, so startup checks are not repeated every time.
 
 ## CLI Commands
 
@@ -222,6 +234,7 @@ Would you like me to explain any specific part in more detail?
 ```
 .flavia/
 ├── .env            # API keys (don't commit!)
+├── .connection_checks.yaml  # Startup connectivity check cache
 ├── models.yaml     # Available models (legacy)
 ├── providers.yaml  # Multi-provider configuration (new)
 └── agents.yaml     # Agent configuration
@@ -234,6 +247,10 @@ flavIA supports multiple LLM providers. Use the interactive wizard:
 ```bash
 flavia --setup-provider
 ```
+
+Package defaults include:
+- `default_provider: synthetic`
+- default model: `synthetic:hf:moonshotai/Kimi-K2.5`
 
 During setup, you can:
 - **Fetch models from API**: Some providers (like Synthetic) expose a `/models` endpoint. The wizard can fetch and display available models automatically.
@@ -312,7 +329,7 @@ OPENROUTER_API_KEY=your_openrouter_key
 
 # Legacy single-provider config (still works)
 API_BASE_URL=https://api.synthetic.new/openai/v1
-DEFAULT_MODEL=hf:moonshotai/Kimi-K2.5
+DEFAULT_MODEL=synthetic:hf:moonshotai/Kimi-K2.5
 AGENT_MAX_DEPTH=3
 
 # For Telegram bot

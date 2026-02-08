@@ -99,6 +99,7 @@ def test_main_checks_api_key_for_selected_provider(monkeypatch):
     monkeypatch.setattr("flavia.cli.ensure_project_venv_and_reexec", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("flavia.cli.parse_args", lambda: args)
     monkeypatch.setattr("flavia.cli.load_settings", lambda: settings)
+    monkeypatch.setattr("flavia.cli._ensure_default_connection_checked_once", lambda _settings: None)
     monkeypatch.setattr("flavia.interfaces.run_cli", lambda cfg: run_cli_calls.append(cfg.default_model))
 
     assert main() == 0
@@ -145,6 +146,7 @@ def test_main_validates_main_agent_model_provider_key(monkeypatch, capsys):
     monkeypatch.setattr("flavia.cli.ensure_project_venv_and_reexec", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("flavia.cli.parse_args", lambda: args)
     monkeypatch.setattr("flavia.cli.load_settings", lambda: settings)
+    monkeypatch.setattr("flavia.cli._ensure_default_connection_checked_once", lambda _settings: None)
     monkeypatch.setattr("flavia.interfaces.run_cli", lambda _cfg: (_ for _ in ()).throw(RuntimeError("should not run")))
 
     assert main() == 1

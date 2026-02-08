@@ -2,8 +2,9 @@
 
 import sys
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Any
 
+import yaml
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
@@ -122,7 +123,12 @@ def find_pdf_files(directory: Path) -> List[Path]:
     return list(directory.glob("*.pdf"))
 
 
-def create_setup_agent(base_dir: Path, include_pdf_tool: bool = False, pdf_files: List[str] = None):
+def create_setup_agent(
+    base_dir: Path,
+    include_pdf_tool: bool = False,
+    pdf_files: List[str] = None,
+    selected_model: Optional[str] = None,
+):
     """Create the setup agent with special tools."""
     from flavia.config import load_settings
     from flavia.agent import RecursiveAgent, AgentProfile
@@ -132,9 +138,10 @@ def create_setup_agent(base_dir: Path, include_pdf_tool: bool = False, pdf_files
 
     # Load settings
     settings = load_settings()
+    model_ref = selected_model or settings.default_model
 
     # Check API key availability (providers or legacy)
-    selected_provider, _ = settings.resolve_model_with_provider(settings.default_model)
+    selected_provider, _ = settings.resolve_model_with_provider(model_ref)
     if selected_provider is not None:
         if not selected_provider.api_key:
             env_hint = f" Set {selected_provider.api_key_env_var} and try again." if selected_provider.api_key_env_var else ""
@@ -166,7 +173,7 @@ def create_setup_agent(base_dir: Path, include_pdf_tool: bool = False, pdf_files
     # Create profile
     profile = AgentProfile(
         context=context,
-        model=settings.default_model,
+        model=model_ref,
         base_dir=base_dir,
         tools=tools,
         subagents={},
@@ -186,6 +193,214 @@ def create_setup_agent(base_dir: Path, include_pdf_tool: bool = False, pdf_files
     agent.reset()
 
     return agent, None
+
+
+def _format_provider_model_ref(provider_id: str, model_id: str) -> str:
+    """Build provider-prefixed model reference."""
+    return f"{provider_id}:{model_id}"
+
+
+def _collect_model_choices(settings) -> tuple[list[dict[str, Any]], str]:
+    """Collect model choices for setup selection."""
+    choices: list[dict[str, Any]] = []
+    default_provider, default_model_id = settings.resolve_model_with_provider(settings.default_model)
+    preferred_ref = (
+        _format_provider_model_ref(default_provider.id, default_model_id)
+        if default_provider is not None
+        else settings.default_model
+    )
+
+    if settings.providers.providers:
+        for provider in settings.providers.providers.values():
+            for model in provider.models:
+                ref = _format_provider_model_ref(provider.id, model.id)
+                choices.append(
+                    {
+                        "ref": ref,
+                        "provider": provider.name,
+                        "provider_id": provider.id,
+                        "name": model.name,
+                        "model_id": model.id,
+                    }
+                )
+    else:
+        for model in settings.models:
+            choices.append(
+                {
+                    "ref": model.id,
+                    "provider": "legacy",
+                    "provider_id": "",
+                    "name": model.name,
+                    "model_id": model.id,
+                }
+            )
+
+    if not choices:
+        fallback = settings.default_model
+        return ([{
+            "ref": fallback,
+            "provider": "default",
+            "provider_id": "",
+            "name": fallback,
+            "model_id": fallback,
+        }], fallback)
+
+    refs = {choice["ref"] for choice in choices}
+    if preferred_ref in refs:
+        return choices, preferred_ref
+
+    return choices, choices[0]["ref"]
+
+
+def _select_model_for_setup(settings) -> str:
+    """Select model/provider to use during setup."""
+    choices, default_ref = _collect_model_choices(settings)
+    default_choice = next((choice for choice in choices if choice["ref"] == default_ref), choices[0])
+    default_label = (
+        f"{default_choice['provider_id']}:{default_choice['model_id']}"
+        if default_choice["provider_id"]
+        else default_choice["model_id"]
+    )
+
+    if Confirm.ask(
+        f"\n[bold]Use default model/provider?[/bold]\n  [cyan]{default_label}[/cyan]",
+        default=True,
+    ):
+        return default_ref
+
+    console.print("\n[bold]Select model/provider for initial setup:[/bold]")
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    for i, choice in enumerate(choices, 1):
+        default_marker = " [default]" if choice["ref"] == default_ref else ""
+        provider_label = choice["provider"]
+        table.add_row(
+            f"  [{i}]",
+            f"{provider_label} / {choice['name']}{default_marker}",
+            f"[dim]{choice['ref']}[/dim]",
+        )
+    console.print(table)
+
+    default_index = next((i + 1 for i, choice in enumerate(choices) if choice["ref"] == default_ref), 1)
+    selection = Prompt.ask("Enter number", default=str(default_index))
+    try:
+        idx = int(selection) - 1
+        if 0 <= idx < len(choices):
+            return choices[idx]["ref"]
+    except ValueError:
+        pass
+
+    console.print("[yellow]Invalid selection, using default.[/yellow]")
+    return default_ref
+
+
+def _test_selected_model_connection(settings, model_ref: str) -> tuple[bool, bool]:
+    """
+    Test selected model connection.
+
+    Returns:
+        Tuple of (was_test_attempted, test_success)
+    """
+    from flavia.setup.provider_wizard import test_provider_connection
+
+    provider, model_id = settings.resolve_model_with_provider(model_ref)
+
+    console.print("\n[bold]Connection check[/bold]")
+    if provider is not None:
+        console.print(f"  Provider: [cyan]{provider.name} ({provider.id})[/cyan]")
+        console.print(f"  Model: [cyan]{model_id}[/cyan]")
+
+        if not provider.api_key:
+            if provider.api_key_env_var:
+                console.print(
+                    f"[yellow]Cannot test connection yet: {provider.api_key_env_var} is not configured.[/yellow]"
+                )
+            else:
+                console.print("[yellow]Cannot test connection yet: provider API key is not configured.[/yellow]")
+            return False, False
+
+        console.print("[dim]Testing provider/model connectivity...[/dim]")
+        success, message = test_provider_connection(
+            provider.api_key,
+            provider.api_base_url,
+            model_id,
+            provider.headers if provider.headers else None,
+        )
+    else:
+        console.print(f"  Model: [cyan]{model_id}[/cyan]")
+        if not settings.api_key:
+            console.print("[yellow]Cannot test connection yet: SYNTHETIC_API_KEY is not configured.[/yellow]")
+            return False, False
+
+        console.print("[dim]Testing connectivity using legacy API settings...[/dim]")
+        success, message = test_provider_connection(
+            settings.api_key,
+            settings.api_base_url,
+            model_id,
+        )
+
+    if success:
+        console.print(f"[green]{message}[/green]")
+    else:
+        console.print(f"[red]{message}[/red]")
+
+    return True, success
+
+
+def _build_env_content(selected_model: str, include_optional_settings: bool) -> str:
+    """Build .env template with selected default model."""
+    optional_block = ""
+    if include_optional_settings:
+        optional_block = (
+            "\n"
+            "# Optional settings\n"
+            "# AGENT_MAX_DEPTH=3\n"
+        )
+
+    return (
+        "# flavIA Configuration\n"
+        "# Uncomment and set your API key if not already configured elsewhere\n"
+        "# (e.g., in ~/.config/flavia/.env or environment variables)\n"
+        "\n"
+        "# SYNTHETIC_API_KEY=your_api_key_here\n"
+        "# API_BASE_URL=https://api.synthetic.new/openai/v1\n"
+        "\n"
+        f"DEFAULT_MODEL={selected_model}\n"
+        f"{optional_block}\n"
+        "# Telegram bot (optional)\n"
+        "# TELEGRAM_BOT_TOKEN=123456:ABC-DEF...\n"
+        "# Restrict bot to specific Telegram user IDs (comma-separated)\n"
+        "# TELEGRAM_ALLOWED_USER_IDS=123456789,987654321\n"
+        "# Public mode without whitelist (optional)\n"
+        "# TELEGRAM_ALLOW_ALL_USERS=true\n"
+    )
+
+
+def _ensure_main_agent_model(agents_file: Path, selected_model: str) -> None:
+    """Ensure main agent configuration has the selected model."""
+    if not agents_file.exists():
+        return
+
+    try:
+        with open(agents_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except Exception:
+        return
+
+    if not isinstance(data, dict):
+        return
+
+    main = data.get("main")
+    if not isinstance(main, dict):
+        return
+
+    if main.get("model") == selected_model:
+        return
+
+    main["model"] = selected_model
+    data["main"] = main
+
+    with open(agents_file, "w", encoding="utf-8") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
 
 def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
@@ -217,6 +432,23 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
             return False
         import shutil
         shutil.rmtree(config_dir)
+
+    from flavia.config import load_settings
+    settings = load_settings()
+
+    selected_model = _select_model_for_setup(settings)
+
+    while True:
+        attempted, success = _test_selected_model_connection(settings, selected_model)
+        if not attempted or success:
+            break
+
+        if not Confirm.ask(
+            "Connection failed. Do you want to select another model/provider?",
+            default=True,
+        ):
+            break
+        selected_model = _select_model_for_setup(settings)
 
     # Check for PDFs
     pdf_files = find_pdf_files(target_dir)
@@ -253,12 +485,13 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
         return _run_ai_setup(
             target_dir,
             config_dir,
+            selected_model=selected_model,
             convert_pdfs=convert_pdfs,
             pdf_files=[p.name for p in pdf_files] if convert_pdfs else None,
             user_guidance=user_guidance,
         )
     else:
-        return _run_basic_setup(target_dir, config_dir)
+        return _run_basic_setup(target_dir, config_dir, selected_model=selected_model)
 
 
 def _ask_user_guidance() -> str:
@@ -297,33 +530,16 @@ def _offer_provider_setup(config_dir: Path) -> None:
         run_provider_wizard(config_dir.parent)
 
 
-def _run_basic_setup(target_dir: Path, config_dir: Path) -> bool:
+def _run_basic_setup(target_dir: Path, config_dir: Path, selected_model: Optional[str] = None) -> bool:
     """Create basic default configuration."""
     console.print("\n[dim]Creating default configuration...[/dim]")
+    effective_model = selected_model or "synthetic:hf:moonshotai/Kimi-K2.5"
 
     try:
         config_dir.mkdir(parents=True, exist_ok=True)
 
         # Create .env (API keys are commented out to avoid overriding existing config)
-        env_content = """\
-# flavIA Configuration
-# Uncomment and set your API key if not already configured elsewhere
-# (e.g., in ~/.config/flavia/.env or environment variables)
-
-# SYNTHETIC_API_KEY=your_api_key_here
-# API_BASE_URL=https://api.synthetic.new/openai/v1
-
-# Optional settings
-# DEFAULT_MODEL=hf:moonshotai/Kimi-K2.5
-# AGENT_MAX_DEPTH=3
-
-# Telegram bot (optional)
-# TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
-# Restrict bot to specific Telegram user IDs (comma-separated)
-# TELEGRAM_ALLOWED_USER_IDS=123456789,987654321
-# Public mode without whitelist (optional)
-# TELEGRAM_ALLOW_ALL_USERS=true
-"""
+        env_content = _build_env_content(effective_model, include_optional_settings=True)
         (config_dir / ".env").write_text(env_content)
 
         # Create models.yaml
@@ -342,15 +558,16 @@ models:
         (config_dir / "models.yaml").write_text(models_content)
 
         # Create academic-focused default agents.yaml
-        agents_content = """\
+        agents_content = f"""\
 # flavIA Agent Configuration
 # Default academic assistant
 
 main:
+  model: "{effective_model}"
   context: |
     You are an academic research assistant.
     You help analyze documents, explain concepts, find information, and assist with research tasks.
-    Working directory: {base_dir}
+    Working directory: {{base_dir}}
 
     When answering questions:
     - Be precise and cite specific passages when relevant
@@ -413,6 +630,7 @@ main:
 def _run_ai_setup(
     target_dir: Path,
     config_dir: Path,
+    selected_model: Optional[str] = None,
     convert_pdfs: bool = False,
     pdf_files: List[str] = None,
     user_guidance: str = "",
@@ -420,37 +638,25 @@ def _run_ai_setup(
 ) -> bool:
     """Run AI-assisted setup."""
     console.print("\n[dim]Initializing AI setup agent...[/dim]")
+    effective_model = selected_model or "synthetic:hf:moonshotai/Kimi-K2.5"
 
     agent, error = create_setup_agent(
         target_dir,
         include_pdf_tool=convert_pdfs,
         pdf_files=pdf_files,
+        selected_model=effective_model,
     )
 
     if error:
         console.print(f"[red]{error}[/red]")
         console.print("\n[yellow]Falling back to basic setup...[/yellow]")
-        return _run_basic_setup(target_dir, config_dir)
+        return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
 
     # Create the config dir first
     config_dir.mkdir(parents=True, exist_ok=True)
 
     # Create .env (API keys are commented out to avoid overriding existing config)
-    env_content = """\
-# flavIA Configuration
-# Uncomment and set your API key if not already configured elsewhere
-# (e.g., in ~/.config/flavia/.env or environment variables)
-
-# SYNTHETIC_API_KEY=your_api_key_here
-# API_BASE_URL=https://api.synthetic.new/openai/v1
-
-# Telegram bot (optional)
-# TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
-# Restrict bot to specific Telegram user IDs (comma-separated)
-# TELEGRAM_ALLOWED_USER_IDS=123456789,987654321
-# Public mode without whitelist (optional)
-# TELEGRAM_ALLOW_ALL_USERS=true
-"""
+    env_content = _build_env_content(effective_model, include_optional_settings=False)
     (config_dir / ".env").write_text(env_content)
 
     # Create models.yaml
@@ -499,6 +705,7 @@ models:
 
             task = _build_setup_task(
                 convert_pdfs=convert_pdfs,
+                selected_model=effective_model,
                 user_guidance=user_guidance,
                 revision_notes=revision_notes,
             )
@@ -510,10 +717,10 @@ models:
                 console.print("\n[yellow]AI did not create the config file.[/yellow]")
                 if not interactive_review:
                     console.print("[yellow]Creating default configuration...[/yellow]")
-                    return _run_basic_setup(target_dir, config_dir)
+                    return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
 
                 if Confirm.ask("Use default configuration instead?", default=True):
-                    return _run_basic_setup(target_dir, config_dir)
+                    return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
 
                 feedback = Prompt.ask(
                     "What should be changed in the next proposal?",
@@ -523,7 +730,9 @@ models:
                     revision_notes.append(feedback)
                     continue
                 console.print("[yellow]No feedback provided. Creating default configuration.[/yellow]")
-                return _run_basic_setup(target_dir, config_dir)
+                return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
+
+            _ensure_main_agent_model(agents_file, effective_model)
 
             if not interactive_review:
                 _print_success(config_dir, has_pdfs=convert_pdfs)
@@ -535,7 +744,7 @@ models:
                 return True
 
             if Confirm.ask("Use default configuration instead?", default=False):
-                return _run_basic_setup(target_dir, config_dir)
+                return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
 
             feedback = Prompt.ask(
                 "Describe the changes you want in the next version",
@@ -543,14 +752,14 @@ models:
             ).strip()
             if not feedback:
                 console.print("[yellow]No feedback provided. Creating default configuration.[/yellow]")
-                return _run_basic_setup(target_dir, config_dir)
+                return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
 
             revision_notes.append(feedback)
             if attempt < MAX_SETUP_REVISIONS:
                 console.print("\n[dim]Regenerating configuration with your feedback...[/dim]\n")
 
         console.print("\n[yellow]Maximum revision attempts reached. Creating default configuration...[/yellow]")
-        return _run_basic_setup(target_dir, config_dir)
+        return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
 
     except KeyboardInterrupt:
         console.print("\n[yellow]Setup interrupted.[/yellow]")
@@ -558,11 +767,12 @@ models:
     except Exception as e:
         console.print(f"\n[red]Error during AI setup: {e}[/red]")
         console.print("[yellow]Falling back to basic setup...[/yellow]")
-        return _run_basic_setup(target_dir, config_dir)
+        return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
 
 
 def _build_setup_task(
     convert_pdfs: bool,
+    selected_model: str,
     user_guidance: str,
     revision_notes: List[str],
 ) -> str:
@@ -580,7 +790,13 @@ def _build_setup_task(
             "specialized for this academic/research content. Use create_agents_config to write the file."
         )
 
-    parts = [base]
+    parts = [
+        base,
+        (
+            "The generated main agent must explicitly set "
+            f"model to '{selected_model}' in agents.yaml."
+        ),
+    ]
     if user_guidance:
         parts.append(f"User guidance:\n{user_guidance}")
     if revision_notes:
