@@ -253,7 +253,7 @@ def _run_basic_setup(target_dir: Path, config_dir: Path) -> bool:
     console.print("\n[dim]Creating default configuration...[/dim]")
 
     try:
-        config_dir.mkdir(parents=True)
+        config_dir.mkdir(parents=True, exist_ok=True)
 
         # Create .env
         env_content = """\

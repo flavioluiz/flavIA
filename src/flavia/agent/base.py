@@ -94,6 +94,30 @@ class BaseAgent(ABC):
         response = self.client.chat.completions.create(**kwargs)
         return response.choices[0].message
 
+    def _assistant_message_to_dict(self, message: Any) -> dict[str, Any]:
+        """Normalize assistant message to API-safe chat message dict."""
+        msg: dict[str, Any] = {
+            "role": "assistant",
+            "content": message.content if message.content is not None else "",
+        }
+
+        tool_calls = getattr(message, "tool_calls", None)
+        if tool_calls:
+            normalized_calls = []
+            for call in tool_calls:
+                fn = getattr(call, "function", None)
+                normalized_calls.append({
+                    "id": call.id,
+                    "type": "function",
+                    "function": {
+                        "name": fn.name if fn else "",
+                        "arguments": fn.arguments if fn else "{}",
+                    },
+                })
+            msg["tool_calls"] = normalized_calls
+
+        return msg
+
     def _execute_tool(self, name: str, args: dict[str, Any]) -> str:
         """Execute a tool by name."""
         return registry.execute(name, args, self.context)

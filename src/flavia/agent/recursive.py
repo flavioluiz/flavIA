@@ -38,7 +38,7 @@ class RecursiveAgent(BaseAgent):
             iterations += 1
 
             response = self._call_llm(self.messages)
-            self.messages.append(response.model_dump())
+            self.messages.append(self._assistant_message_to_dict(response))
 
             if not response.tool_calls:
                 return response.content or ""
