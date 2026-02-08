@@ -63,12 +63,14 @@ def print_help() -> None:
 - `/reset` - Reset conversation
 - `/setup` - Configure agents for this project
 - `/quit` - Exit
-- `/models` - List models
+- `/models` - List models (with provider info)
+- `/providers` - List configured providers
 - `/tools` - List tools
 - `/config` - Show config paths
 
 **Tips:**
 - Run `flavia --init` to create initial config
+- Run `flavia --setup-provider` to configure providers
 - Use `/setup` to reconfigure agents
 """
     console.print(Markdown(help_text))
@@ -122,10 +124,29 @@ def run_cli(settings: Settings) -> None:
 
                 elif command == "/models":
                     console.print("\n[bold]Available Models:[/bold]")
-                    for i, model in enumerate(settings.models):
-                        default = " (default)" if model.default else ""
-                        console.print(f"  {i}: {model.name} - {model.id}{default}")
+                    # Show models from providers if available
+                    if settings.providers.providers:
+                        index = 0
+                        for provider in settings.providers.providers.values():
+                            console.print(f"\n  [dim]{provider.name}:[/dim]")
+                            for model in provider.models:
+                                default = " (default)" if model.default else ""
+                                console.print(
+                                    f"    {index}: {model.name} - "
+                                    f"[cyan]{provider.id}:{model.id}[/cyan]{default}"
+                                )
+                                index += 1
+                    else:
+                        # Fall back to legacy models list
+                        for i, model in enumerate(settings.models):
+                            default = " (default)" if model.default else ""
+                            console.print(f"  {i}: {model.name} - {model.id}{default}")
                     console.print()
+                    continue
+
+                elif command == "/providers":
+                    from flavia.setup.provider_wizard import list_providers
+                    list_providers(settings)
                     continue
 
                 elif command == "/tools":

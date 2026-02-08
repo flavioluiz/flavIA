@@ -7,7 +7,7 @@ from typing import Any, Optional
 import httpx
 from openai import OpenAI
 
-from flavia.config import Settings
+from flavia.config import Settings, ProviderConfig
 from flavia.tools import registry
 
 from .context import AgentContext, build_system_prompt, build_tools_description
@@ -27,7 +27,9 @@ class BaseAgent(ABC):
     ):
         self.settings = settings
         self.profile = profile
-        self.model_id = settings.resolve_model(profile.model)
+
+        # Resolve provider and model using new multi-provider system
+        self.provider, self.model_id = settings.resolve_model_with_provider(profile.model)
 
         self.context = AgentContext.from_profile(
             profile=profile,
@@ -37,7 +39,7 @@ class BaseAgent(ABC):
             resolved_model=self.model_id,
         )
 
-        self.client = self._create_openai_client()
+        self.client = self._create_openai_client(self.provider)
 
         self.tool_schemas = self._build_tool_schemas()
         self.messages: list[dict[str, Any]] = []
@@ -52,19 +54,38 @@ class BaseAgent(ABC):
             subagents=self.profile.subagents,
         )
 
-    def _create_openai_client(self) -> OpenAI:
-        """Create OpenAI client with compatibility fallback for older SDK versions."""
-        kwargs = {
-            "api_key": self.settings.api_key,
-            "base_url": self.settings.api_base_url,
-        }
+    def _create_openai_client(self, provider: Optional[ProviderConfig] = None) -> OpenAI:
+        """
+        Create OpenAI client with compatibility fallback for older SDK versions.
+
+        Args:
+            provider: Optional ProviderConfig to use. If None, falls back to settings.
+        """
+        if provider and provider.api_key:
+            # Use provider configuration
+            kwargs: dict[str, Any] = {
+                "api_key": provider.api_key,
+                "base_url": provider.api_base_url,
+            }
+            # Add custom headers if provider has them
+            if provider.headers:
+                kwargs["default_headers"] = provider.headers
+        else:
+            # Fall back to legacy settings
+            kwargs = {
+                "api_key": self.settings.api_key,
+                "base_url": self.settings.api_base_url,
+            }
+
         try:
             return OpenAI(**kwargs)
         except TypeError as exc:
             if "unexpected keyword argument 'proxies'" not in str(exc):
                 raise
             # Compatibility fallback for environments where OpenAI SDK and httpx versions mismatch.
-            return OpenAI(**kwargs, http_client=httpx.Client())
+            # Remove default_headers for httpx.Client fallback if present
+            http_kwargs = {k: v for k, v in kwargs.items() if k != "default_headers"}
+            return OpenAI(**http_kwargs, http_client=httpx.Client())
 
     def _init_system_prompt(self) -> None:
         """Initialize the system prompt."""

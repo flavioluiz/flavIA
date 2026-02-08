@@ -1,0 +1,85 @@
+# flavIA Provider Configuration
+# This file defines LLM providers and their models.
+#
+# API keys use ${ENV_VAR} syntax to reference environment variables.
+# This keeps secrets out of config files.
+#
+# Provider format:
+#   providers:
+#     provider_id:
+#       name: "Display Name"
+#       api_base_url: "https://api.example.com/v1"
+#       api_key: "${API_KEY_ENV_VAR}"
+#       headers:  # Optional custom headers
+#         X-Custom-Header: "${HEADER_VALUE}"
+#       models:
+#         - id: "model-id"
+#           name: "Model Name"
+#           max_tokens: 128000
+#           default: true  # One model should be marked as default
+
+providers:
+  synthetic:
+    name: "Synthetic"
+    api_base_url: "https://api.synthetic.new/openai/v1"
+    api_key: "${SYNTHETIC_API_KEY}"
+    models:
+      - id: "hf:moonshotai/Kimi-K2.5"
+        name: "Kimi-K2.5"
+        max_tokens: 128000
+        default: true
+        description: "Moonshot AI Kimi K2.5"
+
+      - id: "hf:zai-org/GLM-4.7"
+        name: "GLM-4.7"
+        max_tokens: 128000
+        description: "Zhipu AI GLM-4.7"
+
+      - id: "hf:MiniMaxAI/MiniMax-M2.1"
+        name: "MiniMax-M2.1"
+        max_tokens: 128000
+
+      - id: "hf:moonshotai/Kimi-K2-Thinking"
+        name: "Kimi-K2-Thinking"
+        max_tokens: 128000
+        description: "With reasoning capability"
+
+  openai:
+    name: "OpenAI"
+    api_base_url: "https://api.openai.com/v1"
+    api_key: "${OPENAI_API_KEY}"
+    models:
+      - id: "gpt-4o"
+        name: "GPT-4o"
+        max_tokens: 128000
+
+      - id: "gpt-4o-mini"
+        name: "GPT-4o Mini"
+        max_tokens: 128000
+
+      - id: "gpt-4-turbo"
+        name: "GPT-4 Turbo"
+        max_tokens: 128000
+
+  openrouter:
+    name: "OpenRouter"
+    api_base_url: "https://openrouter.ai/api/v1"
+    api_key: "${OPENROUTER_API_KEY}"
+    headers:
+      HTTP-Referer: "${OPENROUTER_SITE_URL}"
+      X-Title: "${OPENROUTER_APP_NAME}"
+    models:
+      - id: "anthropic/claude-3.5-sonnet"
+        name: "Claude 3.5 Sonnet"
+        max_tokens: 200000
+
+      - id: "anthropic/claude-3-opus"
+        name: "Claude 3 Opus"
+        max_tokens: 200000
+
+      - id: "google/gemini-pro-1.5"
+        name: "Gemini Pro 1.5"
+        max_tokens: 128000
+
+# Default provider to use when not specified
+default_provider: synthetic

@@ -9,6 +9,14 @@ import yaml
 from dotenv import load_dotenv
 
 from .loader import get_config_paths, ConfigPaths
+from .providers import (
+    ProviderConfig,
+    ProviderRegistry,
+    ModelConfig as ProviderModelConfig,
+    load_providers_from_file,
+    create_fallback_provider,
+    merge_providers,
+)
 
 
 @dataclass
@@ -50,6 +58,9 @@ class Settings:
     models: list[ModelConfig] = field(default_factory=list)
     agents_config: dict[str, Any] = field(default_factory=dict)
 
+    # Provider registry (new multi-provider system)
+    providers: ProviderRegistry = field(default_factory=ProviderRegistry)
+
     def get_model_by_index(self, index: int) -> Optional[ModelConfig]:
         """Get model by index."""
         if 0 <= index < len(self.models):
@@ -76,6 +87,31 @@ class Settings:
             model = self.get_model_by_index(model_ref)
             return model.id if model else self.default_model
         return model_ref
+
+    def resolve_model_with_provider(
+        self, model_ref: str | int
+    ) -> tuple[Optional[ProviderConfig], str]:
+        """
+        Resolve model reference to provider and model ID.
+
+        Args:
+            model_ref: Model reference (index, model_id, or provider:model_id)
+
+        Returns:
+            Tuple of (ProviderConfig, model_id). Provider may be None if using
+            legacy config without providers.yaml.
+        """
+        # Try provider registry first
+        if self.providers.providers:
+            provider, model = self.providers.resolve_model(model_ref)
+            if model:
+                return provider, model.id
+            # Model not found in registry, fall back
+            if provider:
+                return provider, self.resolve_model(model_ref)
+
+        # Fall back to legacy resolution
+        return None, self.resolve_model(model_ref)
 
 
 def load_models(models_file: Optional[Path]) -> list[ModelConfig]:
@@ -110,6 +146,41 @@ def load_agents_config(agents_file: Optional[Path]) -> dict[str, Any]:
             return yaml.safe_load(f) or {}
     except Exception:
         return {}
+
+
+def load_providers(paths: ConfigPaths) -> ProviderRegistry:
+    """
+    Load providers from all config locations and merge them.
+
+    Priority (later takes precedence):
+    1. Package defaults
+    2. User config
+    3. Local config
+    """
+    registries: list[ProviderRegistry] = []
+
+    # Load from package defaults
+    if paths.package_dir:
+        package_providers = paths.package_dir / "providers.yaml"
+        if package_providers.exists():
+            registries.append(load_providers_from_file(package_providers))
+
+    # Load from user config
+    if paths.user_dir:
+        user_providers = paths.user_dir / "providers.yaml"
+        if user_providers.exists():
+            registries.append(load_providers_from_file(user_providers))
+
+    # Load from local config (highest priority)
+    if paths.local_dir:
+        local_providers = paths.local_dir / "providers.yaml"
+        if local_providers.exists():
+            registries.append(load_providers_from_file(local_providers))
+
+    if not registries:
+        return ProviderRegistry()
+
+    return merge_providers(*registries)
 
 
 def load_settings() -> Settings:
@@ -150,19 +221,42 @@ def load_settings() -> Settings:
             except ValueError:
                 continue
 
+    # Load providers from providers.yaml (new multi-provider system)
+    providers = load_providers(paths)
+
+    # Get API settings - prefer from providers if available
+    api_key = os.getenv("SYNTHETIC_API_KEY", "")
+    api_base_url = os.getenv("API_BASE_URL", "https://api.synthetic.new/openai/v1")
+    default_model = os.getenv("DEFAULT_MODEL", "hf:moonshotai/Kimi-K2.5")
+
+    # If no providers loaded but we have env vars, create fallback provider
+    if not providers.providers and api_key:
+        fallback = create_fallback_provider(api_key, api_base_url, default_model)
+        providers = ProviderRegistry(
+            providers={"default": fallback},
+            default_provider_id="default",
+        )
+
+    # Use provider's API settings if available
+    default_provider = providers.get_default_provider()
+    if default_provider and default_provider.api_key:
+        api_key = default_provider.api_key
+        api_base_url = default_provider.api_base_url
+
     # Build settings
     settings = Settings(
-        api_key=os.getenv("SYNTHETIC_API_KEY", ""),
-        api_base_url=os.getenv("API_BASE_URL", "https://api.synthetic.new/openai/v1"),
+        api_key=api_key,
+        api_base_url=api_base_url,
         base_dir=Path.cwd(),  # Always use current directory as base
         config_paths=paths,
-        default_model=os.getenv("DEFAULT_MODEL", "hf:moonshotai/Kimi-K2.5"),
+        default_model=default_model,
         max_depth=int(os.getenv("AGENT_MAX_DEPTH", "3")),
         parallel_workers=int(os.getenv("AGENT_PARALLEL_WORKERS", "4")),
         telegram_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
         telegram_allowed_users=allowed_users,
         telegram_allow_all_users=allow_all_users,
         telegram_whitelist_configured=whitelist_configured,
+        providers=providers,
     )
 
     # Load models and agents config

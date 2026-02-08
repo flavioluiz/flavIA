@@ -45,7 +45,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "-m", "--model",
         type=str,
-        help="Model to use (index number or model ID)",
+        help="Model to use (index, model ID, or provider:model_id format)",
     )
 
     # Options
@@ -78,6 +78,27 @@ def parse_args() -> argparse.Namespace:
         "--list-tools",
         action="store_true",
         help="List available tools and exit",
+    )
+
+    parser.add_argument(
+        "--list-providers",
+        action="store_true",
+        help="List configured providers and exit",
+    )
+
+    parser.add_argument(
+        "--setup-provider",
+        action="store_true",
+        help="Run the interactive provider configuration wizard",
+    )
+
+    parser.add_argument(
+        "--test-provider",
+        type=str,
+        metavar="PROVIDER_ID",
+        nargs="?",
+        const="",  # Empty string means test default provider
+        help="Test connection to a provider (default: test default provider)",
     )
 
     parser.add_argument(
@@ -157,6 +178,22 @@ def list_models(settings: Settings) -> None:
     print("\nAvailable Models:")
     print("-" * 60)
 
+    # Show models from providers if available
+    if settings.providers.providers:
+        index = 0
+        for provider in settings.providers.providers.values():
+            print(f"\n  [{provider.name}]")
+            for model in provider.models:
+                default = " [DEFAULT]" if model.default else ""
+                print(f"    {index}: {model.name}{default}")
+                print(f"       ID: {provider.id}:{model.id}")
+                if model.description:
+                    print(f"       {model.description}")
+                index += 1
+        print()
+        return
+
+    # Fall back to legacy models list
     if not settings.models:
         print("  No models configured")
         print("  Add models to .flavia/models.yaml or ~/.config/flavia/models.yaml")
@@ -198,6 +235,65 @@ def list_tools_info() -> None:
             print(f"    {tool.description}")
 
 
+def list_providers(settings: Settings) -> None:
+    """Print configured providers."""
+    from flavia.setup.provider_wizard import list_providers as _list_providers
+    _list_providers(settings)
+
+
+def test_provider_cli(settings: Settings, provider_id: str) -> int:
+    """Test connection to a provider."""
+    from flavia.setup.provider_wizard import test_provider_connection
+
+    # Get provider to test
+    if provider_id:
+        provider = settings.providers.get_provider(provider_id)
+        if not provider:
+            print(f"Error: Provider '{provider_id}' not found")
+            print("\nAvailable providers:")
+            for pid in settings.providers.providers:
+                print(f"  - {pid}")
+            return 1
+    else:
+        provider = settings.providers.get_default_provider()
+        if not provider:
+            print("Error: No default provider configured")
+            print("Run 'flavia --setup-provider' to configure providers")
+            return 1
+
+    print(f"\nTesting provider: {provider.name} ({provider.id})")
+    print(f"  URL: {provider.api_base_url}")
+
+    if not provider.api_key:
+        print(f"\nError: API key not configured for {provider.name}")
+        if provider.api_key_env_var:
+            print(f"Set the {provider.api_key_env_var} environment variable")
+        return 1
+
+    # Get a model to test with
+    model = provider.get_default_model()
+    if not model:
+        print("Error: No models configured for this provider")
+        return 1
+
+    print(f"  Model: {model.id}")
+    print("\nConnecting...")
+
+    success, message = test_provider_connection(
+        provider.api_key,
+        provider.api_base_url,
+        model.id,
+        provider.headers if provider.headers else None,
+    )
+
+    if success:
+        print(f"\n[SUCCESS] {message}")
+        return 0
+    else:
+        print(f"\n[FAILED] {message}")
+        return 1
+
+
 def main() -> int:
     """Main entry point."""
     ensure_project_venv_and_reexec(sys.argv[1:])
@@ -213,6 +309,12 @@ def main() -> int:
     if args.init:
         from flavia.setup_wizard import run_setup_wizard
         success = run_setup_wizard()
+        return 0 if success else 1
+
+    # Setup provider wizard
+    if args.setup_provider:
+        from flavia.setup.provider_wizard import run_provider_wizard
+        success = run_provider_wizard()
         return 0 if success else 1
 
     # Load settings
@@ -232,6 +334,13 @@ def main() -> int:
     if args.list_tools:
         list_tools_info()
         return 0
+
+    if args.list_providers:
+        list_providers(settings)
+        return 0
+
+    if args.test_provider is not None:
+        return test_provider_cli(settings, args.test_provider)
 
     # Check API key
     if not settings.api_key:

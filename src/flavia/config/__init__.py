@@ -2,6 +2,13 @@
 
 from .settings import Settings, load_settings, get_settings, reset_settings
 from .loader import init_local_config, get_config_paths
+from .providers import (
+    ProviderConfig,
+    ProviderRegistry,
+    ModelConfig as ProviderModelConfig,
+    load_providers_from_file,
+    expand_env_vars,
+)
 
 __all__ = [
     "Settings",
@@ -10,4 +17,9 @@ __all__ = [
     "reset_settings",
     "init_local_config",
     "get_config_paths",
+    "ProviderConfig",
+    "ProviderRegistry",
+    "ProviderModelConfig",
+    "load_providers_from_file",
+    "expand_env_vars",
 ]

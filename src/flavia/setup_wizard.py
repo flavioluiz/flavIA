@@ -274,6 +274,23 @@ def _ask_user_guidance() -> str:
     return guidance
 
 
+def _offer_provider_setup(config_dir: Path) -> None:
+    """Offer to run the provider wizard after basic setup."""
+    import sys
+
+    # Skip if not running interactively (e.g., in tests)
+    if not sys.stdin.isatty():
+        return
+
+    if Confirm.ask(
+        "\n[bold]Configure LLM providers now?[/bold]\n"
+        "  (Set up API keys and models for OpenAI, OpenRouter, etc.)",
+        default=False,
+    ):
+        from flavia.setup.provider_wizard import run_provider_wizard
+        run_provider_wizard(config_dir.parent)
+
+
 def _run_basic_setup(target_dir: Path, config_dir: Path) -> bool:
     """Create basic default configuration."""
     console.print("\n[dim]Creating default configuration...[/dim]")
@@ -375,6 +392,10 @@ main:
         (config_dir / ".gitignore").write_text(".env\n")
 
         _print_success(config_dir)
+
+        # Offer provider configuration
+        _offer_provider_setup(config_dir)
+
         return True
 
     except Exception as e:
@@ -596,7 +617,8 @@ def _print_success(config_dir: Path, has_pdfs: bool = False):
         f"{extra_info}\n"
         "[bold]Next steps:[/bold]\n"
         f"  1. Edit [cyan]{config_dir}/.env[/cyan] with your API key\n"
-        "  2. Run [bold]flavia[/bold] to start chatting with your documents",
+        "  2. Run [bold]flavia[/bold] to start chatting with your documents\n\n"
+        "[dim]Tip: Run 'flavia --setup-provider' to configure multiple LLM providers[/dim]",
         title="Success",
     ))
 
