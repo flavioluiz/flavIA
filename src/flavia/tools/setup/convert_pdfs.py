@@ -104,7 +104,10 @@ class ConvertPdfsTool(BaseTool):
                 text = self._extract_text(pdf_path)
 
                 if not text.strip():
-                    errors.append(f"{pdf_file}: No text extracted (may need OCR)")
+                    errors.append(
+                        f"{pdf_file}: No text extracted from embedded PDF text layer "
+                        f"(OCR is not available yet)."
+                    )
                     continue
 
                 # Format output

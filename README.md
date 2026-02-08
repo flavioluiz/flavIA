@@ -270,7 +270,7 @@ flavia --init
 
 ## Future Features
 
-- **OCR Support**: Read scanned documents, handwritten notes, equations
+- **OCR Support (planned, not yet available)**: Support for scanned documents, handwritten notes, and equations will be added soon
 - **Citation Extraction**: Automatic bibliography building
 - **Multi-language**: Support for non-English documents
 - **Export**: Generate summaries, notes, flashcards
