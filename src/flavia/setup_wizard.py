@@ -269,6 +269,13 @@ API_BASE_URL=https://api.synthetic.new/openai/v1
 # Optional settings
 # DEFAULT_MODEL=hf:moonshotai/Kimi-K2.5
 # AGENT_MAX_DEPTH=3
+
+# Telegram bot (optional)
+# TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
+# Restrict bot to specific Telegram user IDs (comma-separated)
+# TELEGRAM_ALLOWED_USER_IDS=123456789,987654321
+# Public mode without whitelist (optional)
+# TELEGRAM_ALLOW_ALL_USERS=true
 """
         (config_dir / ".env").write_text(env_content)
 
@@ -382,6 +389,13 @@ def _run_ai_setup(
 
 SYNTHETIC_API_KEY=your_api_key_here
 API_BASE_URL=https://api.synthetic.new/openai/v1
+
+# Telegram bot (optional)
+# TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
+# Restrict bot to specific Telegram user IDs (comma-separated)
+# TELEGRAM_ALLOWED_USER_IDS=123456789,987654321
+# Public mode without whitelist (optional)
+# TELEGRAM_ALLOW_ALL_USERS=true
 """
     (config_dir / ".env").write_text(env_content)
 

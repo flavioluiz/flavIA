@@ -228,7 +228,11 @@ AGENT_MAX_DEPTH=3
 
 # For Telegram bot
 TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
-TELEGRAM_ALLOWED_USER_IDS=123456789
+# Restrict access to specific Telegram users (comma-separated)
+TELEGRAM_ALLOWED_USER_IDS=123456789,987654321
+
+# Optional: explicit public mode (no whitelist)
+TELEGRAM_ALLOW_ALL_USERS=true
 ```
 
 ### Configuration Priority

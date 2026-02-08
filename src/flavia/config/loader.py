@@ -127,7 +127,10 @@ AGENT_PARALLEL_WORKERS=4
 
 # Telegram (only needed for flavia --telegram)
 # TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
+# Restrict bot access to specific Telegram user IDs (comma-separated)
 # TELEGRAM_ALLOWED_USER_IDS=123456789
+# Public mode without whitelist (optional)
+# TELEGRAM_ALLOW_ALL_USERS=true
 """
         (config_dir / ".env").write_text(env_content)
 

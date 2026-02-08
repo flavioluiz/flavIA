@@ -42,6 +42,28 @@ def test_load_settings_ignores_invalid_telegram_user_ids(tmp_path, monkeypatch):
 
     settings = load_settings()
     assert settings.telegram_allowed_users == [123, 456]
+    assert settings.telegram_whitelist_configured is True
+    assert settings.telegram_allow_all_users is False
+
+
+def test_load_settings_supports_explicit_public_telegram_mode(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TELEGRAM_ALLOW_ALL_USERS", "true")
+    monkeypatch.setenv("TELEGRAM_ALLOWED_USER_IDS", "123")
+
+    settings = load_settings()
+    assert settings.telegram_allow_all_users is True
+
+
+def test_load_settings_supports_wildcard_public_mode(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TELEGRAM_ALLOWED_USER_IDS", "*")
+
+    settings = load_settings()
+    assert settings.telegram_allow_all_users is True
+    assert settings.telegram_whitelist_configured is False
 
 
 def test_python_m_flavia_propagates_exit_code(tmp_path):

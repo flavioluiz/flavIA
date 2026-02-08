@@ -40,6 +40,8 @@ class Settings:
     # Telegram settings
     telegram_token: str = ""
     telegram_allowed_users: list[int] = field(default_factory=list)
+    telegram_allow_all_users: bool = False
+    telegram_whitelist_configured: bool = False
 
     # Runtime
     verbose: bool = False
@@ -127,10 +129,18 @@ def load_settings() -> Settings:
     if paths.env_file:
         load_dotenv(paths.env_file, override=True)
 
-    # Parse allowed user IDs
-    allowed_users_str = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
+    # Parse Telegram access controls
+    allow_all_raw = os.getenv("TELEGRAM_ALLOW_ALL_USERS", "").strip().lower()
+    allow_all_users = allow_all_raw in {"1", "true", "yes", "y", "on"}
+
+    allowed_users_env = os.getenv("TELEGRAM_ALLOWED_USER_IDS")
+    allowed_users_str = (allowed_users_env or "").strip()
+    whitelist_configured = bool(allowed_users_str)
     allowed_users = []
-    if allowed_users_str:
+    if allowed_users_str.lower() in {"*", "all", "public"}:
+        allow_all_users = True
+        whitelist_configured = False
+    elif allowed_users_str:
         for uid in allowed_users_str.split(","):
             uid = uid.strip()
             if not uid:
@@ -151,6 +161,8 @@ def load_settings() -> Settings:
         parallel_workers=int(os.getenv("AGENT_PARALLEL_WORKERS", "4")),
         telegram_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
         telegram_allowed_users=allowed_users,
+        telegram_allow_all_users=allow_all_users,
+        telegram_whitelist_configured=whitelist_configured,
     )
 
     # Load models and agents config
