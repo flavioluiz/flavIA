@@ -27,26 +27,27 @@ classifiers = [
     "Topic :: Text Processing",
 ]
 dependencies = [
-    "openai>=1.0.0",
-    "python-dotenv>=1.0.0",
-    "pyyaml>=6.0",
-    "rich>=13.0.0",
-    "pdfplumber>=0.10.0",
+    "openai==1.12.0",
+    "httpx==0.28.1",
+    "python-dotenv==1.0.0",
+    "pyyaml==6.0.1",
+    "rich==13.9.4",
+    "pdfplumber==0.11.5",
 ]
 
 [project.optional-dependencies]
-telegram = ["python-telegram-bot>=20.0"]
+telegram = ["python-telegram-bot==22.6"]
 ocr = [
-    "pytesseract>=0.3.10",
-    "pdf2image>=1.16.0",
-    "Pillow>=10.0.0",
+    "pytesseract==0.3.13",
+    "pdf2image==1.17.0",
+    "Pillow==10.2.0",
 ]
 dev = ["pytest", "pytest-cov", "black", "ruff"]
 all = [
-    "python-telegram-bot>=20.0",
-    "pytesseract>=0.3.10",
-    "pdf2image>=1.16.0",
-    "Pillow>=10.0.0",
+    "python-telegram-bot==22.6",
+    "pytesseract==0.3.13",
+    "pdf2image==1.17.0",
+    "Pillow==10.2.0",
 ]
 
 [project.scripts]

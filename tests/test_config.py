@@ -72,6 +72,7 @@ def test_python_m_flavia_propagates_exit_code(tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = str(repo_root / "src")
     env["HOME"] = str(tmp_path / "home")
+    env["FLAVIA_DISABLE_AUTO_VENV"] = "1"
     env.pop("SYNTHETIC_API_KEY", None)
 
     result = subprocess.run(

@@ -82,8 +82,51 @@ class TelegramBot:
         # Backward-compatible default: no whitelist configured means public bot.
         return True
 
+    def _build_help_text(self) -> str:
+        """Build Telegram help text with all available commands."""
+        return (
+            "Welcome to flavIA Telegram mode.\n\n"
+            "Commands:\n"
+            "/start - Show welcome message and your IDs\n"
+            "/help - Show this help\n"
+            "/whoami - Show your Telegram user/chat IDs\n"
+            "/reset - Reset your conversation context\n\n"
+            "Capabilities:\n"
+            "- Reading and analyzing files\n"
+            "- Searching content\n"
+            "- Listing directories\n\n"
+            "Send a message to start."
+        )
+
+    def _message_preview(self, text: str, max_len: int = 120) -> str:
+        """Build one-line preview for logs."""
+        normalized = " ".join((text or "").split())
+        if len(normalized) <= max_len:
+            return normalized
+        return normalized[:max_len - 3] + "..."
+
+    def _log_event(self, update, action: str, extra: str = "") -> None:
+        """Log basic Telegram event details to terminal."""
+        user = update.effective_user
+        chat = update.effective_chat
+        user_id = user.id if user else None
+        chat_id = chat.id if chat else None
+        username = getattr(user, "username", None)
+        full_name = getattr(user, "full_name", None)
+        identity = username or full_name or "unknown"
+        suffix = f" | {extra}" if extra else ""
+        logger.info(
+            "tg %s | chat=%s user=%s (%s)%s",
+            action,
+            chat_id,
+            user_id,
+            identity,
+            suffix,
+        )
+
     async def _whoami_command(self, update, context) -> None:
         """Show IDs needed for Telegram whitelist configuration."""
+        self._log_event(update, "command:/whoami")
         user_id = update.effective_user.id if update.effective_user else None
         chat_id = update.effective_chat.id if update.effective_chat else None
         await update.message.reply_text(
@@ -95,6 +138,7 @@ class TelegramBot:
 
     async def _start_command(self, update, context) -> None:
         """Handle /start command."""
+        self._log_event(update, "command:/start")
         user_id = update.effective_user.id
         chat_id = update.effective_chat.id if update.effective_chat else None
 
@@ -108,19 +152,16 @@ class TelegramBot:
             return
 
         await update.message.reply_text(
-            "Welcome to flavIA!\n\n"
-            "Commands:\n"
-            "/start - Show this message\n"
-            "/reset - Reset conversation\n"
-            "/help - Show help\n\n"
-            "/whoami - Show your Telegram user/chat IDs\n\n"
+            self._build_help_text()
+            + "\n\n"
             f"Your User ID: {user_id}\n"
             f"Your Chat ID: {chat_id}\n\n"
-            "Send me a message to start!"
+            "Use TELEGRAM_ALLOWED_USER_IDS to whitelist specific users."
         )
 
     async def _reset_command(self, update, context) -> None:
         """Handle /reset command."""
+        self._log_event(update, "command:/reset")
         user_id = update.effective_user.id
 
         if not self._is_authorized(user_id):
@@ -133,26 +174,22 @@ class TelegramBot:
 
     async def _help_command(self, update, context) -> None:
         """Handle /help command."""
+        self._log_event(update, "command:/help")
         user_id = update.effective_user.id
 
         if not self._is_authorized(user_id):
             return
 
-        await update.message.reply_text(
-            "flavIA can help you with:\n"
-            "- Reading and analyzing files\n"
-            "- Searching content\n"
-            "- Listing directories\n\n"
-            "Use /whoami to see your Telegram IDs.\n\n"
-            "Just send a message!"
-        )
+        await update.message.reply_text(self._build_help_text())
 
     async def _handle_message(self, update, context) -> None:
         """Handle regular text messages."""
         user_id = update.effective_user.id
+        user_message = update.message.text
 
         if not self._is_authorized(user_id):
             chat_id = update.effective_chat.id if update.effective_chat else None
+            self._log_event(update, "blocked", "unauthorized user")
             await update.message.reply_text(
                 "You are not authorized.\n"
                 f"User ID: {user_id}\n"
@@ -160,15 +197,24 @@ class TelegramBot:
             )
             return
 
-        user_message = update.message.text
         if not user_message:
             return
 
+        self._log_event(
+            update,
+            "message:received",
+            f"text=\"{self._message_preview(user_message)}\"",
+        )
         await update.message.chat.send_action("typing")
 
         try:
             agent = self._get_or_create_agent(user_id)
             response = agent.run(user_message)
+            self._log_event(
+                update,
+                "message:answered",
+                f"chars={len(response)}",
+            )
 
             if len(response) > 4000:
                 chunks = [response[i:i+4000] for i in range(0, len(response), 4000)]
@@ -178,6 +224,7 @@ class TelegramBot:
                 await update.message.reply_text(response)
 
         except Exception as e:
+            self._log_event(update, "message:error", str(e)[:200])
             logger.error(f"Error: {e}")
             await update.message.reply_text(f"Error: {str(e)[:200]}")
 

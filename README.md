@@ -39,21 +39,18 @@ flavia --telegram
 
 ```bash
 # Clone the repository
-git clone https://github.com/flavioribeiro/flavia.git
-cd flavia
+git clone https://github.com/flavioluiz/flavIA.git
+cd flavIA
 
-# Install (creates 'flavia' command)
-pip install -e .
+# Recommended: isolated local venv + locked dependencies
+./install.sh
 
-# With Telegram support
-pip install -e ".[telegram]"
-
-# With OCR support (for scanned documents, handwriting)
-pip install -e ".[ocr]"
-
-# Everything
-pip install -e ".[all]"
+# Then run from the dedicated venv
+.venv/bin/flavia --version
 ```
+
+`flavia` also auto-reexecs into the project `.venv` when available.
+To disable this behavior (for debugging), set `FLAVIA_DISABLE_AUTO_VENV=1`.
 
 ## Quick Start
 

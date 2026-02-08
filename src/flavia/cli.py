@@ -16,6 +16,7 @@ from pathlib import Path
 
 from flavia.config import load_settings, Settings
 from flavia import tools as _  # Register tools
+from flavia.venv_bootstrap import ensure_project_venv_and_reexec
 
 
 def parse_args() -> argparse.Namespace:
@@ -199,6 +200,8 @@ def list_tools_info() -> None:
 
 def main() -> int:
     """Main entry point."""
+    ensure_project_venv_and_reexec(sys.argv[1:])
+
     args = parse_args()
 
     # Version
