@@ -116,6 +116,8 @@ flavia --config              # Show configuration paths
 
 # Provider management
 flavia --setup-provider      # Interactive provider wizard
+flavia --manage-provider     # Manage models (add/remove/fetch)
+flavia --manage-provider openai  # Manage specific provider
 flavia --test-provider       # Test default provider connection
 flavia --test-provider openai  # Test specific provider
 ```
@@ -229,6 +231,27 @@ flavIA supports multiple LLM providers. Use the interactive wizard:
 ```bash
 flavia --setup-provider
 ```
+
+During setup, you can:
+- **Fetch models from API**: Some providers (like Synthetic) expose a `/models` endpoint. The wizard can fetch and display available models automatically.
+- **Add custom models**: Manually add models by specifying their ID and display name.
+- **Select multiple models**: Choose which models to enable for a provider.
+
+### Managing Provider Models
+
+After initial setup, manage models for existing providers:
+
+```bash
+flavia --manage-provider          # Select provider interactively
+flavia --manage-provider openai   # Manage specific provider
+```
+
+The management menu allows you to:
+- **[a] Add model** - Add a new model manually
+- **[f] Fetch models** - Fetch available models from provider API
+- **[r] Remove model(s)** - Remove models by number
+- **[d] Set default** - Change the default model
+- **[s] Save** - Save changes to config file
 
 Or create `providers.yaml` manually:
 

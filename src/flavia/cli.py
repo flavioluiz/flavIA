@@ -93,6 +93,15 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--manage-provider",
+        type=str,
+        metavar="PROVIDER_ID",
+        nargs="?",
+        const="",  # Empty string means select interactively
+        help="Manage models for a provider (add, remove, fetch from API)",
+    )
+
+    parser.add_argument(
         "--test-provider",
         type=str,
         metavar="PROVIDER_ID",
@@ -348,6 +357,12 @@ def main() -> int:
 
     if args.test_provider is not None:
         return test_provider_cli(settings, args.test_provider)
+
+    if args.manage_provider is not None:
+        from flavia.setup.provider_wizard import manage_provider_models
+        provider_id = args.manage_provider if args.manage_provider else None
+        success = manage_provider_models(settings, provider_id)
+        return 0 if success else 1
 
     # Check API key for the model that will actually be used by the main agent.
     active_model_ref: str | int = settings.default_model

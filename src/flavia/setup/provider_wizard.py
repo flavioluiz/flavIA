@@ -4,7 +4,9 @@ import os
 from pathlib import Path
 from typing import Optional
 
+import httpx
 import yaml
+from openai import OpenAI
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
@@ -16,6 +18,82 @@ from flavia.config.providers import (
 )
 
 console = Console()
+
+
+def fetch_provider_models(
+    api_key: str,
+    api_base_url: str,
+    headers: Optional[dict[str, str]] = None,
+    timeout: float = 30.0,
+) -> tuple[list[dict], Optional[str]]:
+    """
+    Fetch available models from a provider's /models endpoint.
+
+    Args:
+        api_key: API key for authentication
+        api_base_url: Base URL of the API
+        headers: Optional custom headers
+        timeout: Request timeout in seconds
+
+    Returns:
+        Tuple of (models_list, error_message)
+        models_list contains dicts with 'id' and 'name' keys
+        error_message is None on success
+    """
+    try:
+        kwargs: dict = {
+            "api_key": api_key,
+            "base_url": api_base_url,
+            "timeout": httpx.Timeout(timeout, connect=10.0),
+        }
+        if headers:
+            kwargs["default_headers"] = headers
+
+        try:
+            client = OpenAI(**kwargs)
+        except TypeError as exc:
+            if "unexpected keyword argument 'proxies'" not in str(exc):
+                raise
+            http_kwargs = {k: v for k, v in kwargs.items() if k != "default_headers"}
+            client = OpenAI(**http_kwargs, http_client=httpx.Client(timeout=httpx.Timeout(timeout, connect=10.0)))
+
+        response = client.models.list()
+
+        models = []
+        for model in response.data:
+            model_id = model.id
+            # Generate a friendly name from the ID
+            name = _generate_model_name(model_id)
+            models.append({"id": model_id, "name": name})
+
+        # Sort by name for better display
+        models.sort(key=lambda m: m["name"].lower())
+
+        return models, None
+
+    except Exception as e:
+        return [], f"Failed to fetch models: {e}"
+
+
+def _generate_model_name(model_id: str) -> str:
+    """Generate a friendly display name from a model ID."""
+    # Handle common ID formats like "hf:org/model-name" or "provider/model"
+    name = model_id
+
+    # Remove common prefixes
+    if name.startswith("hf:"):
+        name = name[3:]
+
+    # Extract the model name part (after last /)
+    if "/" in name:
+        parts = name.split("/")
+        name = parts[-1]  # Take the last part as the main name
+
+    # Clean up common suffixes/patterns
+    name = name.replace("-Instruct", "")
+    name = name.replace("-instruct", "")
+
+    return name
 
 # Known provider templates
 KNOWN_PROVIDERS = {
@@ -190,7 +268,12 @@ def _get_api_key(provider_name: str, env_var: str) -> tuple[str, str]:
         return key_input, key_input
 
 
-def _select_models(available_models: list[dict]) -> list[dict]:
+def _select_models(
+    available_models: list[dict],
+    api_key: Optional[str] = None,
+    api_base_url: Optional[str] = None,
+    headers: Optional[dict[str, str]] = None,
+) -> list[dict]:
     """Let user select which models to enable."""
     console.print("\n[bold]Select models to enable:[/bold]")
 
@@ -200,13 +283,25 @@ def _select_models(available_models: list[dict]) -> list[dict]:
         table.add_row(f"  [{i}]", f"{model['name']}{default_marker}", f"[dim]{model['id']}[/dim]")
     console.print(table)
     console.print("  [a] All models")
+    if api_key and api_base_url:
+        console.print("  [f] Fetch models from provider API")
+    console.print("  [+] Add custom model")
 
     choice = Prompt.ask(
-        "\nEnter numbers separated by comma (e.g., 1,2,3) or 'a' for all",
+        "\nEnter numbers separated by comma, 'a' for all, 'f' to fetch, or '+' to add",
         default="a",
     )
 
     if choice.lower() == "a":
+        return available_models
+
+    if choice.lower() == "f" and api_key and api_base_url:
+        return _fetch_and_select_models(api_key, api_base_url, headers, available_models)
+
+    if choice == "+":
+        custom = _add_custom_model()
+        if custom:
+            return available_models + [custom]
         return available_models
 
     selected = []
@@ -219,6 +314,166 @@ def _select_models(available_models: list[dict]) -> list[dict]:
             continue
 
     return selected if selected else available_models
+
+
+def _fetch_and_select_models(
+    api_key: str,
+    api_base_url: str,
+    headers: Optional[dict[str, str]],
+    fallback_models: list[dict],
+) -> list[dict]:
+    """Fetch models from provider and let user select."""
+    console.print("\n[dim]Fetching models from provider...[/dim]")
+
+    # Resolve headers if present
+    resolved_headers = {}
+    if headers:
+        for k, v in headers.items():
+            resolved, _ = expand_env_vars(v)
+            resolved_headers[k] = resolved
+
+    models, error = fetch_provider_models(
+        api_key,
+        api_base_url,
+        resolved_headers if resolved_headers else None,
+    )
+
+    if error:
+        console.print(f"[red]{error}[/red]")
+        console.print("[yellow]Using default model list instead.[/yellow]")
+        return fallback_models
+
+    if not models:
+        console.print("[yellow]No models returned from provider.[/yellow]")
+        return fallback_models
+
+    console.print(f"[green]Found {len(models)} models![/green]")
+
+    # Display fetched models and let user select
+    console.print("\n[bold]Available models from provider:[/bold]")
+
+    # Show in pages if too many
+    page_size = 20
+    if len(models) > page_size:
+        console.print(f"[dim](Showing first {page_size} of {len(models)} models)[/dim]")
+        displayed_models = models[:page_size]
+    else:
+        displayed_models = models
+
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    for i, model in enumerate(displayed_models, 1):
+        table.add_row(f"  [{i}]", f"{model['name']}", f"[dim]{model['id']}[/dim]")
+    console.print(table)
+    console.print("  [a] All displayed models")
+    console.print("  [s] Search by name")
+    if len(models) > page_size:
+        console.print("  [m] Show more models")
+
+    choice = Prompt.ask(
+        "\nEnter numbers separated by comma, 'a' for all, or 's' to search",
+        default="a",
+    )
+
+    if choice.lower() == "a":
+        selected = displayed_models
+    elif choice.lower() == "s":
+        selected = _search_models(models)
+    elif choice.lower() == "m" and len(models) > page_size:
+        # Show all models
+        return _select_from_full_list(models)
+    else:
+        selected = []
+        for part in choice.split(","):
+            try:
+                index = int(part.strip()) - 1
+                if 0 <= index < len(displayed_models):
+                    selected.append(displayed_models[index])
+            except ValueError:
+                continue
+
+    if not selected:
+        console.print("[yellow]No models selected, using defaults.[/yellow]")
+        return fallback_models
+
+    # Mark first selected as default
+    selected[0]["default"] = True
+    return selected
+
+
+def _search_models(models: list[dict]) -> list[dict]:
+    """Search and select models by name."""
+    query = Prompt.ask("Search for model (partial name)").lower()
+
+    matches = [m for m in models if query in m["name"].lower() or query in m["id"].lower()]
+
+    if not matches:
+        console.print("[yellow]No matches found.[/yellow]")
+        return []
+
+    console.print(f"\n[bold]Found {len(matches)} matching models:[/bold]")
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    for i, model in enumerate(matches[:20], 1):
+        table.add_row(f"  [{i}]", f"{model['name']}", f"[dim]{model['id']}[/dim]")
+    console.print(table)
+
+    choice = Prompt.ask(
+        "Enter numbers to select (comma-separated), or 'a' for all matches",
+        default="a",
+    )
+
+    if choice.lower() == "a":
+        return matches[:20]
+
+    selected = []
+    for part in choice.split(","):
+        try:
+            index = int(part.strip()) - 1
+            if 0 <= index < len(matches):
+                selected.append(matches[index])
+        except ValueError:
+            continue
+
+    return selected
+
+
+def _select_from_full_list(models: list[dict]) -> list[dict]:
+    """Display and select from full model list."""
+    console.print(f"\n[bold]All {len(models)} available models:[/bold]")
+
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    for i, model in enumerate(models, 1):
+        table.add_row(f"  [{i}]", f"{model['name']}", f"[dim]{model['id']}[/dim]")
+    console.print(table)
+
+    choice = Prompt.ask(
+        "Enter numbers to select (comma-separated)",
+        default="1",
+    )
+
+    selected = []
+    for part in choice.split(","):
+        try:
+            index = int(part.strip()) - 1
+            if 0 <= index < len(models):
+                selected.append(models[index])
+        except ValueError:
+            continue
+
+    return selected if selected else [models[0]]
+
+
+def _add_custom_model() -> Optional[dict]:
+    """Prompt user to add a custom model."""
+    console.print("\n[bold]Add custom model:[/bold]")
+
+    model_id = Prompt.ask("Model ID (as used in API calls)")
+    if not model_id:
+        return None
+
+    model_name = Prompt.ask("Display name", default=_generate_model_name(model_id))
+    is_default = Confirm.ask("Set as default?", default=False)
+
+    return {"id": model_id, "name": model_name, "default": is_default}
 
 
 def _select_location() -> str:
@@ -357,8 +612,13 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
 
         api_key, api_key_config = _get_api_key(provider_name, api_key_env)
 
-        # Select models
-        models = _select_models(template["models"])
+        # Select models (pass API info for optional model fetching)
+        models = _select_models(
+            template["models"],
+            api_key=api_key,
+            api_base_url=api_base_url,
+            headers=headers,
+        )
 
     # Step 3: Test connection (optional)
     if api_key and Confirm.ask("\nTest connection?", default=True):
@@ -459,3 +719,278 @@ def list_providers(settings) -> None:
             console.print(f"      - {model.name}: {model.id}{default}")
 
     console.print()
+
+
+def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
+    """
+    Manage models for a configured provider.
+
+    Args:
+        settings: Current settings
+        provider_id: Provider ID to manage (prompts if not provided)
+
+    Returns:
+        True if changes were saved
+    """
+    if not settings.providers.providers:
+        console.print("[yellow]No providers configured.[/yellow]")
+        console.print("Run 'flavia --setup-provider' to configure a provider first.")
+        return False
+
+    # Select provider if not specified
+    if not provider_id:
+        provider_id = _select_existing_provider(settings)
+        if not provider_id:
+            return False
+
+    provider = settings.providers.get_provider(provider_id)
+    if not provider:
+        console.print(f"[red]Provider '{provider_id}' not found.[/red]")
+        return False
+
+    console.print(
+        Panel.fit(
+            f"[bold blue]Manage Models[/bold blue]\n\n"
+            f"Provider: [bold]{provider.name}[/bold] ({provider_id})\n"
+            f"Models: {len(provider.models)}",
+            title="Model Management",
+        )
+    )
+
+    while True:
+        # Show current models
+        console.print("\n[bold]Current models:[/bold]")
+        table = Table(show_header=False, box=None, padding=(0, 2))
+        for i, model in enumerate(provider.models, 1):
+            default_marker = " [default]" if model.default else ""
+            table.add_row(f"  [{i}]", f"{model.name}{default_marker}", f"[dim]{model.id}[/dim]")
+        console.print(table)
+
+        # Menu options
+        console.print("\n[bold]Actions:[/bold]")
+        console.print("  [a] Add model")
+        console.print("  [f] Fetch models from provider API")
+        console.print("  [r] Remove model(s)")
+        console.print("  [d] Set default model")
+        console.print("  [s] Save and exit")
+        console.print("  [q] Quit without saving")
+
+        choice = Prompt.ask("\nChoice", default="s").lower()
+
+        if choice == "a":
+            custom = _add_custom_model()
+            if custom:
+                provider.models.append(
+                    type(provider.models[0])(
+                        id=custom["id"],
+                        name=custom["name"],
+                        default=custom.get("default", False),
+                    )
+                    if provider.models else custom
+                )
+                console.print(f"[green]Added model: {custom['name']}[/green]")
+
+        elif choice == "f":
+            if not provider.api_key:
+                console.print("[red]API key not configured for this provider.[/red]")
+                continue
+
+            new_models = _fetch_models_for_provider(provider)
+            if new_models:
+                # Ask how to handle
+                console.print(f"\n[green]Found {len(new_models)} models.[/green]")
+                action = Prompt.ask(
+                    "How to handle?",
+                    choices=["replace", "merge", "cancel"],
+                    default="merge",
+                )
+                if action == "replace":
+                    provider.models.clear()
+                    for m in new_models:
+                        provider.models.append(
+                            type(provider.models[0])(id=m["id"], name=m["name"], default=m.get("default", False))
+                            if provider.models else m
+                        )
+                elif action == "merge":
+                    existing_ids = {m.id for m in provider.models}
+                    added = 0
+                    for m in new_models:
+                        if m["id"] not in existing_ids:
+                            provider.models.append(m)
+                            added += 1
+                    console.print(f"[green]Added {added} new models.[/green]")
+
+        elif choice == "r":
+            indices = Prompt.ask("Enter model numbers to remove (comma-separated)")
+            removed = []
+            for part in indices.split(","):
+                try:
+                    index = int(part.strip()) - 1
+                    if 0 <= index < len(provider.models):
+                        removed.append(provider.models[index])
+                except ValueError:
+                    continue
+            for model in removed:
+                provider.models.remove(model)
+                console.print(f"[yellow]Removed: {model.name}[/yellow]")
+
+        elif choice == "d":
+            index_str = Prompt.ask("Enter model number to set as default")
+            try:
+                index = int(index_str) - 1
+                if 0 <= index < len(provider.models):
+                    for m in provider.models:
+                        m.default = False
+                    provider.models[index].default = True
+                    console.print(f"[green]Default set to: {provider.models[index].name}[/green]")
+            except ValueError:
+                console.print("[red]Invalid number.[/red]")
+
+        elif choice == "s":
+            # Save changes
+            return _save_provider_changes(settings, provider_id, provider)
+
+        elif choice == "q":
+            console.print("[yellow]Changes discarded.[/yellow]")
+            return False
+
+
+def _select_existing_provider(settings) -> Optional[str]:
+    """Let user select from existing providers."""
+    providers = list(settings.providers.providers.keys())
+
+    console.print("\n[bold]Select provider to manage:[/bold]")
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    for i, pid in enumerate(providers, 1):
+        provider = settings.providers.providers[pid]
+        table.add_row(f"  [{i}]", f"[bold]{provider.name}[/bold]", f"[dim]{pid}[/dim]")
+    console.print(table)
+
+    choice = Prompt.ask("Enter number")
+    try:
+        index = int(choice) - 1
+        if 0 <= index < len(providers):
+            return providers[index]
+    except ValueError:
+        pass
+
+    console.print("[red]Invalid choice.[/red]")
+    return None
+
+
+def _fetch_models_for_provider(provider) -> list[dict]:
+    """Fetch models from a provider."""
+    console.print("\n[dim]Fetching models from provider...[/dim]")
+
+    # Resolve headers if present
+    resolved_headers = {}
+    if provider.headers:
+        for k, v in provider.headers.items():
+            resolved, _ = expand_env_vars(v)
+            resolved_headers[k] = resolved
+
+    models, error = fetch_provider_models(
+        provider.api_key,
+        provider.api_base_url,
+        resolved_headers if resolved_headers else None,
+    )
+
+    if error:
+        console.print(f"[red]{error}[/red]")
+        return []
+
+    if not models:
+        console.print("[yellow]No models returned from provider.[/yellow]")
+        return []
+
+    console.print(f"[green]Found {len(models)} models![/green]")
+
+    # Let user select from fetched models
+    console.print("\n[bold]Available models:[/bold]")
+    displayed = models[:30]  # Limit display
+    if len(models) > 30:
+        console.print(f"[dim](Showing first 30 of {len(models)} models)[/dim]")
+
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    for i, model in enumerate(displayed, 1):
+        table.add_row(f"  [{i}]", f"{model['name']}", f"[dim]{model['id']}[/dim]")
+    console.print(table)
+    console.print("  [a] All displayed")
+    console.print("  [s] Search")
+
+    choice = Prompt.ask("Select models (numbers/a/s)", default="a").lower()
+
+    if choice == "a":
+        selected = displayed
+    elif choice == "s":
+        selected = _search_models(models)
+    else:
+        selected = []
+        for part in choice.split(","):
+            try:
+                index = int(part.strip()) - 1
+                if 0 <= index < len(displayed):
+                    selected.append(displayed[index])
+            except ValueError:
+                continue
+
+    # Mark first as default
+    if selected:
+        selected[0]["default"] = True
+
+    return selected
+
+
+def _save_provider_changes(settings, provider_id: str, provider) -> bool:
+    """Save provider model changes to config file."""
+    from flavia.config.loader import get_config_paths
+
+    paths = get_config_paths()
+
+    # Determine which file to update
+    if paths.providers_file:
+        providers_file = paths.providers_file
+    elif paths.local_dir:
+        providers_file = paths.local_dir / "providers.yaml"
+    else:
+        providers_file = ensure_user_config() / "providers.yaml"
+
+    # Load existing config
+    existing_data = {}
+    if providers_file.exists():
+        try:
+            with open(providers_file, "r", encoding="utf-8") as f:
+                existing_data = yaml.safe_load(f) or {}
+        except Exception:
+            pass
+
+    # Ensure providers dict exists
+    if "providers" not in existing_data:
+        existing_data["providers"] = {}
+
+    # Convert models to serializable format
+    models_data = []
+    for m in provider.models:
+        model_dict = {"id": m.id if hasattr(m, 'id') else m["id"], "name": m.name if hasattr(m, 'name') else m["name"]}
+        if (hasattr(m, 'default') and m.default) or (isinstance(m, dict) and m.get("default")):
+            model_dict["default"] = True
+        models_data.append(model_dict)
+
+    # Update provider config
+    if provider_id in existing_data["providers"]:
+        existing_data["providers"][provider_id]["models"] = models_data
+    else:
+        # New provider - need full config
+        existing_data["providers"][provider_id] = {
+            "name": provider.name,
+            "api_base_url": provider.api_base_url,
+            "api_key": f"${{{provider.api_key_env_var}}}" if provider.api_key_env_var else provider.api_key,
+            "models": models_data,
+        }
+
+    # Write back
+    with open(providers_file, "w", encoding="utf-8") as f:
+        yaml.dump(existing_data, f, default_flow_style=False, sort_keys=False)
+
+    console.print(f"\n[green]Changes saved to: {providers_file}[/green]")
+    return True
