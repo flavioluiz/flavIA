@@ -113,19 +113,21 @@ def init_local_config(target_dir: Optional[Path] = None) -> bool:
         # Create directory
         config_dir.mkdir(parents=True)
 
-        # Create .env file
+        # Create .env file (API keys are commented out to avoid overriding existing config)
         env_content = """\
 # flavIA Local Configuration
 # This file contains sensitive settings - do not commit to git!
+# Uncomment and set values if not already configured elsewhere
+# (e.g., in ~/.config/flavia/.env or environment variables)
 
-# API Configuration (required)
-SYNTHETIC_API_KEY=your_api_key_here
-API_BASE_URL=https://api.synthetic.new/openai/v1
+# API Configuration
+# SYNTHETIC_API_KEY=your_api_key_here
+# API_BASE_URL=https://api.synthetic.new/openai/v1
 
 # Agent defaults
-DEFAULT_MODEL=hf:moonshotai/Kimi-K2.5
-AGENT_MAX_DEPTH=3
-AGENT_PARALLEL_WORKERS=4
+# DEFAULT_MODEL=hf:moonshotai/Kimi-K2.5
+# AGENT_MAX_DEPTH=3
+# AGENT_PARALLEL_WORKERS=4
 
 # Telegram (only needed for flavia --telegram)
 # TELEGRAM_BOT_TOKEN=123456:ABC-DEF...

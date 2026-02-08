@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Optional
 
 import httpx
-from openai import OpenAI
+from openai import OpenAI, APIConnectionError, AuthenticationError, APITimeoutError, APIStatusError
 
 from flavia.config import Settings, ProviderConfig
 from flavia.tools import registry
@@ -80,6 +80,9 @@ class BaseAgent(ABC):
                 "base_url": self.settings.api_base_url,
             }
 
+        # Add timeout to avoid hanging on connection issues
+        kwargs["timeout"] = httpx.Timeout(60.0, connect=10.0)
+
         try:
             return OpenAI(**kwargs)
         except TypeError as exc:
@@ -88,7 +91,7 @@ class BaseAgent(ABC):
             # Compatibility fallback for environments where OpenAI SDK and httpx versions mismatch.
             # Remove default_headers for httpx.Client fallback if present
             http_kwargs = {k: v for k, v in kwargs.items() if k != "default_headers"}
-            return OpenAI(**http_kwargs, http_client=httpx.Client())
+            return OpenAI(**http_kwargs, http_client=httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)))
 
     def _init_system_prompt(self) -> None:
         """Initialize the system prompt."""
@@ -115,8 +118,17 @@ class BaseAgent(ABC):
             kwargs["tools"] = self.tool_schemas
             kwargs["tool_choice"] = "auto"
 
-        response = self.client.chat.completions.create(**kwargs)
-        return response.choices[0].message
+        try:
+            response = self.client.chat.completions.create(**kwargs)
+            return response.choices[0].message
+        except AuthenticationError as e:
+            raise RuntimeError(f"Authentication failed: Invalid API key. Check your SYNTHETIC_API_KEY configuration. Details: {e}") from e
+        except APIConnectionError as e:
+            raise RuntimeError(f"Connection failed: Unable to reach the API server. Check your network and API_BASE_URL. Details: {e}") from e
+        except APITimeoutError as e:
+            raise RuntimeError(f"Request timed out: The API server took too long to respond. Details: {e}") from e
+        except APIStatusError as e:
+            raise RuntimeError(f"API error (status {e.status_code}): {e.message}") from e
 
     def _assistant_message_to_dict(self, message: Any) -> dict[str, Any]:
         """Normalize assistant message to API-safe chat message dict."""

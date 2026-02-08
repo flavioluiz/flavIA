@@ -133,7 +133,13 @@ def create_setup_agent(base_dir: Path, include_pdf_tool: bool = False, pdf_files
     # Load settings
     settings = load_settings()
 
-    if not settings.api_key:
+    # Check API key availability (providers or legacy)
+    selected_provider, _ = settings.resolve_model_with_provider(settings.default_model)
+    if selected_provider is not None:
+        if not selected_provider.api_key:
+            env_hint = f" Set {selected_provider.api_key_env_var} and try again." if selected_provider.api_key_env_var else ""
+            return None, f"API key not configured for provider '{selected_provider.id}'.{env_hint}"
+    elif not settings.api_key:
         return None, "API key not configured. Please set SYNTHETIC_API_KEY environment variable."
 
     # Register setup tools
@@ -298,13 +304,14 @@ def _run_basic_setup(target_dir: Path, config_dir: Path) -> bool:
     try:
         config_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create .env
+        # Create .env (API keys are commented out to avoid overriding existing config)
         env_content = """\
 # flavIA Configuration
-# Add your API key here
+# Uncomment and set your API key if not already configured elsewhere
+# (e.g., in ~/.config/flavia/.env or environment variables)
 
-SYNTHETIC_API_KEY=your_api_key_here
-API_BASE_URL=https://api.synthetic.new/openai/v1
+# SYNTHETIC_API_KEY=your_api_key_here
+# API_BASE_URL=https://api.synthetic.new/openai/v1
 
 # Optional settings
 # DEFAULT_MODEL=hf:moonshotai/Kimi-K2.5
@@ -428,13 +435,14 @@ def _run_ai_setup(
     # Create the config dir first
     config_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create .env
+    # Create .env (API keys are commented out to avoid overriding existing config)
     env_content = """\
 # flavIA Configuration
-# Add your API key here
+# Uncomment and set your API key if not already configured elsewhere
+# (e.g., in ~/.config/flavia/.env or environment variables)
 
-SYNTHETIC_API_KEY=your_api_key_here
-API_BASE_URL=https://api.synthetic.new/openai/v1
+# SYNTHETIC_API_KEY=your_api_key_here
+# API_BASE_URL=https://api.synthetic.new/openai/v1
 
 # Telegram bot (optional)
 # TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
