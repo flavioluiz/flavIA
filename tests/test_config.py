@@ -1,0 +1,65 @@
+"""Tests for configuration loading behavior."""
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+from flavia.config.loader import get_config_paths
+from flavia.config.settings import load_settings
+
+
+def test_env_file_prefers_local_flavia_over_user(tmp_path, monkeypatch):
+    """Local .flavia/.env should override user-level configuration."""
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    monkeypatch.chdir(project_dir)
+
+    home_dir = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.delenv("SYNTHETIC_API_KEY", raising=False)
+
+    local_config = project_dir / ".flavia"
+    local_config.mkdir()
+    (local_config / ".env").write_text("SYNTHETIC_API_KEY=local_key\n", encoding="utf-8")
+
+    user_config = home_dir / ".config" / "flavia"
+    user_config.mkdir(parents=True)
+    (user_config / ".env").write_text("SYNTHETIC_API_KEY=user_key\n", encoding="utf-8")
+
+    paths = get_config_paths()
+    assert paths.env_file == local_config / ".env"
+
+    settings = load_settings()
+    assert settings.api_key == "local_key"
+
+
+def test_load_settings_ignores_invalid_telegram_user_ids(tmp_path, monkeypatch):
+    """Invalid IDs should not crash settings loading."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TELEGRAM_ALLOWED_USER_IDS", "123, invalid, 456, , nope")
+
+    settings = load_settings()
+    assert settings.telegram_allowed_users == [123, 456]
+
+
+def test_python_m_flavia_propagates_exit_code(tmp_path):
+    """python -m flavia should return the CLI exit code."""
+    repo_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(repo_root / "src")
+    env["HOME"] = str(tmp_path / "home")
+    env.pop("SYNTHETIC_API_KEY", None)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "flavia"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "API key not configured" in result.stdout

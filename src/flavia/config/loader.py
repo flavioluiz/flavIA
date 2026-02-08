@@ -1,0 +1,237 @@
+"""Configuration file discovery and initialization."""
+
+import os
+import shutil
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+# Package defaults directory
+PACKAGE_DIR = Path(__file__).parent.parent
+DEFAULTS_DIR = PACKAGE_DIR / "defaults"
+
+
+@dataclass
+class ConfigPaths:
+    """Discovered configuration paths."""
+
+    # Directories
+    local_dir: Optional[Path] = None      # .flavia/ in current directory
+    user_dir: Optional[Path] = None       # ~/.config/flavia/
+    package_dir: Path = DEFAULTS_DIR      # Package defaults
+
+    # Specific files (resolved from directories)
+    env_file: Optional[Path] = None
+    models_file: Optional[Path] = None
+    agents_file: Optional[Path] = None
+
+    def __post_init__(self):
+        """Resolve file paths from directories."""
+        # Priority: local > user > package
+        self.env_file = self._find_file(".env")
+        self.models_file = self._find_file("models.yaml")
+        self.agents_file = self._find_file("agents.yaml")
+
+    def _find_file(self, filename: str) -> Optional[Path]:
+        """Find a config file in priority order."""
+        # Check local .flavia/ directory
+        if self.local_dir:
+            local_file = self.local_dir / filename
+            if local_file.exists():
+                return local_file
+
+        # Check user directory
+        if self.user_dir:
+            user_file = self.user_dir / filename
+            if user_file.exists():
+                return user_file
+
+        # Check package defaults
+        if self.package_dir:
+            package_file = self.package_dir / filename
+            if package_file.exists():
+                return package_file
+
+        return None
+
+
+def get_config_paths() -> ConfigPaths:
+    """
+    Discover configuration paths.
+
+    Priority order (highest to lowest):
+    1. .flavia/ in current directory
+    2. ~/.config/flavia/
+    3. Package defaults
+
+    Returns:
+        ConfigPaths with discovered locations
+    """
+    # Local directory
+    local_dir = Path.cwd() / ".flavia"
+    local_dir = local_dir if local_dir.exists() else None
+
+    # User directory
+    user_dir = Path.home() / ".config" / "flavia"
+    user_dir = user_dir if user_dir.exists() else None
+
+    return ConfigPaths(
+        local_dir=local_dir,
+        user_dir=user_dir,
+        package_dir=DEFAULTS_DIR,
+    )
+
+
+def init_local_config(target_dir: Optional[Path] = None) -> bool:
+    """
+    Initialize local configuration in the specified or current directory.
+
+    Creates .flavia/ directory with template configuration files.
+
+    Args:
+        target_dir: Directory to initialize (default: current directory)
+
+    Returns:
+        True if successful
+    """
+    if target_dir is None:
+        target_dir = Path.cwd()
+
+    config_dir = target_dir / ".flavia"
+
+    # Check if already exists
+    if config_dir.exists():
+        print(f"Configuration already exists at {config_dir}")
+        print("Delete it first if you want to reinitialize.")
+        return False
+
+    print(f"Initializing flavIA configuration in {config_dir}")
+
+    try:
+        # Create directory
+        config_dir.mkdir(parents=True)
+
+        # Create .env file
+        env_content = """\
+# flavIA Local Configuration
+# This file contains sensitive settings - do not commit to git!
+
+# API Configuration (required)
+SYNTHETIC_API_KEY=your_api_key_here
+API_BASE_URL=https://api.synthetic.new/openai/v1
+
+# Agent defaults
+DEFAULT_MODEL=hf:moonshotai/Kimi-K2.5
+AGENT_MAX_DEPTH=3
+AGENT_PARALLEL_WORKERS=4
+
+# Telegram (only needed for flavia --telegram)
+# TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
+# TELEGRAM_ALLOWED_USER_IDS=123456789
+"""
+        (config_dir / ".env").write_text(env_content)
+
+        # Create models.yaml
+        models_content = """\
+# Available models for this project
+# Reference by index (0, 1, 2...) or full ID
+
+models:
+  - id: "hf:moonshotai/Kimi-K2.5"
+    name: "Kimi-K2.5"
+    default: true
+    description: "Moonshot AI Kimi K2.5"
+
+  - id: "hf:zai-org/GLM-4.7"
+    name: "GLM-4.7"
+    description: "Zhipu AI GLM-4.7"
+
+  - id: "hf:MiniMaxAI/MiniMax-M2.1"
+    name: "MiniMax-M2.1"
+
+  - id: "hf:moonshotai/Kimi-K2-Thinking"
+    name: "Kimi-K2-Thinking"
+    description: "With reasoning capability"
+"""
+        (config_dir / "models.yaml").write_text(models_content)
+
+        # Create agents.yaml
+        agents_content = """\
+# Agent configuration for this project
+# The 'main' agent is used by default
+
+main:
+  context: |
+    You are a helpful assistant that can read and analyze files.
+    You are working in the directory: {base_dir}
+    Always be concise and precise in your responses.
+
+  # Model to use (index or full ID)
+  # model: 0
+
+  # Tools available to this agent
+  tools:
+    - read_file
+    - list_files
+    - search_files
+    - get_file_info
+    - spawn_agent
+    - spawn_predefined_agent
+
+  # Predefined sub-agents for spawn_predefined_agent
+  subagents:
+    researcher:
+      context: |
+        You are a research specialist.
+        Search thoroughly and report findings accurately.
+      tools:
+        - read_file
+        - list_files
+        - search_files
+
+    summarizer:
+      context: |
+        You are a summarization specialist.
+        Create clear, concise summaries.
+      tools:
+        - read_file
+"""
+        (config_dir / "agents.yaml").write_text(agents_content)
+
+        # Create .gitignore for the config dir
+        gitignore_content = """\
+# Ignore sensitive files
+.env
+*.env.local
+"""
+        (config_dir / ".gitignore").write_text(gitignore_content)
+
+        print(f"\nCreated configuration files:")
+        print(f"  {config_dir}/.env          - API keys and settings")
+        print(f"  {config_dir}/models.yaml   - Available models")
+        print(f"  {config_dir}/agents.yaml   - Agent definitions")
+        print(f"\nNext steps:")
+        print(f"  1. Edit {config_dir}/.env and add your API key")
+        print(f"  2. Run 'flavia' to start the CLI")
+        print(f"\nTip: Add '.flavia/.env' to your project's .gitignore")
+
+        return True
+
+    except Exception as e:
+        print(f"Error creating configuration: {e}")
+        # Cleanup on failure
+        if config_dir.exists():
+            shutil.rmtree(config_dir)
+        return False
+
+
+def ensure_user_config() -> Path:
+    """
+    Ensure user config directory exists.
+
+    Returns:
+        Path to user config directory
+    """
+    user_dir = Path.home() / ".config" / "flavia"
+    user_dir.mkdir(parents=True, exist_ok=True)
+    return user_dir

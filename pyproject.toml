@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flavia"
+version = "0.1.0"
+description = "AI-powered academic research assistant with PDF support and recursive agents"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Flavio Ribeiro"}
+]
+keywords = ["ai", "agent", "llm", "academic", "research", "pdf", "telegram"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Text Processing",
+]
+dependencies = [
+    "openai>=1.0.0",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0",
+    "rich>=13.0.0",
+    "pdfplumber>=0.10.0",
+]
+
+[project.optional-dependencies]
+telegram = ["python-telegram-bot>=20.0"]
+ocr = [
+    "pytesseract>=0.3.10",
+    "pdf2image>=1.16.0",
+    "Pillow>=10.0.0",
+]
+dev = ["pytest", "pytest-cov", "black", "ruff"]
+all = [
+    "python-telegram-bot>=20.0",
+    "pytesseract>=0.3.10",
+    "pdf2image>=1.16.0",
+    "Pillow>=10.0.0",
+]
+
+[project.scripts]
+flavia = "flavia.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/flavioribeiro/flavia"
+Documentation = "https://github.com/flavioribeiro/flavia#readme"
+Repository = "https://github.com/flavioribeiro/flavia"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+flavia = ["defaults/*.yaml"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "W"]
