@@ -1,5 +1,6 @@
 """Setup wizard for initializing flavIA configuration."""
 
+import shutil
 import sys
 from pathlib import Path
 from typing import Optional, List, Any
@@ -516,6 +517,20 @@ def _ensure_agent_models(agents_file: Path, selected_model: str) -> None:
         )
 
 
+def _reset_config_dir(config_dir: Path, keep_files: Optional[set[str]] = None) -> None:
+    """Reset .flavia contents while optionally preserving specific files."""
+    keep = keep_files or set()
+
+    config_dir.mkdir(parents=True, exist_ok=True)
+    for entry in config_dir.iterdir():
+        if entry.name in keep:
+            continue
+        if entry.is_dir():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+
+
 def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
     """
     Run the interactive setup wizard.
@@ -538,13 +553,17 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
         title="Welcome",
     ))
 
+    preserve_existing_providers = False
+
     # Check if already exists
     if config_dir.exists():
         if not Confirm.ask(f"\n[yellow].flavia/ already exists.[/yellow] Overwrite?", default=False):
             console.print("[yellow]Setup cancelled.[/yellow]")
             return False
-        import shutil
-        shutil.rmtree(config_dir)
+
+        preserve_existing_providers = (config_dir / "providers.yaml").exists()
+        keep_files = {"providers.yaml"} if preserve_existing_providers else None
+        _reset_config_dir(config_dir, keep_files=keep_files)
 
     from flavia.config import load_settings
     settings = load_settings()
@@ -602,9 +621,15 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
             convert_pdfs=convert_pdfs,
             pdf_files=[p.name for p in pdf_files] if convert_pdfs else None,
             user_guidance=user_guidance,
+            preserve_existing_providers=preserve_existing_providers,
         )
     else:
-        return _run_basic_setup(target_dir, config_dir, selected_model=selected_model)
+        return _run_basic_setup(
+            target_dir,
+            config_dir,
+            selected_model=selected_model,
+            preserve_existing_providers=preserve_existing_providers,
+        )
 
 
 def _ask_user_guidance() -> str:
@@ -643,7 +668,12 @@ def _offer_provider_setup(config_dir: Path) -> None:
         run_provider_wizard(config_dir.parent)
 
 
-def _run_basic_setup(target_dir: Path, config_dir: Path, selected_model: Optional[str] = None) -> bool:
+def _run_basic_setup(
+    target_dir: Path,
+    config_dir: Path,
+    selected_model: Optional[str] = None,
+    preserve_existing_providers: bool = False,
+) -> bool:
     """Create basic default configuration."""
     console.print("\n[dim]Creating default configuration...[/dim]")
     effective_model = selected_model or "synthetic:hf:moonshotai/Kimi-K2.5"
@@ -655,8 +685,10 @@ def _run_basic_setup(target_dir: Path, config_dir: Path, selected_model: Optiona
         env_content = _build_env_content(effective_model, include_optional_settings=True)
         (config_dir / ".env").write_text(env_content)
 
-        # Create providers.yaml
-        _write_providers_file(config_dir, effective_model)
+        # Create providers.yaml unless user asked to keep existing project-level providers.
+        providers_file = config_dir / "providers.yaml"
+        if not (preserve_existing_providers and providers_file.exists()):
+            _write_providers_file(config_dir, effective_model)
 
         # Create academic-focused default agents.yaml
         agents_content = f"""\
@@ -739,6 +771,7 @@ def _run_ai_setup(
     pdf_files: List[str] = None,
     user_guidance: str = "",
     interactive_review: bool = True,
+    preserve_existing_providers: bool = False,
 ) -> bool:
     """Run AI-assisted setup."""
     console.print("\n[dim]Initializing AI setup agent...[/dim]")
@@ -763,8 +796,10 @@ def _run_ai_setup(
     env_content = _build_env_content(effective_model, include_optional_settings=False)
     (config_dir / ".env").write_text(env_content)
 
-    # Create providers.yaml
-    _write_providers_file(config_dir, effective_model)
+    # Create providers.yaml unless user asked to keep existing project-level providers.
+    providers_file = config_dir / "providers.yaml"
+    if not (preserve_existing_providers and providers_file.exists()):
+        _write_providers_file(config_dir, effective_model)
 
     # Create .gitignore
     (config_dir / ".gitignore").write_text(".env\n.connection_checks.yaml\nconverted/\n")

@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
-from flavia.config import load_settings, Settings
+from flavia.config import load_settings, Settings, get_config_paths
 from flavia import tools as _  # Register tools
 from flavia.venv_bootstrap import ensure_project_venv_and_reexec
 
@@ -480,6 +480,29 @@ def _ensure_default_connection_checked_once(settings: Settings) -> None:
         )
 
 
+def _should_offer_initial_setup() -> bool:
+    """Return True when running interactively without local/user config."""
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        return False
+
+    paths = get_config_paths()
+    return paths.local_dir is None and paths.user_dir is None
+
+
+def _maybe_run_initial_setup_for_missing_key() -> int | None:
+    """Run setup wizard on first run when no API key is configured."""
+    if not _should_offer_initial_setup():
+        return None
+
+    print("No local/user configuration found and provider API key is missing.")
+    print("Launching initial setup wizard (same as 'flavia --init')...\n")
+
+    from flavia.setup_wizard import run_setup_wizard
+
+    success = run_setup_wizard()
+    return 0 if success else 1
+
+
 def main() -> int:
     """Main entry point."""
     ensure_project_venv_and_reexec(sys.argv[1:])
@@ -550,6 +573,9 @@ def main() -> int:
     selected_provider, _ = settings.resolve_model_with_provider(active_model_ref)
     if selected_provider is not None:
         if not selected_provider.api_key:
+            setup_exit_code = _maybe_run_initial_setup_for_missing_key()
+            if setup_exit_code is not None:
+                return setup_exit_code
             print(f"Error: API key not configured for provider '{selected_provider.id}'")
             if selected_provider.api_key_env_var:
                 print(f"Set {selected_provider.api_key_env_var} and try again")
@@ -557,6 +583,9 @@ def main() -> int:
                 print("Run 'flavia --setup-provider' to configure this provider")
             return 1
     elif not settings.api_key:
+        setup_exit_code = _maybe_run_initial_setup_for_missing_key()
+        if setup_exit_code is not None:
+            return setup_exit_code
         print("Error: API key not configured")
         print("\nTo configure, either:")
         print("  1. Run 'flavia --init' and edit .flavia/.env")

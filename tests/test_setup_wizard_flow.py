@@ -114,6 +114,51 @@ def test_run_ai_setup_allows_user_revision_and_regenerates(monkeypatch, tmp_path
     assert "Inclua um subagente de resumos e citações" in run_tasks[1]
 
 
+def test_run_ai_setup_preserves_existing_providers_when_requested(monkeypatch, tmp_path):
+    target_dir = tmp_path
+    config_dir = tmp_path / ".flavia"
+    config_dir.mkdir()
+    existing_providers = (
+        "providers:\n"
+        "  openrouter:\n"
+        "    name: OpenRouter\n"
+        "    api_base_url: https://openrouter.ai/api/v1\n"
+        "    api_key: ${OPENROUTER_API_KEY}\n"
+        "    models:\n"
+        "      - id: openai/gpt-4o-mini\n"
+        "        name: GPT-4o Mini\n"
+        "        default: true\n"
+        "default_provider: openrouter\n"
+    )
+    (config_dir / "providers.yaml").write_text(existing_providers, encoding="utf-8")
+
+    class FakeAgent:
+        def run(self, task):
+            _ = task
+            (config_dir / "agents.yaml").write_text(
+                "main:\n  context: test\n  tools:\n    - read_file\n",
+                encoding="utf-8",
+            )
+            return "done"
+
+    monkeypatch.setattr(
+        "flavia.setup_wizard.create_setup_agent",
+        lambda *args, **kwargs: (FakeAgent(), None),
+    )
+
+    success = _run_ai_setup(
+        target_dir=target_dir,
+        config_dir=config_dir,
+        selected_model="openai:gpt-4o",
+        convert_pdfs=False,
+        interactive_review=False,
+        preserve_existing_providers=True,
+    )
+
+    assert success is True
+    assert (config_dir / "providers.yaml").read_text(encoding="utf-8") == existing_providers
+
+
 def test_run_basic_setup_writes_selected_model_to_env_and_agents(tmp_path):
     config_dir = tmp_path / ".flavia"
 
@@ -145,14 +190,84 @@ def test_run_setup_wizard_passes_selected_model_to_basic_setup(monkeypatch, tmp_
     monkeypatch.setattr("flavia.setup_wizard.find_pdf_files", lambda _directory: [])
     monkeypatch.setattr("flavia.setup_wizard.Confirm.ask", lambda *args, **kwargs: False)
 
-    def _fake_run_basic_setup(_target_dir, _config_dir, selected_model=None):
+    def _fake_run_basic_setup(
+        _target_dir,
+        _config_dir,
+        selected_model=None,
+        preserve_existing_providers=False,
+    ):
         captured["model"] = selected_model
+        captured["preserve"] = preserve_existing_providers
         return True
 
     monkeypatch.setattr("flavia.setup_wizard._run_basic_setup", _fake_run_basic_setup)
 
     assert run_setup_wizard(tmp_path) is True
     assert captured["model"] == "openai:gpt-4o"
+    assert captured["preserve"] is False
+
+
+def test_run_basic_setup_preserves_existing_providers_when_requested(tmp_path):
+    config_dir = tmp_path / ".flavia"
+    config_dir.mkdir()
+    existing_providers = (
+        "providers:\n"
+        "  openrouter:\n"
+        "    name: OpenRouter\n"
+        "    api_base_url: https://openrouter.ai/api/v1\n"
+        "    api_key: ${OPENROUTER_API_KEY}\n"
+        "    models:\n"
+        "      - id: anthropic/claude-3.7-sonnet\n"
+        "        name: Claude 3.7 Sonnet\n"
+        "        default: true\n"
+        "default_provider: openrouter\n"
+    )
+    (config_dir / "providers.yaml").write_text(existing_providers, encoding="utf-8")
+
+    success = _run_basic_setup(
+        tmp_path,
+        config_dir,
+        selected_model="openai:gpt-4o",
+        preserve_existing_providers=True,
+    )
+
+    assert success is True
+    assert (config_dir / "providers.yaml").read_text(encoding="utf-8") == existing_providers
+
+
+def test_run_setup_wizard_preserves_existing_providers_on_overwrite(monkeypatch, tmp_path):
+    config_dir = tmp_path / ".flavia"
+    config_dir.mkdir()
+    existing_providers = (
+        "providers:\n"
+        "  openai:\n"
+        "    name: OpenAI\n"
+        "    api_base_url: https://api.openai.com/v1\n"
+        "    api_key: ${OPENAI_API_KEY}\n"
+        "    models:\n"
+        "      - id: gpt-4o\n"
+        "        name: GPT-4o\n"
+        "        default: true\n"
+        "default_provider: openai\n"
+    )
+    (config_dir / "providers.yaml").write_text(existing_providers, encoding="utf-8")
+    (config_dir / ".env").write_text("SYNTHETIC_API_KEY=old\n", encoding="utf-8")
+    (config_dir / "agents.yaml").write_text("main:\n  context: old\n", encoding="utf-8")
+
+    confirm_answers = iter([True, False])  # overwrite existing config, skip AI analysis
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("flavia.config.load_settings", lambda: Settings(default_model="openai:gpt-4o"))
+    monkeypatch.setattr("flavia.setup_wizard._select_model_for_setup", lambda _settings: "openai:gpt-4o")
+    monkeypatch.setattr("flavia.setup_wizard._test_selected_model_connection", lambda _settings, _model: (False, False))
+    monkeypatch.setattr("flavia.setup_wizard.find_pdf_files", lambda _directory: [])
+    monkeypatch.setattr("flavia.setup_wizard.Confirm.ask", lambda *args, **kwargs: next(confirm_answers))
+    monkeypatch.setattr("flavia.setup_wizard._offer_provider_setup", lambda _config_dir: None)
+
+    assert run_setup_wizard(tmp_path) is True
+    assert (config_dir / "providers.yaml").read_text(encoding="utf-8") == existing_providers
+    assert (config_dir / ".env").exists()
+    assert (config_dir / "agents.yaml").exists()
 
 
 def test_run_ai_setup_backfills_subagent_models_with_selected_default(monkeypatch, tmp_path):

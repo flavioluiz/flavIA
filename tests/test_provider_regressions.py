@@ -141,6 +141,48 @@ def test_main_checks_api_key_for_selected_provider(monkeypatch):
     assert run_cli_calls == ["openai:gpt-4o"]
 
 
+def test_main_runs_setup_wizard_on_first_run_when_provider_key_is_missing(monkeypatch):
+    args = argparse.Namespace(
+        init=False,
+        telegram=False,
+        model=None,
+        verbose=False,
+        depth=None,
+        path=None,
+        list_models=False,
+        list_tools=False,
+        list_providers=False,
+        setup_provider=False,
+        setup_telegram=False,
+        manage_provider=None,
+        test_provider=None,
+        config=False,
+        version=False,
+    )
+    settings = Settings(
+        api_key="",
+        providers=ProviderRegistry(
+            providers={
+                "synthetic": _make_provider("synthetic", "", "hf:moonshotai/Kimi-K2.5"),
+            },
+            default_provider_id="synthetic",
+        ),
+        default_model="synthetic:hf:moonshotai/Kimi-K2.5",
+    )
+    wizard_runs: list[bool] = []
+
+    monkeypatch.setattr("flavia.cli.ensure_project_venv_and_reexec", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("flavia.cli.parse_args", lambda: args)
+    monkeypatch.setattr("flavia.cli.load_settings", lambda: settings)
+    monkeypatch.setattr("flavia.cli._ensure_default_connection_checked_once", lambda _settings: None)
+    monkeypatch.setattr("flavia.cli._should_offer_initial_setup", lambda: True)
+    monkeypatch.setattr("flavia.setup_wizard.run_setup_wizard", lambda: wizard_runs.append(True) or True)
+    monkeypatch.setattr("flavia.interfaces.run_cli", lambda _cfg: (_ for _ in ()).throw(RuntimeError("should not run")))
+
+    assert main() == 0
+    assert wizard_runs == [True]
+
+
 def test_main_validates_main_agent_model_provider_key(monkeypatch, capsys):
     args = argparse.Namespace(
         init=False,
