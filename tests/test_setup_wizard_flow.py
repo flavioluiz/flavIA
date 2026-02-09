@@ -5,7 +5,13 @@ from pathlib import Path
 import yaml
 
 from flavia.config.settings import Settings
-from flavia.setup_wizard import create_setup_agent, _run_ai_setup, _run_basic_setup, run_setup_wizard
+from flavia.setup_wizard import (
+    create_setup_agent,
+    _run_ai_setup,
+    _run_basic_setup,
+    run_setup_command_in_cli,
+    run_setup_wizard,
+)
 
 
 def test_create_setup_agent_exposes_setup_tools(monkeypatch, tmp_path):
@@ -233,6 +239,134 @@ def test_run_basic_setup_preserves_existing_providers_when_requested(tmp_path):
 
     assert success is True
     assert (config_dir / "providers.yaml").read_text(encoding="utf-8") == existing_providers
+
+
+def test_run_setup_wizard_passes_relative_pdf_paths_from_subfolders(monkeypatch, tmp_path):
+    captured: dict[str, object] = {}
+    pdf_path = tmp_path / "papers" / "nested.pdf"
+    pdf_path.parent.mkdir(parents=True)
+    pdf_path.write_text("dummy", encoding="utf-8")
+
+    answers = iter([True, True])  # convert PDFs, analyze content
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("flavia.config.load_settings", lambda: Settings(default_model="openai:gpt-4o"))
+    monkeypatch.setattr("flavia.setup_wizard._select_model_for_setup", lambda _settings: "openai:gpt-4o")
+    monkeypatch.setattr("flavia.setup_wizard._test_selected_model_connection", lambda _settings, _model: (False, False))
+    monkeypatch.setattr("flavia.setup_wizard.Confirm.ask", lambda *args, **kwargs: next(answers))
+    monkeypatch.setattr("flavia.setup_wizard._ask_user_guidance", lambda: "")
+
+    def _fake_run_ai_setup(
+        _target_dir,
+        _config_dir,
+        selected_model=None,
+        convert_pdfs=False,
+        pdf_files=None,
+        user_guidance="",
+        preserve_existing_providers=False,
+    ):
+        captured["selected_model"] = selected_model
+        captured["convert_pdfs"] = convert_pdfs
+        captured["pdf_files"] = pdf_files
+        captured["user_guidance"] = user_guidance
+        captured["preserve_existing_providers"] = preserve_existing_providers
+        return True
+
+    monkeypatch.setattr("flavia.setup_wizard._run_ai_setup", _fake_run_ai_setup)
+
+    assert run_setup_wizard(tmp_path) is True
+    assert captured["selected_model"] == "openai:gpt-4o"
+    assert captured["convert_pdfs"] is True
+    assert captured["pdf_files"] == ["papers/nested.pdf"]
+
+
+def test_run_setup_command_in_cli_uses_relative_pdf_paths_from_subfolders(monkeypatch, tmp_path):
+    captured: dict[str, object] = {}
+    pdf_path = tmp_path / "papers" / "nested.pdf"
+    pdf_path.parent.mkdir(parents=True)
+    pdf_path.write_text("dummy", encoding="utf-8")
+
+    answers = iter([True, True])  # convert PDFs, analyze content
+    monkeypatch.setattr("flavia.setup_wizard.Confirm.ask", lambda *args, **kwargs: next(answers))
+
+    class FakeAgent:
+        def run(self, task):
+            captured["task"] = task
+            config_dir = tmp_path / ".flavia"
+            config_dir.mkdir(exist_ok=True)
+            (config_dir / "agents.yaml").write_text(
+                "main:\n  context: test\n  tools:\n    - read_file\n",
+                encoding="utf-8",
+            )
+            return "done"
+
+    def _fake_create_setup_agent(
+        _base_dir,
+        include_pdf_tool=False,
+        pdf_files=None,
+        selected_model=None,
+    ):
+        captured["include_pdf_tool"] = include_pdf_tool
+        captured["pdf_files"] = pdf_files
+        captured["selected_model"] = selected_model
+        return FakeAgent(), None
+
+    monkeypatch.setattr("flavia.setup_wizard.create_setup_agent", _fake_create_setup_agent)
+
+    settings = Settings(default_model="openai:gpt-4o")
+    assert run_setup_command_in_cli(settings, tmp_path) is True
+    assert captured["include_pdf_tool"] is True
+    assert captured["pdf_files"] == ["papers/nested.pdf"]
+    assert "papers/nested.pdf" in str(captured["task"])
+
+
+def test_run_setup_command_in_cli_skips_pdf_prompt_when_nested_converted_exists(monkeypatch, tmp_path):
+    asked: list[str] = []
+    captured: dict[str, object] = {}
+
+    pdf_path = tmp_path / "papers" / "nested.pdf"
+    pdf_path.parent.mkdir(parents=True)
+    pdf_path.write_text("dummy", encoding="utf-8")
+
+    converted_md = tmp_path / "converted" / "papers" / "nested.md"
+    converted_md.parent.mkdir(parents=True)
+    converted_md.write_text("# nested", encoding="utf-8")
+
+    def _fake_confirm(prompt, *args, **kwargs):
+        asked.append(prompt)
+        return True
+
+    monkeypatch.setattr("flavia.setup_wizard.Confirm.ask", _fake_confirm)
+
+    class FakeAgent:
+        def run(self, task):
+            _ = task
+            config_dir = tmp_path / ".flavia"
+            config_dir.mkdir(exist_ok=True)
+            (config_dir / "agents.yaml").write_text(
+                "main:\n  context: test\n  tools:\n    - read_file\n",
+                encoding="utf-8",
+            )
+            return "done"
+
+    def _fake_create_setup_agent(
+        _base_dir,
+        include_pdf_tool=False,
+        pdf_files=None,
+        selected_model=None,
+    ):
+        captured["include_pdf_tool"] = include_pdf_tool
+        captured["pdf_files"] = pdf_files
+        captured["selected_model"] = selected_model
+        return FakeAgent(), None
+
+    monkeypatch.setattr("flavia.setup_wizard.create_setup_agent", _fake_create_setup_agent)
+
+    settings = Settings(default_model="openai:gpt-4o")
+    assert run_setup_command_in_cli(settings, tmp_path) is True
+    assert captured["include_pdf_tool"] is False
+    assert captured["pdf_files"] is None
+    assert "Convert PDFs to text first?" not in asked
 
 
 def test_run_setup_wizard_preserves_existing_providers_on_overwrite(monkeypatch, tmp_path):

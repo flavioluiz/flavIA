@@ -121,7 +121,21 @@ Include a project_description that captures the academic subject.
 
 def find_pdf_files(directory: Path) -> List[Path]:
     """Find all PDF files in a directory (recursive)."""
-    return list(directory.glob("**/*.pdf"))
+    return sorted(
+        (path for path in directory.rglob("*") if path.is_file() and path.suffix.lower() == ".pdf"),
+        key=lambda path: str(path),
+    )
+
+
+def _pdf_paths_for_tools(base_dir: Path, pdf_files: List[Path]) -> List[str]:
+    """Build path references for tool calls, preserving subdirectory structure."""
+    refs: list[str] = []
+    for pdf in pdf_files:
+        try:
+            refs.append(str(pdf.relative_to(base_dir)))
+        except ValueError:
+            refs.append(str(pdf))
+    return refs
 
 
 def create_setup_agent(
@@ -613,13 +627,14 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
 
     user_guidance = ""
     if analyze or convert_pdfs:
+        pdf_file_refs = _pdf_paths_for_tools(target_dir, pdf_files) if convert_pdfs else None
         user_guidance = _ask_user_guidance()
         return _run_ai_setup(
             target_dir,
             config_dir,
             selected_model=selected_model,
             convert_pdfs=convert_pdfs,
-            pdf_files=[p.name for p in pdf_files] if convert_pdfs else None,
+            pdf_files=pdf_file_refs,
             user_guidance=user_guidance,
             preserve_existing_providers=preserve_existing_providers,
         )
@@ -1001,7 +1016,7 @@ def run_setup_command_in_cli(settings, base_dir: Path) -> bool:
     if pdf_files:
         # Check if already converted
         converted_dir = base_dir / "converted"
-        if converted_dir.exists() and list(converted_dir.glob("*.md")):
+        if converted_dir.exists() and list(converted_dir.rglob("*.md")):
             console.print(f"[dim]Found existing converted documents in converted/[/dim]")
         else:
             console.print(f"[dim]Found {len(pdf_files)} PDF file(s)[/dim]")
@@ -1015,10 +1030,12 @@ def run_setup_command_in_cli(settings, base_dir: Path) -> bool:
     if not analyze and not convert_pdfs:
         return False
 
+    pdf_file_refs = _pdf_paths_for_tools(base_dir, pdf_files) if convert_pdfs else None
+
     agent, error = create_setup_agent(
         base_dir,
         include_pdf_tool=convert_pdfs,
-        pdf_files=[p.name for p in pdf_files] if convert_pdfs else None,
+        pdf_files=pdf_file_refs,
     )
 
     if error:
@@ -1028,7 +1045,7 @@ def run_setup_command_in_cli(settings, base_dir: Path) -> bool:
     # Build task
     if convert_pdfs:
         task = (
-            f"First convert the PDFs to markdown: {', '.join(p.name for p in pdf_files)}. "
+            f"First convert the PDFs to markdown: {', '.join(pdf_file_refs or [])}. "
             f"Then analyze and create agents.yaml."
         )
         console.print("\n[bold]Converting and analyzing...[/bold]\n")
