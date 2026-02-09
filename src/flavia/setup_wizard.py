@@ -9,8 +9,9 @@ import yaml
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
-from rich.prompt import Confirm, Prompt
 from rich.table import Table
+
+from flavia.setup.prompt_utils import safe_confirm, safe_prompt
 
 console = Console()
 MAX_SETUP_REVISIONS = 5
@@ -277,10 +278,8 @@ def _select_model_for_setup(settings) -> str:
         else default_choice["model_id"]
     )
 
-    if Confirm.ask(
-        f"\n[bold]Use default model/provider?[/bold]\n  [cyan]{default_label}[/cyan]",
-        default=True,
-    ):
+    console.print(f"\n[bold]Use default model/provider?[/bold]\n  [cyan]{default_label}[/cyan]")
+    if safe_confirm("Use this model?", default=True):
         return default_ref
 
     console.print("\n[bold]Select model/provider for initial setup:[/bold]")
@@ -296,7 +295,7 @@ def _select_model_for_setup(settings) -> str:
     console.print(table)
 
     default_index = next((i + 1 for i, choice in enumerate(choices) if choice["ref"] == default_ref), 1)
-    selection = Prompt.ask("Enter number", default=str(default_index))
+    selection = safe_prompt("Enter number", default=str(default_index))
     try:
         idx = int(selection) - 1
         if 0 <= idx < len(choices):
@@ -571,7 +570,8 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
 
     # Check if already exists
     if config_dir.exists():
-        if not Confirm.ask(f"\n[yellow].flavia/ already exists.[/yellow] Overwrite?", default=False):
+        console.print("\n[yellow].flavia/ already exists.[/yellow]")
+        if not safe_confirm("Overwrite?", default=False):
             console.print("[yellow]Setup cancelled.[/yellow]")
             return False
 
@@ -589,7 +589,7 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
         if not attempted or success:
             break
 
-        if not Confirm.ask(
+        if not safe_confirm(
             "Connection failed. Do you want to select another model/provider?",
             default=True,
         ):
@@ -609,21 +609,17 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
             table.add_row(f"  [dim]... and {len(pdf_files) - 10} more[/dim]", "")
         console.print(table)
 
-        convert_pdfs = Confirm.ask(
-            "\n[bold]Convert PDFs to text for analysis?[/bold]\n"
-            "  (This allows the AI to read and search the documents)",
-            default=True,
-        )
+        console.print("\n[bold]Convert PDFs to text for analysis?[/bold]")
+        console.print("  (This allows the AI to read and search the documents)")
+        convert_pdfs = safe_confirm("Convert PDFs?", default=True)
     else:
         convert_pdfs = False
 
     # Ask about AI analysis
     console.print("\n")
-    analyze = Confirm.ask(
-        "[bold]Have the AI analyze your content and suggest an agent configuration?[/bold]\n"
-        "  (The AI will read files to understand your project/research area)",
-        default=True,
-    )
+    console.print("[bold]Have the AI analyze your content and suggest an agent configuration?[/bold]")
+    console.print("  (The AI will read files to understand your project/research area)")
+    analyze = safe_confirm("Analyze content?", default=True)
 
     user_guidance = ""
     if analyze or convert_pdfs:
@@ -649,15 +645,13 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
 
 def _ask_user_guidance() -> str:
     """Ask the user for optional setup guidance for the LLM."""
-    wants_guidance = Confirm.ask(
-        "[bold]Do you want to add brief guidance for agent creation?[/bold]\n"
-        "  (e.g., preferred style, focus areas, sub-agents, constraints)",
-        default=False,
-    )
+    console.print("[bold]Do you want to add brief guidance for agent creation?[/bold]")
+    console.print("  (e.g., preferred style, focus areas, sub-agents, constraints)")
+    wants_guidance = safe_confirm("Add guidance?", default=False)
     if not wants_guidance:
         return ""
 
-    guidance = Prompt.ask(
+    guidance = safe_prompt(
         "Enter your guidance (single line, optional)",
         default="",
     ).strip()
@@ -674,11 +668,9 @@ def _offer_provider_setup(config_dir: Path) -> None:
     if not sys.stdin.isatty():
         return
 
-    if Confirm.ask(
-        "\n[bold]Configure LLM providers now?[/bold]\n"
-        "  (Set up API keys and models for OpenAI, OpenRouter, etc.)",
-        default=False,
-    ):
+    console.print("\n[bold]Configure LLM providers now?[/bold]")
+    console.print("  (Set up API keys and models for OpenAI, OpenRouter, etc.)")
+    if safe_confirm("Configure providers?", default=False):
         from flavia.setup.provider_wizard import run_provider_wizard
         run_provider_wizard(config_dir.parent)
 
@@ -861,10 +853,10 @@ def _run_ai_setup(
                     console.print("[yellow]Creating default configuration...[/yellow]")
                     return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
 
-                if Confirm.ask("Use default configuration instead?", default=True):
+                if safe_confirm("Use default configuration instead?", default=True):
                     return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
 
-                feedback = Prompt.ask(
+                feedback = safe_prompt(
                     "What should be changed in the next proposal?",
                     default="",
                 ).strip()
@@ -881,14 +873,14 @@ def _run_ai_setup(
                 return True
 
             _show_agents_preview(agents_file)
-            if Confirm.ask("Accept this agent configuration?", default=True):
+            if safe_confirm("Accept this agent configuration?", default=True):
                 _print_success(config_dir, has_pdfs=convert_pdfs)
                 return True
 
-            if Confirm.ask("Use default configuration instead?", default=False):
+            if safe_confirm("Use default configuration instead?", default=False):
                 return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
 
-            feedback = Prompt.ask(
+            feedback = safe_prompt(
                 "Describe the changes you want in the next version",
                 default="",
             ).strip()
@@ -1006,7 +998,8 @@ def run_setup_command_in_cli(settings, base_dir: Path) -> bool:
 
     # Check if agents.yaml exists
     if (config_dir / "agents.yaml").exists():
-        if not Confirm.ask("[yellow]agents.yaml already exists.[/yellow] Overwrite?", default=False):
+        console.print("[yellow]agents.yaml already exists.[/yellow]")
+        if not safe_confirm("Overwrite?", default=False):
             return False
 
     # Check for PDFs
@@ -1020,9 +1013,9 @@ def run_setup_command_in_cli(settings, base_dir: Path) -> bool:
             console.print(f"[dim]Found existing converted documents in converted/[/dim]")
         else:
             console.print(f"[dim]Found {len(pdf_files)} PDF file(s)[/dim]")
-            convert_pdfs = Confirm.ask("Convert PDFs to text first?", default=True)
+            convert_pdfs = safe_confirm("Convert PDFs to text first?", default=True)
 
-    analyze = Confirm.ask(
+    analyze = safe_confirm(
         "Analyze content and suggest agent configuration?",
         default=True,
     )

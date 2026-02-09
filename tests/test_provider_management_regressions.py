@@ -39,7 +39,7 @@ def test_manage_provider_add_model_handles_empty_model_list(monkeypatch):
         return True
 
     monkeypatch.setattr(
-        "flavia.setup.provider_wizard.Prompt.ask",
+        "flavia.setup.provider_wizard.safe_prompt",
         lambda *args, **kwargs: next(choices),
     )
     monkeypatch.setattr(
@@ -68,7 +68,7 @@ def test_manage_provider_merge_fetch_keeps_model_objects(monkeypatch):
         return True
 
     monkeypatch.setattr(
-        "flavia.setup.provider_wizard.Prompt.ask",
+        "flavia.setup.provider_wizard.safe_prompt",
         lambda *args, **kwargs: next(choices),
     )
     monkeypatch.setattr(
@@ -95,7 +95,7 @@ def test_search_models_select_all_returns_all_matches(monkeypatch):
     answers = iter(["model", "a"])
 
     monkeypatch.setattr(
-        "flavia.setup.provider_wizard.Prompt.ask",
+        "flavia.setup.provider_wizard.safe_prompt",
         lambda *args, **kwargs: next(answers),
     )
 
@@ -208,10 +208,10 @@ def test_save_provider_changes_creates_local_override_without_secret_leak(monkey
 
     prompts = iter(["1"])  # Save locally
     monkeypatch.setattr(
-        "flavia.setup.provider_wizard.Prompt.ask",
+        "flavia.setup.provider_wizard.safe_prompt",
         lambda *args, **kwargs: next(prompts),
     )
-    monkeypatch.setattr("flavia.setup.provider_wizard.Confirm.ask", lambda *args, **kwargs: True)
+    monkeypatch.setattr("flavia.setup.provider_wizard.safe_confirm", lambda *args, **kwargs: True)
 
     assert _save_provider_changes(settings, "xai", provider) is True
 

@@ -56,8 +56,8 @@ def test_manage_agent_models_updates_selected_subagent(monkeypatch, tmp_path):
     )
 
     prompts = iter(["2", "2"])
-    monkeypatch.setattr("flavia.setup.agent_wizard.Prompt.ask", lambda *args, **kwargs: next(prompts))
-    monkeypatch.setattr("flavia.setup.agent_wizard.Confirm.ask", lambda *args, **kwargs: False)
+    monkeypatch.setattr("flavia.setup.agent_wizard.safe_prompt", lambda *args, **kwargs: next(prompts))
+    monkeypatch.setattr("flavia.setup.agent_wizard.safe_confirm", lambda *args, **kwargs: False)
 
     changed = manage_agent_models(settings, base_dir=tmp_path)
 
@@ -97,8 +97,8 @@ def test_manage_agent_models_updates_all_agents_at_once(monkeypatch, tmp_path):
     )
 
     prompts = iter(["a", "2"])
-    monkeypatch.setattr("flavia.setup.agent_wizard.Prompt.ask", lambda *args, **kwargs: next(prompts))
-    monkeypatch.setattr("flavia.setup.agent_wizard.Confirm.ask", lambda *args, **kwargs: False)
+    monkeypatch.setattr("flavia.setup.agent_wizard.safe_prompt", lambda *args, **kwargs: next(prompts))
+    monkeypatch.setattr("flavia.setup.agent_wizard.safe_confirm", lambda *args, **kwargs: False)
 
     changed = manage_agent_models(settings, base_dir=tmp_path)
 

@@ -5,8 +5,9 @@ from typing import Any, Optional
 
 import yaml
 from rich.console import Console
-from rich.prompt import Confirm, Prompt
 from rich.table import Table
+
+from flavia.setup.prompt_utils import safe_confirm, safe_prompt
 
 console = Console()
 
@@ -202,7 +203,7 @@ def manage_agent_models(settings, base_dir: Optional[Path] = None) -> bool:
         console.print(table)
 
         hint = "number, 'a' for all, or 'q'" if len(targets) > 1 else "number or 'q'"
-        selection = Prompt.ask(f"Select agent ({hint})", default="q").strip().lower()
+        selection = safe_prompt(f"Select agent ({hint})", default="q").strip().lower()
         if selection in {"q", "quit", "exit"}:
             return changed
 
@@ -244,7 +245,7 @@ def manage_agent_models(settings, base_dir: Optional[Path] = None) -> bool:
                 ),
                 "1",
             )
-        model_selection = Prompt.ask("Select model number", default=default_choice).strip().lower()
+        model_selection = safe_prompt("Select model number", default=default_choice).strip().lower()
         if model_selection in {"q", "quit", "exit"}:
             continue
 
@@ -284,5 +285,5 @@ def manage_agent_models(settings, base_dir: Optional[Path] = None) -> bool:
                 f"[green]Updated {target['label']} model to {selected_model} in {agents_file}.[/green]"
             )
 
-        if not Confirm.ask("Edit another agent?", default=False):
+        if not safe_confirm("Edit another agent?", default=False):
             return changed

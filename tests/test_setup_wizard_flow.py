@@ -102,8 +102,8 @@ def test_run_ai_setup_allows_user_revision_and_regenerates(monkeypatch, tmp_path
         "flavia.setup_wizard.create_setup_agent",
         lambda *args, **kwargs: (FakeAgent(), None),
     )
-    monkeypatch.setattr("flavia.setup_wizard.Confirm.ask", lambda *args, **kwargs: next(confirm_answers))
-    monkeypatch.setattr("flavia.setup_wizard.Prompt.ask", lambda *args, **kwargs: next(prompt_answers))
+    monkeypatch.setattr("flavia.setup_wizard.safe_confirm", lambda *args, **kwargs: next(confirm_answers))
+    monkeypatch.setattr("flavia.setup_wizard.safe_prompt", lambda *args, **kwargs: next(prompt_answers))
 
     success = _run_ai_setup(
         target_dir=target_dir,
@@ -194,7 +194,7 @@ def test_run_setup_wizard_passes_selected_model_to_basic_setup(monkeypatch, tmp_
     monkeypatch.setattr("flavia.setup_wizard._select_model_for_setup", lambda _settings: "openai:gpt-4o")
     monkeypatch.setattr("flavia.setup_wizard._test_selected_model_connection", lambda _settings, _model: (False, False))
     monkeypatch.setattr("flavia.setup_wizard.find_pdf_files", lambda _directory: [])
-    monkeypatch.setattr("flavia.setup_wizard.Confirm.ask", lambda *args, **kwargs: False)
+    monkeypatch.setattr("flavia.setup_wizard.safe_confirm", lambda *args, **kwargs: False)
 
     def _fake_run_basic_setup(
         _target_dir,
@@ -253,7 +253,7 @@ def test_run_setup_wizard_passes_relative_pdf_paths_from_subfolders(monkeypatch,
     monkeypatch.setattr("flavia.config.load_settings", lambda: Settings(default_model="openai:gpt-4o"))
     monkeypatch.setattr("flavia.setup_wizard._select_model_for_setup", lambda _settings: "openai:gpt-4o")
     monkeypatch.setattr("flavia.setup_wizard._test_selected_model_connection", lambda _settings, _model: (False, False))
-    monkeypatch.setattr("flavia.setup_wizard.Confirm.ask", lambda *args, **kwargs: next(answers))
+    monkeypatch.setattr("flavia.setup_wizard.safe_confirm", lambda *args, **kwargs: next(answers))
     monkeypatch.setattr("flavia.setup_wizard._ask_user_guidance", lambda: "")
 
     def _fake_run_ai_setup(
@@ -287,7 +287,7 @@ def test_run_setup_command_in_cli_uses_relative_pdf_paths_from_subfolders(monkey
     pdf_path.write_text("dummy", encoding="utf-8")
 
     answers = iter([True, True])  # convert PDFs, analyze content
-    monkeypatch.setattr("flavia.setup_wizard.Confirm.ask", lambda *args, **kwargs: next(answers))
+    monkeypatch.setattr("flavia.setup_wizard.safe_confirm", lambda *args, **kwargs: next(answers))
 
     class FakeAgent:
         def run(self, task):
@@ -336,7 +336,7 @@ def test_run_setup_command_in_cli_skips_pdf_prompt_when_nested_converted_exists(
         asked.append(prompt)
         return True
 
-    monkeypatch.setattr("flavia.setup_wizard.Confirm.ask", _fake_confirm)
+    monkeypatch.setattr("flavia.setup_wizard.safe_confirm", _fake_confirm)
 
     class FakeAgent:
         def run(self, task):
@@ -395,7 +395,7 @@ def test_run_setup_wizard_preserves_existing_providers_on_overwrite(monkeypatch,
     monkeypatch.setattr("flavia.setup_wizard._select_model_for_setup", lambda _settings: "openai:gpt-4o")
     monkeypatch.setattr("flavia.setup_wizard._test_selected_model_connection", lambda _settings, _model: (False, False))
     monkeypatch.setattr("flavia.setup_wizard.find_pdf_files", lambda _directory: [])
-    monkeypatch.setattr("flavia.setup_wizard.Confirm.ask", lambda *args, **kwargs: next(confirm_answers))
+    monkeypatch.setattr("flavia.setup_wizard.safe_confirm", lambda *args, **kwargs: next(confirm_answers))
     monkeypatch.setattr("flavia.setup_wizard._offer_provider_setup", lambda _config_dir: None)
 
     assert run_setup_wizard(tmp_path) is True

@@ -6,7 +6,7 @@ from flavia.setup import telegram_wizard
 def test_prompt_telegram_setup_handles_non_interactive_stdin(monkeypatch):
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
     monkeypatch.setattr(
-        "flavia.setup.telegram_wizard.Confirm.ask",
+        "flavia.setup.telegram_wizard.safe_confirm",
         lambda *args, **kwargs: (_ for _ in ()).throw(EOFError()),
     )
 

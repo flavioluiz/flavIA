@@ -7,8 +7,9 @@ from typing import Optional
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Confirm, Prompt
 from rich.markdown import Markdown
+
+from flavia.setup.prompt_utils import safe_confirm, safe_prompt
 
 console = Console()
 
@@ -197,10 +198,11 @@ def run_telegram_wizard(target_dir: Optional[Path] = None) -> bool:
 
     # Get bot token
     while True:
-        token = Prompt.ask("\n[bold]Bot Token[/bold]", password=True)
+        console.print("\n[bold]Bot Token[/bold]")
+        token = safe_prompt("Enter token", password=True)
 
         if not token:
-            if Confirm.ask("Cancel Telegram setup?", default=False):
+            if safe_confirm("Cancel Telegram setup?", default=False):
                 return False
             continue
 
@@ -218,7 +220,7 @@ def run_telegram_wizard(target_dir: Optional[Path] = None) -> bool:
             break
         else:
             console.print(f"[red]{message}[/red]")
-            if not Confirm.ask("Try a different token?", default=True):
+            if not safe_confirm("Try a different token?", default=True):
                 return False
 
     # Ask about access control
@@ -227,7 +229,7 @@ def run_telegram_wizard(target_dir: Optional[Path] = None) -> bool:
         "[dim]You can restrict who can use your bot by specifying Telegram user IDs.[/dim]"
     )
 
-    restrict_access = Confirm.ask(
+    restrict_access = safe_confirm(
         "Restrict access to specific users?",
         default=True,
     )
@@ -239,14 +241,12 @@ def run_telegram_wizard(target_dir: Optional[Path] = None) -> bool:
         console.print(Markdown(USERID_INSTRUCTIONS))
 
         while True:
-            ids_input = Prompt.ask(
-                "\n[bold]User IDs[/bold] (comma-separated)",
-                default="",
-            )
+            console.print("\n[bold]User IDs[/bold] (comma-separated)")
+            ids_input = safe_prompt("Enter user IDs", default="")
 
             if not ids_input.strip():
                 console.print("[yellow]No user IDs provided.[/yellow]")
-                if Confirm.ask("Leave access unrestricted?", default=False):
+                if safe_confirm("Leave access unrestricted?", default=False):
                     allow_all = True
                     break
                 continue
@@ -283,7 +283,8 @@ def run_telegram_wizard(target_dir: Optional[Path] = None) -> bool:
             )
         )
 
-        if not Confirm.ask("[bold]Confirm public access?[/bold]", default=False):
+        console.print("[bold]Confirm public access?[/bold]")
+        if not safe_confirm("Allow public access?", default=False):
             console.print("[yellow]Setup cancelled.[/yellow]")
             return False
 
@@ -292,7 +293,7 @@ def run_telegram_wizard(target_dir: Optional[Path] = None) -> bool:
     console.print("  [1] Local (.flavia/.env) - Project-specific")
     console.print("  [2] Global (~/.config/flavia/.env) - User-wide")
 
-    choice = Prompt.ask("Enter number", default="1")
+    choice = safe_prompt("Enter number", default="1")
     location = "global" if choice == "2" else "local"
 
     # Prepare updates
@@ -366,7 +367,8 @@ def prompt_telegram_setup_if_needed(target_dir: Optional[Path] = None) -> bool:
     )
 
     try:
-        should_setup = Confirm.ask("\n[bold]Set up Telegram bot now?[/bold]", default=True)
+        console.print("\n[bold]Set up Telegram bot now?[/bold]")
+        should_setup = safe_confirm("Set up now?", default=True)
     except (EOFError, KeyboardInterrupt):
         console.print(
             "\n[yellow]Interactive setup unavailable (stdin is not interactive).[/yellow]\n"

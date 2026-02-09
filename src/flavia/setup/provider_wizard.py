@@ -10,13 +10,13 @@ import yaml
 from openai import OpenAI
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 from flavia.config.providers import (
     ModelConfig as ProviderModelConfig,
     expand_env_vars,
 )
+from flavia.setup.prompt_utils import safe_confirm, safe_prompt
 
 console = Console()
 
@@ -265,10 +265,7 @@ def _select_provider_type(settings=None) -> Optional[dict[str, str]]:
         )
     console.print(table)
 
-    choice = Prompt.ask(
-        "\nEnter number",
-        default="1",
-    )
+    choice = safe_prompt("\nEnter number", default="1")
 
     try:
         index = int(choice) - 1
@@ -332,13 +329,13 @@ def _get_api_key(provider_name: str, default_env_var: str = "") -> tuple[str, st
         existing = os.getenv(default_env_var, "")
         if existing:
             console.print(f"[green]Found existing {default_env_var} in environment[/green]")
-            if Confirm.ask(f"Use existing {default_env_var}?", default=True):
+            if safe_confirm(f"Use existing {default_env_var}?", default=True):
                 return existing, f"${{{default_env_var}}}"
 
     # Ask if user wants to use an environment variable
-    if Confirm.ask("Store API key as environment variable reference?", default=True):
+    if safe_confirm("Store API key as environment variable reference?", default=True):
         # User wants to use env var reference
-        env_var = Prompt.ask(
+        env_var = safe_prompt(
             "Environment variable name",
             default=default_env_var or "API_KEY",
         )
@@ -346,12 +343,12 @@ def _get_api_key(provider_name: str, default_env_var: str = "") -> tuple[str, st
         console.print(f"[dim]Example: export {env_var}='your-api-key'[/dim]")
 
         # Still need the actual key for validation
-        key_input = Prompt.ask("Enter the API key (for validation)", password=True)
+        key_input = safe_prompt("Enter the API key (for validation)", password=True)
         return key_input, f"${{{env_var}}}"
     else:
         # User wants to enter key directly (will be stored in config)
         console.print("[yellow]The key will be stored directly in the config file[/yellow]")
-        key_input = Prompt.ask("API Key", password=True)
+        key_input = safe_prompt("API Key", password=True)
         return key_input, key_input
 
 
@@ -422,7 +419,7 @@ def _select_models(
         console.print("  \\[f] Fetch models from provider API")
     console.print("  \\[+] Add custom model")
 
-    choice = Prompt.ask(
+    choice = safe_prompt(
         "\nEnter numbers separated by comma, 'a' for all, 'f' to fetch, or '+' to add",
         default="a",
     )
@@ -504,7 +501,7 @@ def _fetch_and_select_models(
     if len(models) > page_size:
         console.print("  \\[m] Show more models")
 
-    choice = Prompt.ask(
+    choice = safe_prompt(
         "\nEnter numbers separated by comma, 'a' for all, 's' to search, or 'm' for more",
         default="a",
     )
@@ -537,7 +534,7 @@ def _fetch_and_select_models(
 
 def _search_models(models: list[dict]) -> list[dict]:
     """Search and select models by name."""
-    query = Prompt.ask("Search for model (partial name)").lower()
+    query = safe_prompt("Search for model (partial name)").lower()
 
     matches = [m for m in models if query in m["name"].lower() or query in m["id"].lower()]
 
@@ -553,7 +550,7 @@ def _search_models(models: list[dict]) -> list[dict]:
     if len(matches) > 20:
         console.print(f"[dim](Showing first 20 of {len(matches)} matches)[/dim]")
 
-    choice = Prompt.ask(
+    choice = safe_prompt(
         "Enter numbers to select (comma-separated), or 'a' for all matches",
         default="a",
     )
@@ -582,7 +579,7 @@ def _select_from_full_list(models: list[dict]) -> list[dict]:
         table.add_row(f"  [{i}]", f"{model['name']}", f"[dim]{model['id']}[/dim]")
     console.print(table)
 
-    choice = Prompt.ask(
+    choice = safe_prompt(
         "Enter numbers to select (comma-separated)",
         default="1",
     )
@@ -603,12 +600,12 @@ def _add_custom_model() -> Optional[dict]:
     """Prompt user to add a custom model."""
     console.print("\n[bold]Add custom model:[/bold]")
 
-    model_id = Prompt.ask("Model ID (as used in API calls)")
+    model_id = safe_prompt("Model ID (as used in API calls)")
     if not model_id:
         return None
 
-    model_name = Prompt.ask("Display name", default=_generate_model_name(model_id))
-    is_default = Confirm.ask("Set as default?", default=False)
+    model_name = safe_prompt("Display name", default=_generate_model_name(model_id))
+    is_default = safe_confirm("Set as default?", default=False)
 
     return {"id": model_id, "name": model_name, "default": is_default}
 
@@ -730,7 +727,7 @@ def _select_location(
     if global_exists and not local_exists:
         default_choice = "2"
 
-    choice = Prompt.ask("Enter number", default=default_choice)
+    choice = safe_prompt("Enter number", default=default_choice)
 
     if choice == "2":
         return "global"
@@ -837,9 +834,9 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
 
     if selection_kind == "custom":
         # Custom provider
-        provider_id = Prompt.ask("\nProvider ID (short name)", default="custom")
-        provider_name = Prompt.ask("Provider display name", default="Custom Provider")
-        api_base_url = Prompt.ask(
+        provider_id = safe_prompt("\nProvider ID (short name)", default="custom")
+        provider_name = safe_prompt("Provider display name", default="Custom Provider")
+        api_base_url = safe_prompt(
             "API Base URL",
             default="https://api.example.com/v1",
         )
@@ -851,7 +848,7 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
         console.print("  \\[1] Fetch available models from provider")
         console.print("  \\[2] Enter model name manually")
 
-        model_choice = Prompt.ask("Choice", default="1")
+        model_choice = safe_prompt("Choice", default="1")
 
         if model_choice == "1" and api_key:
             # Try to fetch models from the provider
@@ -860,13 +857,13 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
                 models = fetched
             else:
                 console.print("[yellow]Could not fetch models. Please enter manually.[/yellow]")
-                model_id = Prompt.ask("Model ID", default="model-name")
-                model_name = Prompt.ask("Model display name", default=model_id)
+                model_id = safe_prompt("Model ID", default="model-name")
+                model_name = safe_prompt("Model display name", default=model_id)
                 models = [{"id": model_id, "name": model_name, "default": True}]
         else:
             # Manual entry
-            model_id = Prompt.ask("Model ID", default="model-name")
-            model_name = Prompt.ask("Model display name", default=model_id)
+            model_id = safe_prompt("Model ID", default="model-name")
+            model_name = safe_prompt("Model display name", default=model_id)
             models = [{"id": model_id, "name": model_name, "default": True}]
 
     else:
@@ -909,8 +906,8 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
                 console.print(f"[red]Provider '{provider_id}' is not available in current settings.[/red]")
                 return False
 
-            provider_name = Prompt.ask("\nProvider display name", default=existing_provider.name)
-            api_base_url = Prompt.ask("API Base URL", default=existing_provider.api_base_url)
+            provider_name = safe_prompt("\nProvider display name", default=existing_provider.name)
+            api_base_url = safe_prompt("API Base URL", default=existing_provider.api_base_url)
             default_env_var = existing_provider.api_key_env_var or _guess_api_key_env_var(provider_id)
             api_key, api_key_config = _get_api_key(provider_name, default_env_var)
             headers = copy.deepcopy(existing_provider.headers) if existing_provider.headers else None
@@ -929,7 +926,7 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
             )
 
     # Step 3: Test connection (optional)
-    if api_key and Confirm.ask("\nTest connection?", default=True):
+    if api_key and safe_confirm("\nTest connection?", default=True):
         test_model = models[0]["id"] if models else "test"
         console.print(f"[dim]Testing connection with model: [cyan]{test_model}[/cyan]...[/dim]")
 
@@ -951,7 +948,7 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
             console.print(f"[green]{message}[/green]")
         else:
             console.print(f"[red]{message}[/red]")
-            if not Confirm.ask("Continue anyway?", default=False):
+            if not safe_confirm("Continue anyway?", default=False):
                 return False
 
     # Step 4: Select save location
@@ -967,7 +964,7 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
             table.add_row(f"  [{i}]", f"{model['name']}{marker}", f"[dim]{model['id']}[/dim]")
         console.print(table)
 
-        choice = Prompt.ask(
+        choice = safe_prompt(
             "Select default model",
             default="1",
         )
@@ -987,7 +984,7 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
 
     # Step 6: Set as default provider+model for flavia?
     console.print(f"\n[dim]This will use [cyan]{provider_name}[/cyan] with model [cyan]{default_model_name}[/cyan] when running flavia.[/dim]")
-    set_default = Confirm.ask("Set as default?", default=True)
+    set_default = safe_confirm("Set as default?", default=True)
 
     # Build and save config
     provider_config = _build_provider_config(
@@ -1116,7 +1113,7 @@ def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
         console.print("  \\[s] Save and exit")
         console.print("  \\[q] Quit without saving")
 
-        choice = Prompt.ask("\nChoice", default="s").lower()
+        choice = safe_prompt("\nChoice", default="s").lower()
 
         if choice == "a":
             custom = _add_custom_model()
@@ -1138,9 +1135,8 @@ def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
             if new_models:
                 # Ask how to handle
                 console.print(f"\n[green]Found {len(new_models)} models.[/green]")
-                action = Prompt.ask(
-                    "How to handle?",
-                    choices=["replace", "merge", "cancel"],
+                action = safe_prompt(
+                    "How to handle? (replace/merge/cancel)",
                     default="merge",
                 )
                 if action == "replace":
@@ -1157,7 +1153,7 @@ def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
                     console.print(f"[green]Added {added} new models.[/green]")
 
         elif choice == "r":
-            indices = Prompt.ask("Enter model numbers to remove (comma-separated)")
+            indices = safe_prompt("Enter model numbers to remove (comma-separated)")
             removed = []
             for part in indices.split(","):
                 try:
@@ -1172,7 +1168,7 @@ def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
             _ensure_single_default(provider.models)
 
         elif choice == "d":
-            index_str = Prompt.ask("Enter model number to set as default")
+            index_str = safe_prompt("Enter model number to set as default")
             try:
                 index = int(index_str) - 1
                 if 0 <= index < len(provider.models):
@@ -1185,8 +1181,8 @@ def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
 
         elif choice == "x":
             # Delete provider
-            if Confirm.ask(
-                f"[red]Delete provider '{provider.name}' completely?[/red]",
+            if safe_confirm(
+                f"Delete provider '{provider.name}' completely?",
                 default=False,
             ):
                 return _delete_provider(settings, provider_id)
@@ -1211,7 +1207,7 @@ def _select_existing_provider(settings) -> Optional[str]:
         table.add_row(f"  [{i}]", f"[bold]{provider.name}[/bold]", f"[dim]{pid}[/dim]")
     console.print(table)
 
-    choice = Prompt.ask("Enter number")
+    choice = safe_prompt("Enter number")
     try:
         index = int(choice) - 1
         if 0 <= index < len(providers):
@@ -1263,7 +1259,7 @@ def _fetch_models_for_provider(provider) -> list[dict]:
     console.print("  \\[a] All displayed")
     console.print("  \\[s] Search")
 
-    choice = Prompt.ask("Select models (numbers/a/s)", default="a").lower()
+    choice = safe_prompt("Select models (numbers/a/s)", default="a").lower()
 
     if choice == "a":
         selected = displayed
@@ -1344,7 +1340,7 @@ def _delete_provider(settings, provider_id: str) -> bool:
         return False
 
     console.print(f"[dim]Target file: {providers_file}[/dim]")
-    if not Confirm.ask(f"Delete provider '{provider_id}' from this file?", default=False):
+    if not safe_confirm(f"Delete provider '{provider_id}' from this file?", default=False):
         console.print("[yellow]Delete cancelled.[/yellow]")
         return False
 
@@ -1388,7 +1384,7 @@ def _save_provider_changes(settings, provider_id: str, provider) -> bool:
     providers_file.parent.mkdir(parents=True, exist_ok=True)
 
     console.print(f"[dim]Target file: {providers_file}[/dim]")
-    if not Confirm.ask("Save changes to this file?", default=True):
+    if not safe_confirm("Save changes to this file?", default=True):
         console.print("[yellow]Save cancelled.[/yellow]")
         return False
 
