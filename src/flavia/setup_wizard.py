@@ -120,8 +120,8 @@ Include a project_description that captures the academic subject.
 
 
 def find_pdf_files(directory: Path) -> List[Path]:
-    """Find all PDF files in a directory (non-recursive)."""
-    return list(directory.glob("*.pdf"))
+    """Find all PDF files in a directory (recursive)."""
+    return list(directory.glob("**/*.pdf"))
 
 
 def create_setup_agent(

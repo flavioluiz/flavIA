@@ -115,9 +115,16 @@ class ConvertPdfsTool(BaseTool):
                 else:
                     content = text
 
-                # Write output file
-                output_name = pdf_path.stem + f".{output_format}"
-                output_file = out_path / output_name
+                # Write output file, preserving subdirectory structure
+                try:
+                    relative_path = pdf_path.relative_to(base_dir)
+                    output_file = out_path / relative_path.with_suffix(f".{output_format}")
+                except ValueError:
+                    # PDF is outside base_dir, use just the filename
+                    output_file = out_path / (pdf_path.stem + f".{output_format}")
+
+                # Ensure parent directories exist
+                output_file.parent.mkdir(parents=True, exist_ok=True)
                 can_write_file, file_write_error = check_write_permission(output_file, agent_context)
                 if not can_write_file:
                     errors.append(f"{pdf_file}: {file_write_error}")
