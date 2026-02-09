@@ -41,7 +41,10 @@ class ConvertPdfsTool(BaseTool):
                 ToolParameter(
                     name="output_dir",
                     type="string",
-                    description="Output directory for converted files (default: same as PDF, or 'converted/' subdirectory)",
+                    description=(
+                        "Output directory for converted files "
+                        "(default: same as PDF, or '.converted/' subdirectory)"
+                    ),
                     required=False,
                 ),
                 ToolParameter(
@@ -70,7 +73,7 @@ class ConvertPdfsTool(BaseTool):
         if output_dir:
             out_path = resolve_path(output_dir, agent_context.base_dir)
         else:
-            out_path = resolve_path("converted", agent_context.base_dir)
+            out_path = resolve_path(".converted", agent_context.base_dir)
 
         can_write_output, write_error = check_write_permission(out_path, agent_context)
         if not can_write_output:

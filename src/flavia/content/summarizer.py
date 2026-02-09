@@ -1,7 +1,7 @@
 """LLM-based summarization for files and directories."""
 
 from pathlib import Path
-from typing import Optional, Any
+from typing import Any, Optional
 
 from .scanner import FileEntry
 
@@ -124,16 +124,32 @@ def _call_llm(
 ) -> Optional[str]:
     """Make a simple LLM call and return the response text."""
     try:
+        import httpx
         from openai import OpenAI
 
         client_kwargs: dict[str, Any] = {
             "api_key": api_key,
             "base_url": api_base_url,
+            "timeout": httpx.Timeout(30.0, connect=10.0),
         }
         if headers:
             client_kwargs["default_headers"] = headers
 
-        client = OpenAI(**client_kwargs)
+        try:
+            client = OpenAI(**client_kwargs)
+        except TypeError as exc:
+            if "unexpected keyword argument 'proxies'" not in str(exc):
+                raise
+            # Compatibility fallback for OpenAI SDK/httpx mismatch.
+            openai_kwargs = {k: v for k, v in client_kwargs.items() if k != "default_headers"}
+            client = OpenAI(
+                **openai_kwargs,
+                http_client=httpx.Client(
+                    timeout=httpx.Timeout(30.0, connect=10.0),
+                    headers=headers if headers else None,
+                ),
+            )
+
         response = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
@@ -141,7 +157,7 @@ def _call_llm(
             temperature=0.3,
         )
 
-        if response.choices:
+        if response.choices and response.choices[0].message and response.choices[0].message.content:
             return response.choices[0].message.content.strip()
         return None
 

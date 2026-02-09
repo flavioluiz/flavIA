@@ -38,7 +38,7 @@ def test_run_ai_setup_forces_pdf_conversion_before_analysis(monkeypatch, tmp_pat
     class FakeAgent:
         def _execute_tool(self, name, args):
             calls.append((name, args))
-            converted_dir = target_dir / "converted"
+            converted_dir = target_dir / ".converted"
             converted_dir.mkdir(exist_ok=True)
             (converted_dir / "paper.md").write_text("# paper", encoding="utf-8")
             return "Successfully converted 1 file(s)"
@@ -68,7 +68,7 @@ def test_run_ai_setup_forces_pdf_conversion_before_analysis(monkeypatch, tmp_pat
     assert calls[0][0] == "convert_pdfs"
     assert calls[0][1]["pdf_files"] == ["paper.pdf"]
     assert calls[1][0] == "run"
-    assert "converted/" in calls[1][1]["task"]
+    assert ".converted/" in calls[1][1]["task"]
 
 
 def test_run_ai_setup_allows_user_revision_and_regenerates(monkeypatch, tmp_path):
@@ -328,7 +328,7 @@ def test_run_setup_command_in_cli_skips_pdf_prompt_when_nested_converted_exists(
     pdf_path.parent.mkdir(parents=True)
     pdf_path.write_text("dummy", encoding="utf-8")
 
-    converted_md = tmp_path / "converted" / "papers" / "nested.md"
+    converted_md = tmp_path / ".converted" / "papers" / "nested.md"
     converted_md.parent.mkdir(parents=True)
     converted_md.write_text("# nested", encoding="utf-8")
 

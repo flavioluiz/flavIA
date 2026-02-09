@@ -75,7 +75,7 @@ class RefreshCatalogTool(BaseTool):
 
         # Convert new/modified binary documents if requested
         if convert:
-            converted_dir = agent_context.base_dir / "converted"
+            converted_dir = agent_context.base_dir / ".converted"
             can_write_converted, write_converted_error = check_write_permission(
                 converted_dir,
                 agent_context,

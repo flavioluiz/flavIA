@@ -83,6 +83,26 @@ class TestFileScanner:
         assert len(files) == 1
         assert files[0].name == "keep.py"
 
+    def test_scan_ignores_converted_directories(self, tmp_path):
+        """Converted outputs should not be indexed as separate source files."""
+        (tmp_path / "paper.pdf").write_bytes(b"%PDF-1.4")
+
+        hidden_converted = tmp_path / ".converted"
+        hidden_converted.mkdir()
+        (hidden_converted / "paper.md").write_text("# converted", encoding="utf-8")
+
+        legacy_converted = tmp_path / "converted"
+        legacy_converted.mkdir()
+        (legacy_converted / "paper.md").write_text("# converted legacy", encoding="utf-8")
+
+        scanner = FileScanner(tmp_path)
+        files, _ = scanner.scan()
+        paths = {f.path for f in files}
+
+        assert "paper.pdf" in paths
+        assert ".converted/paper.md" not in paths
+        assert "converted/paper.md" not in paths
+
     def test_file_entry_metadata(self, tmp_path):
         """Verify file entry contains correct metadata."""
         test_file = tmp_path / "test.txt"

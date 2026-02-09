@@ -17,7 +17,7 @@ def test_run_catalog_update_reconverts_modified_pdf(monkeypatch, tmp_path):
 
     catalog = ContentCatalog(tmp_path)
     catalog.build()
-    catalog.files["doc.pdf"].converted_to = "converted/doc.md"
+    catalog.files["doc.pdf"].converted_to = ".converted/doc.md"
     catalog.save(config_dir)
 
     time.sleep(0.05)

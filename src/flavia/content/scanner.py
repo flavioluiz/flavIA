@@ -146,6 +146,8 @@ DEFAULT_IGNORE_DIRS = {
     ".hg",
     ".svn",
     ".flavia",
+    ".converted",
+    "converted",
     "__pycache__",
     ".pytest_cache",
     ".mypy_cache",

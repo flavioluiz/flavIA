@@ -588,7 +588,7 @@ def run_catalog_update(
         if needs_conversion:
             print(f"\nConverting {len(needs_conversion)} binary document(s)...")
             converter = PdfConverter()
-            converted_dir = base_dir / "converted"
+            converted_dir = base_dir / ".converted"
             converted_count = 0
             for entry in needs_conversion:
                 source = base_dir / entry.path

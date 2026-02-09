@@ -3,7 +3,7 @@
 import shutil
 import sys
 from pathlib import Path
-from typing import Optional, List, Any
+from typing import Any, List, Optional
 
 import yaml
 from rich.console import Console
@@ -15,6 +15,8 @@ from flavia.setup.prompt_utils import safe_confirm, safe_prompt
 
 console = Console()
 MAX_SETUP_REVISIONS = 5
+CONVERTED_DIR_NAME = ".converted"
+LEGACY_CONVERTED_DIR_NAME = "converted"
 
 
 # System prompt for the setup agent
@@ -24,7 +26,7 @@ Your task is to analyze the user's directory and create an appropriate agents.ya
 
 ## Your Process:
 
-1. **Check for converted documents**: Look in the 'converted/' directory for .md or .txt files
+1. **Check for converted documents**: Look in the '.converted/' directory for .md or .txt files
 2. **Explore the directory**: Use list_files to understand the structure
 3. **Identify key files**: Look for README, converted documents, papers, notes
 4. **Read important files**: Read converted documents to understand the subject matter
@@ -89,7 +91,7 @@ Use output_format="md" and preserve_structure=true for best results.
 ## Step 2: Analyze Content
 
 After conversion:
-1. List files in the 'converted/' directory
+1. List files in the '.converted/' directory
 2. Read a few converted files to understand the subject matter
 3. Identify the academic topic, document types, and potential use cases
 
@@ -707,14 +709,16 @@ def _build_content_catalog(target_dir: Path, config_dir: Path) -> None:
         catalog = ContentCatalog(target_dir)
         catalog.build()
 
-        # Link converted files if they exist
-        converted_dir = target_dir / "converted"
-        if converted_dir.exists():
+        # Link converted files if they exist. Prefer .converted/, but support legacy converted/.
+        converted_dirs = [target_dir / CONVERTED_DIR_NAME, target_dir / LEGACY_CONVERTED_DIR_NAME]
+        if any(d.exists() for d in converted_dirs):
             for entry in catalog.files.values():
                 if entry.file_type == "binary_document" and entry.category == "pdf":
                     # Prefer preserved relative structure, but support legacy flat outputs.
                     relative_md = Path(entry.path).with_suffix(".md")
-                    candidates = [converted_dir / relative_md, converted_dir / relative_md.name]
+                    candidates: list[Path] = []
+                    for converted_dir in converted_dirs:
+                        candidates.extend([converted_dir / relative_md, converted_dir / relative_md.name])
                     for converted_path in candidates:
                         if not converted_path.exists():
                             continue
@@ -822,7 +826,7 @@ main:
 
         # Create .gitignore
         (config_dir / ".gitignore").write_text(
-            ".env\n.connection_checks.yaml\ncontent_catalog.json\n"
+            f".env\n.connection_checks.yaml\ncontent_catalog.json\n{CONVERTED_DIR_NAME}/\n"
         )
 
         # Build content catalog
@@ -880,7 +884,7 @@ def _run_ai_setup(
 
     # Create .gitignore
     (config_dir / ".gitignore").write_text(
-        ".env\n.connection_checks.yaml\ncontent_catalog.json\nconverted/\n"
+        f".env\n.connection_checks.yaml\ncontent_catalog.json\n{CONVERTED_DIR_NAME}/\n"
     )
 
     # Convert PDFs first when requested
@@ -993,7 +997,7 @@ def _build_setup_task(
     """Build setup task including optional user guidance and revision feedback."""
     if convert_pdfs:
         base = (
-            "Analyze the converted content in the 'converted/' directory and create an "
+            f"Analyze the converted content in the '{CONVERTED_DIR_NAME}/' directory and create an "
             "appropriate agents.yaml configuration specialized for this academic material. "
             "Use create_agents_config to write the file."
         )
@@ -1043,7 +1047,7 @@ def _print_success(config_dir: Path, has_pdfs: bool = False):
     """Print success message."""
     extra_info = ""
     if has_pdfs:
-        extra_info = "\n[dim]Converted documents are in: converted/[/dim]\n"
+        extra_info = f"\n[dim]Converted documents are in: {CONVERTED_DIR_NAME}/[/dim]\n"
 
     console.print(
         Panel.fit(
@@ -1089,9 +1093,9 @@ def run_setup_command_in_cli(settings, base_dir: Path) -> bool:
 
     if pdf_files:
         # Check if already converted
-        converted_dir = base_dir / "converted"
-        if converted_dir.exists() and list(converted_dir.rglob("*.md")):
-            console.print(f"[dim]Found existing converted documents in converted/[/dim]")
+        converted_dirs = [base_dir / CONVERTED_DIR_NAME, base_dir / LEGACY_CONVERTED_DIR_NAME]
+        if any(d.exists() and list(d.rglob("*.md")) for d in converted_dirs):
+            console.print(f"[dim]Found existing converted documents in {CONVERTED_DIR_NAME}/[/dim]")
         else:
             console.print(f"[dim]Found {len(pdf_files)} PDF file(s)[/dim]")
             convert_pdfs = safe_confirm("Convert PDFs to text first?", default=True)
