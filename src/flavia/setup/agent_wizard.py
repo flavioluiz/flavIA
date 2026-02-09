@@ -46,7 +46,13 @@ def _save_agents_config(agents_file: Path, data: dict[str, Any]) -> bool:
     try:
         agents_file.parent.mkdir(parents=True, exist_ok=True)
         with open(agents_file, "w", encoding="utf-8") as f:
-            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+            yaml.dump(
+                data,
+                f,
+                default_flow_style=False,
+                sort_keys=False,
+                allow_unicode=True,
+            )
         return True
     except Exception:
         return False

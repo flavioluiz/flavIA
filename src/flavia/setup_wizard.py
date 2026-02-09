@@ -462,7 +462,13 @@ def _write_providers_file(config_dir: Path, selected_model: str) -> None:
     """Write providers.yaml for selected default provider/model."""
     providers_data = _build_providers_config(selected_model)
     with open(config_dir / "providers.yaml", "w", encoding="utf-8") as f:
-        yaml.dump(providers_data, f, default_flow_style=False, sort_keys=False)
+        yaml.dump(
+            providers_data,
+            f,
+            default_flow_style=False,
+            sort_keys=False,
+            allow_unicode=True,
+        )
 
 
 def _ensure_agent_models(agents_file: Path, selected_model: str) -> None:
@@ -501,7 +507,13 @@ def _ensure_agent_models(agents_file: Path, selected_model: str) -> None:
     data["main"] = main
 
     with open(agents_file, "w", encoding="utf-8") as f:
-        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+        yaml.dump(
+            data,
+            f,
+            default_flow_style=False,
+            sort_keys=False,
+            allow_unicode=True,
+        )
 
 
 def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:

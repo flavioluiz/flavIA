@@ -362,7 +362,13 @@ def _save_connection_checks(checks_file: Path, checks: dict) -> None:
     try:
         checks_file.parent.mkdir(parents=True, exist_ok=True)
         with open(checks_file, "w", encoding="utf-8") as f:
-            yaml.dump({"checks": checks}, f, default_flow_style=False, sort_keys=False)
+            yaml.dump(
+                {"checks": checks},
+                f,
+                default_flow_style=False,
+                sort_keys=False,
+                allow_unicode=True,
+            )
     except Exception:
         # Best-effort cache: startup should continue even if write fails.
         pass

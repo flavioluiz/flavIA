@@ -609,7 +609,13 @@ def _save_provider_config(
 
     # Write back
     with open(providers_file, "w", encoding="utf-8") as f:
-        yaml.dump(existing_data, f, default_flow_style=False, sort_keys=False)
+        yaml.dump(
+            existing_data,
+            f,
+            default_flow_style=False,
+            sort_keys=False,
+            allow_unicode=True,
+        )
 
     return providers_file
 
@@ -1053,7 +1059,13 @@ def _save_provider_changes(settings, provider_id: str, provider) -> bool:
 
     # Write back
     with open(providers_file, "w", encoding="utf-8") as f:
-        yaml.dump(existing_data, f, default_flow_style=False, sort_keys=False)
+        yaml.dump(
+            existing_data,
+            f,
+            default_flow_style=False,
+            sort_keys=False,
+            allow_unicode=True,
+        )
 
     console.print(f"\n[green]Changes saved to: {providers_file}[/green]")
     return True

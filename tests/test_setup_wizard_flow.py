@@ -195,3 +195,46 @@ def test_run_ai_setup_backfills_subagent_models_with_selected_default(monkeypatc
     agents_data = yaml.safe_load((config_dir / "agents.yaml").read_text(encoding="utf-8"))
     assert agents_data["main"]["model"] == "openai:gpt-4o"
     assert agents_data["main"]["subagents"]["helper"]["model"] == "openai:gpt-4o"
+
+
+def test_run_ai_setup_preserves_portuguese_accents_in_agents_yaml(monkeypatch, tmp_path):
+    target_dir = tmp_path
+    config_dir = tmp_path / ".flavia"
+
+    class FakeAgent:
+        def run(self, task):
+            _ = task
+            (config_dir / "agents.yaml").write_text(
+                (
+                    "main:\n"
+                    "  context: \"Você é um especialista em comparação acadêmica\"\n"
+                    "  tools:\n"
+                    "    - read_file\n"
+                    "  subagents:\n"
+                    "    comparador:\n"
+                    "      context: \"Análise de pós-graduação acadêmica e profissional\"\n"
+                    "      tools:\n"
+                    "        - read_file\n"
+                ),
+                encoding="utf-8",
+            )
+            return "done"
+
+    monkeypatch.setattr(
+        "flavia.setup_wizard.create_setup_agent",
+        lambda *args, **kwargs: (FakeAgent(), None),
+    )
+
+    success = _run_ai_setup(
+        target_dir=target_dir,
+        config_dir=config_dir,
+        selected_model="openai:gpt-4o",
+        convert_pdfs=False,
+        interactive_review=False,
+    )
+
+    assert success is True
+    content = (config_dir / "agents.yaml").read_text(encoding="utf-8")
+    assert "Você é um especialista em comparação acadêmica" in content
+    assert "Análise de pós-graduação acadêmica e profissional" in content
+    assert "Voc\\xEA" not in content
