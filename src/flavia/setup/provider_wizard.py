@@ -832,6 +832,15 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
     selection_kind = provider_selection["kind"]
     selected_provider_id = provider_selection["provider_id"]
 
+    # Check if provider is already configured - redirect to management interface
+    existing_provider = settings.providers.get_provider(selected_provider_id)
+    if existing_provider is not None and selection_kind in ("known", "existing"):
+        console.print(
+            f"\n[dim]Provider '{existing_provider.name}' is already configured. "
+            f"Opening management interface...[/dim]"
+        )
+        return manage_provider_models(settings, selected_provider_id)
+
     if selection_kind == "custom":
         # Custom provider
         provider_id = safe_prompt("\nProvider ID (short name)", default="custom")
@@ -1086,12 +1095,27 @@ def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
     _normalize_provider_models(provider)
     _ensure_single_default(provider.models)
 
+    # Track changes to provider properties
+    changes = {
+        "name": provider.name,
+        "new_id": provider_id,
+        "api_base_url": provider.api_base_url,
+        "api_key_config": None,  # Set if user changes it
+        "headers": dict(provider.headers) if provider.headers else {},
+        "id_changed": False,
+        "update_default": False,
+    }
+
     console.print(
         Panel.fit(
-            f"[bold blue]Manage Models[/bold blue]\n\n"
+            f"[bold blue]Manage Provider[/bold blue]\n\n"
             f"Provider: [bold]{provider.name}[/bold] ({provider_id})\n"
+            f"URL: [dim]{provider.api_base_url}[/dim]\n"
+            f"API Key: [green]{'Configured' if provider.api_key else 'Not set'}[/green]"
+            + (f" [dim](${provider.api_key_env_var})[/dim]" if provider.api_key_env_var else "") + "\n"
+            f"Headers: [dim]{len(provider.headers) if provider.headers else 0} configured[/dim]\n"
             f"Models: {len(provider.models)}",
-            title="Model Management",
+            title="Provider Management",
         )
     )
 
@@ -1110,6 +1134,11 @@ def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
         console.print("  \\[f] Fetch models from provider API")
         console.print("  \\[r] Remove model(s)")
         console.print("  \\[d] Set default model")
+        console.print("  \\[n] Change display name")
+        console.print("  \\[i] Change provider ID")
+        console.print("  \\[u] Change API base URL")
+        console.print("  \\[k] Change API key")
+        console.print("  \\[h] Change headers")
         console.print("  \\[x] Delete this provider")
         console.print("  \\[s] Save and exit")
         console.print("  \\[q] Quit without saving")
@@ -1180,6 +1209,122 @@ def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
             except ValueError:
                 console.print("[red]Invalid number.[/red]")
 
+        elif choice == "n":
+            # Change display name
+            console.print(f"\nCurrent name: [cyan]{changes['name']}[/cyan]")
+            new_name = safe_prompt("New display name", default=changes['name'])
+            if new_name != changes['name']:
+                changes['name'] = new_name
+                provider.name = new_name
+                console.print(f"[green]Display name changed to: {new_name}[/green]")
+
+        elif choice == "i":
+            # Change provider ID
+            console.print(f"\nCurrent ID: [cyan]{provider_id}[/cyan]")
+            console.print("[yellow]Warning: Changing the ID affects references to this provider.[/yellow]")
+            new_id = safe_prompt("New provider ID", default=provider_id)
+            if new_id and new_id != provider_id:
+                # Check conflict
+                if new_id in settings.providers.providers:
+                    console.print(f"[red]Provider ID '{new_id}' already exists.[/red]")
+                else:
+                    changes['new_id'] = new_id
+                    changes['id_changed'] = True
+                    if settings.providers.default_provider_id == provider_id:
+                        changes['update_default'] = True
+                        console.print(f"[dim]Note: default_provider will be updated to '{new_id}'.[/dim]")
+                    console.print(f"[green]Provider ID will change to: {new_id}[/green]")
+
+        elif choice == "u":
+            # Change API base URL
+            console.print(f"\nCurrent URL: [cyan]{changes['api_base_url']}[/cyan]")
+            new_url = safe_prompt("New API base URL", default=changes['api_base_url'])
+            if new_url != changes['api_base_url']:
+                changes['api_base_url'] = new_url
+                provider.api_base_url = new_url
+                console.print(f"[green]API base URL changed.[/green]")
+
+        elif choice == "k":
+            # Change API key
+            console.print(f"\n[bold]Change API Key for {provider.name}[/bold]")
+            if provider.api_key_env_var:
+                console.print(f"Current: [dim](via ${{{provider.api_key_env_var}}})[/dim]")
+            else:
+                console.print(f"Current: [dim](stored directly)[/dim]")
+
+            api_key, api_key_config = _get_api_key(
+                provider.name,
+                provider.api_key_env_var or _guess_api_key_env_var(provider_id)
+            )
+            if api_key:
+                changes['api_key_config'] = api_key_config
+                provider.api_key = api_key
+                if api_key_config.startswith("${"):
+                    provider.api_key_env_var = api_key_config[2:-1]
+                else:
+                    provider.api_key_env_var = None
+                console.print("[green]API key configuration updated.[/green]")
+
+        elif choice == "h":
+            # Change headers
+            console.print(f"\n[bold]Edit Headers[/bold]")
+            current = changes['headers']
+            if current:
+                console.print("Current headers:")
+                for k, v in current.items():
+                    console.print(f"  {k}: [dim]{v}[/dim]")
+            else:
+                console.print("[dim]No headers configured.[/dim]")
+
+            console.print("\n  \\[a] Add header")
+            console.print("  \\[e] Edit header")
+            console.print("  \\[r] Remove header")
+            console.print("  \\[c] Clear all")
+            console.print("  \\[d] Done")
+
+            while True:
+                h_choice = safe_prompt("Header action", default="d").lower()
+                if h_choice == "a":
+                    name = safe_prompt("Header name")
+                    if name:
+                        value = safe_prompt(f"Value for {name}")
+                        changes['headers'][name] = value
+                        console.print(f"[green]Added: {name}[/green]")
+                elif h_choice == "e" and changes['headers']:
+                    headers_list = list(changes['headers'].keys())
+                    for idx, name in enumerate(headers_list, 1):
+                        console.print(f"  [{idx}] {name}: {changes['headers'][name]}")
+                    try:
+                        idx = int(safe_prompt("Number")) - 1
+                        if 0 <= idx < len(headers_list):
+                            name = headers_list[idx]
+                            value = safe_prompt(f"New value for {name}", default=changes['headers'][name])
+                            changes['headers'][name] = value
+                            console.print(f"[green]Updated: {name}[/green]")
+                    except ValueError:
+                        pass
+                elif h_choice == "r" and changes['headers']:
+                    headers_list = list(changes['headers'].keys())
+                    for idx, name in enumerate(headers_list, 1):
+                        console.print(f"  [{idx}] {name}")
+                    try:
+                        idx = int(safe_prompt("Number to remove")) - 1
+                        if 0 <= idx < len(headers_list):
+                            name = headers_list[idx]
+                            del changes['headers'][name]
+                            console.print(f"[yellow]Removed: {name}[/yellow]")
+                    except ValueError:
+                        pass
+                elif h_choice == "c":
+                    if safe_confirm("Clear all headers?", default=False):
+                        changes['headers'].clear()
+                        console.print("[yellow]Headers cleared.[/yellow]")
+                elif h_choice == "d":
+                    break
+
+            provider.headers = changes['headers']
+            console.print("[green]Headers updated.[/green]")
+
         elif choice == "x":
             # Delete provider
             if safe_confirm(
@@ -1190,7 +1335,7 @@ def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
 
         elif choice == "s":
             # Save changes
-            return _save_provider_changes(settings, provider_id, provider)
+            return _save_provider_changes(settings, provider_id, provider, changes)
 
         elif choice == "q":
             console.print("[yellow]Changes discarded.[/yellow]")
@@ -1374,12 +1519,33 @@ def _delete_provider(settings, provider_id: str) -> bool:
     return True
 
 
-def _save_provider_changes(settings, provider_id: str, provider) -> bool:
-    """Save provider model changes to config file."""
+def _save_provider_changes(settings, provider_id: str, provider, changes: Optional[dict] = None) -> bool:
+    """Save provider changes to config file.
+
+    Args:
+        settings: Current settings (unused, kept for API compatibility)
+        provider_id: Original provider ID
+        provider: Provider object with potentially modified values
+        changes: Optional dict tracking property changes including:
+            - name: New display name
+            - new_id: New provider ID (if changed)
+            - api_base_url: New API base URL
+            - api_key_config: New API key configuration string
+            - headers: New headers dict
+            - id_changed: Whether ID was changed
+            - update_default: Whether to update default_provider
+
+    Returns:
+        True if changes were saved successfully
+    """
     _ = settings
+
+    # Determine the effective provider ID for save location prompt
+    effective_id = changes['new_id'] if changes and changes.get('id_changed') else provider_id
+
     location = _select_location(
-        provider_id=provider_id,
-        title=f"Where should changes for provider '{provider_id}' be saved?",
+        provider_id=provider_id,  # Use original ID for finding existing config
+        title=f"Where should changes for provider '{effective_id}' be saved?",
     )
     providers_file = _providers_file_for_location(location)
     providers_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1411,36 +1577,54 @@ def _save_provider_changes(settings, provider_id: str, provider) -> bool:
             model_dict["description"] = model.description
         models_data.append(model_dict)
 
-    # Update provider config
-    existing_provider_data = providers.get(provider_id)
-    if isinstance(existing_provider_data, dict):
-        existing_provider_data["models"] = models_data
-    else:
-        raw_provider = _find_provider_raw_config(provider_id)
-        new_provider: dict[str, Any] = copy.deepcopy(raw_provider) if raw_provider else {}
+    # Handle ID change
+    new_provider_id = provider_id
+    if changes and changes.get('id_changed'):
+        new_provider_id = changes['new_id']
+        # Remove old provider entry
+        if provider_id in providers:
+            del providers[provider_id]
+        # Update default_provider if needed
+        if changes.get('update_default') and existing_data.get('default_provider') == provider_id:
+            existing_data['default_provider'] = new_provider_id
 
-        if not new_provider:
-            new_provider = {
-                "name": provider.name,
-                "api_base_url": provider.api_base_url,
-            }
-        else:
-            if "name" not in new_provider:
-                new_provider["name"] = provider.name
-            if "api_base_url" not in new_provider:
-                new_provider["api_base_url"] = provider.api_base_url
+    # Build provider data
+    provider_data = providers.get(new_provider_id, {})
+    if not isinstance(provider_data, dict):
+        provider_data = {}
 
-        if not new_provider.get("api_key"):
-            new_provider["api_key"] = _build_api_key_reference(provider_id, provider, raw_provider=raw_provider)
+    # Set properties from changes if available, otherwise from provider object
+    provider_data['name'] = changes['name'] if changes else provider.name
+    provider_data['api_base_url'] = changes['api_base_url'] if changes else provider.api_base_url
+    provider_data['models'] = models_data
 
-        if "headers" not in new_provider and getattr(provider, "headers", None):
+    # Get raw provider config for preserving unexpanded values (API key, headers)
+    raw_provider = _find_provider_raw_config(provider_id)
+
+    # Handle API key
+    if changes and changes.get('api_key_config'):
+        provider_data['api_key'] = changes['api_key_config']
+    elif not provider_data.get('api_key'):
+        provider_data['api_key'] = _build_api_key_reference(new_provider_id, provider, raw_provider=raw_provider)
+
+    # Handle headers
+    if changes is not None:
+        if changes.get('headers'):
+            provider_data['headers'] = changes['headers']
+        elif 'headers' in provider_data and not changes.get('headers'):
+            # User cleared headers
+            del provider_data['headers']
+    elif 'headers' not in provider_data:
+        # When changes is None (backwards compatibility), preserve raw config headers
+        if raw_provider and raw_provider.get('headers'):
+            provider_data['headers'] = copy.deepcopy(raw_provider['headers'])
+        elif getattr(provider, "headers", None):
             template_headers = KNOWN_PROVIDERS.get(provider_id, {}).get("headers")
-            new_provider["headers"] = (
+            provider_data["headers"] = (
                 copy.deepcopy(template_headers) if template_headers else copy.deepcopy(provider.headers)
             )
 
-        new_provider["models"] = models_data
-        providers[provider_id] = new_provider
+    providers[new_provider_id] = provider_data
 
     # Write back
     with open(providers_file, "w", encoding="utf-8") as f:

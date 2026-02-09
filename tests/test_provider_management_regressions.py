@@ -35,8 +35,9 @@ def test_manage_provider_add_model_handles_empty_model_list(monkeypatch):
     choices = iter(["a", "s"])
     saved: dict[str, object] = {}
 
-    def _save_changes(_settings, _provider_id, provider):
+    def _save_changes(_settings, _provider_id, provider, changes=None):
         saved["models"] = list(provider.models)
+        saved["changes"] = changes
         return True
 
     monkeypatch.setattr(
@@ -64,8 +65,9 @@ def test_manage_provider_merge_fetch_keeps_model_objects(monkeypatch):
     choices = iter(["f", "merge", "s"])
     saved: dict[str, object] = {}
 
-    def _save_changes(_settings, _provider_id, provider):
+    def _save_changes(_settings, _provider_id, provider, changes=None):
         saved["models"] = list(provider.models)
+        saved["changes"] = changes
         return True
 
     monkeypatch.setattr(
@@ -225,7 +227,8 @@ def test_save_provider_changes_creates_local_override_without_secret_leak(monkey
     assert provider_data["headers"]["X-App-Name"] == "${XAI_APP_NAME}"
 
 
-def test_run_provider_wizard_uses_current_default_model_as_prompt_default(monkeypatch, tmp_path):
+def test_run_provider_wizard_redirects_to_manage_for_configured_provider(monkeypatch, tmp_path):
+    """When selecting an already-configured provider, wizard should redirect to management interface."""
     settings = Settings(
         providers=ProviderRegistry(
             providers={
@@ -243,8 +246,11 @@ def test_run_provider_wizard_uses_current_default_model_as_prompt_default(monkey
             default_provider_id="openai",
         )
     )
-    captured: dict[str, str] = {}
-    confirm_answers = iter([False, True])  # Skip connection test, set as default provider.
+    manage_called: dict[str, object] = {}
+
+    def _mock_manage_provider_models(_settings, provider_id):
+        manage_called["provider_id"] = provider_id
+        return True
 
     monkeypatch.setattr("flavia.setup.provider_wizard._load_settings_for_target_dir", lambda _target_dir: settings)
     monkeypatch.setattr(
@@ -252,26 +258,9 @@ def test_run_provider_wizard_uses_current_default_model_as_prompt_default(monkey
         lambda settings=None: {"kind": "known", "provider_id": "openai"},
     )
     monkeypatch.setattr(
-        "flavia.setup.provider_wizard._get_api_key",
-        lambda _provider_name, _default_env_var="": ("test-key", "${OPENAI_API_KEY}"),
+        "flavia.setup.provider_wizard.manage_provider_models",
+        _mock_manage_provider_models,
     )
-    monkeypatch.setattr(
-        "flavia.setup.provider_wizard._select_models",
-        lambda available_models, **kwargs: available_models,
-    )
-    monkeypatch.setattr("flavia.setup.provider_wizard._select_location", lambda **kwargs: "local")
-    monkeypatch.setattr("flavia.setup.provider_wizard.safe_confirm", lambda *args, **kwargs: next(confirm_answers))
-    monkeypatch.setattr(
-        "flavia.setup.provider_wizard._save_provider_config",
-        lambda *args, **kwargs: tmp_path / ".flavia" / "providers.yaml",
-    )
-
-    def _safe_prompt(prompt, *args, default="", **kwargs):
-        if prompt == "Select default model":
-            captured["default_choice"] = default
-        return default
-
-    monkeypatch.setattr("flavia.setup.provider_wizard.safe_prompt", _safe_prompt)
 
     assert run_provider_wizard(tmp_path) is True
-    assert captured["default_choice"] == "2"
+    assert manage_called["provider_id"] == "openai"
