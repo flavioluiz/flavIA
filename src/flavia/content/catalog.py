@@ -1,5 +1,6 @@
 """Content catalog — the central index of all project files."""
 
+import hashlib
 import json
 from collections import Counter
 from datetime import datetime, timezone
@@ -257,27 +258,152 @@ class ContentCatalog:
         return [e for e in self.files.values() if e.status in ("new", "modified")]
 
     # ------------------------------------------------------------------
+    # Online Sources
+    # ------------------------------------------------------------------
+
+    def add_online_source(
+        self,
+        source_url: str,
+        source_type: str = "auto",
+        tags: Optional[list[str]] = None,
+    ) -> Optional[FileEntry]:
+        """
+        Add an online source (YouTube, webpage, etc.) to the catalog.
+
+        Args:
+            source_url: URL of the online source.
+            source_type: Source type ("youtube", "webpage", or "auto" to detect).
+            tags: Optional tags to associate with the source.
+
+        Returns:
+            The created FileEntry, or None if source type is not supported.
+        """
+        from .converters import converter_registry
+
+        # Auto-detect source type if needed
+        if source_type == "auto":
+            # Try YouTube first (more specific patterns)
+            youtube_converter = converter_registry.get_for_source("youtube")
+            if youtube_converter and youtube_converter.can_handle_source(source_url):
+                source_type = "youtube"
+            else:
+                # Fall back to webpage for any HTTP/HTTPS URL
+                webpage_converter = converter_registry.get_for_source("webpage")
+                if webpage_converter and webpage_converter.can_handle_source(source_url):
+                    source_type = "webpage"
+                else:
+                    return None
+
+        # Get the converter for this source type
+        converter = converter_registry.get_for_source(source_type)
+        if converter is None:
+            return None
+
+        # Determine fetch status based on implementation
+        fetch_status = "not_implemented" if not converter.is_implemented else "pending"
+
+        # Get metadata if possible
+        source_metadata = {}
+        if hasattr(converter, "get_metadata"):
+            source_metadata = converter.get_metadata(source_url)
+
+        # Generate a unique path for the online source
+        url_hash = hashlib.sha256(source_url.encode()).hexdigest()[:12]
+        path = f"_online/{source_type}/{url_hash}"
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        entry = FileEntry(
+            path=path,
+            name=source_metadata.get("title", source_url),
+            extension="",
+            file_type="online",
+            category=source_type,
+            size_bytes=0,
+            created_at=now,
+            modified_at=now,
+            indexed_at=now,
+            checksum_sha256="",
+            status="new",
+            tags=tags or [],
+            source_type=source_type,
+            source_url=source_url,
+            source_metadata=source_metadata,
+            fetch_status=fetch_status,
+        )
+
+        self.files[entry.path] = entry
+        self.catalog_updated_at = now
+        return entry
+
+    def get_online_sources(
+        self,
+        source_type: Optional[str] = None,
+        fetch_status: Optional[str] = None,
+    ) -> list[FileEntry]:
+        """
+        Get online sources from the catalog.
+
+        Args:
+            source_type: Filter by source type ("youtube", "webpage", etc.).
+            fetch_status: Filter by fetch status ("pending", "completed", "failed", "not_implemented").
+
+        Returns:
+            List of FileEntry objects for online sources.
+        """
+        results = []
+        for entry in self.files.values():
+            if entry.source_type == "local":
+                continue
+            if source_type and entry.source_type != source_type:
+                continue
+            if fetch_status and entry.fetch_status != fetch_status:
+                continue
+            results.append(entry)
+        return results
+
+    def get_pending_fetches(self) -> list[FileEntry]:
+        """
+        Get online sources that are pending download/conversion.
+
+        Returns:
+            List of FileEntry objects with fetch_status="pending".
+        """
+        return self.get_online_sources(fetch_status="pending")
+
+    # ------------------------------------------------------------------
     # Statistics
     # ------------------------------------------------------------------
 
     def get_stats(self) -> dict:
         """Get catalog statistics."""
         active_files = [e for e in self.files.values() if e.status != "missing"]
-        type_counts = Counter(e.file_type for e in active_files)
-        ext_counts = Counter(e.extension for e in active_files)
+        local_files = [e for e in active_files if e.source_type == "local"]
+        online_sources = [e for e in active_files if e.source_type != "local"]
+
+        type_counts = Counter(e.file_type for e in local_files)
+        ext_counts = Counter(e.extension for e in local_files)
         status_counts = Counter(e.status for e in self.files.values())
-        total_size = sum(e.size_bytes for e in active_files)
+        total_size = sum(e.size_bytes for e in local_files)
         with_summary = sum(1 for e in active_files if e.summary)
         with_conversion = sum(1 for e in active_files if e.converted_to)
 
+        # Online source stats
+        source_type_counts = Counter(e.source_type for e in online_sources)
+        fetch_status_counts = Counter(e.fetch_status for e in online_sources)
+
         return {
-            "total_files": len(active_files),
+            "total_files": len(local_files),
             "total_size_bytes": total_size,
             "by_type": dict(type_counts),
             "by_extension": dict(ext_counts),
             "by_status": dict(status_counts),
             "with_summary": with_summary,
             "with_conversion": with_conversion,
+            # Online sources
+            "online_sources": len(online_sources),
+            "by_source_type": dict(source_type_counts),
+            "by_fetch_status": dict(fetch_status_counts),
         }
 
     # ------------------------------------------------------------------

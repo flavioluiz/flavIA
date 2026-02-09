@@ -93,6 +93,7 @@ Inside a chat session, the following commands are available:
 | `/reset` | Reset conversation and reload configuration |
 | `/setup` | Reconfigure agents (re-analyze content) |
 | `/agents` | Configure model per agent/sub-agent |
+| `/catalog` | Browse content catalog (overview, search, summaries, online sources) |
 | `/models` | List available models with provider info |
 | `/providers` | List configured providers |
 | `/tools` | List available tools |

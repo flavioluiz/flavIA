@@ -218,6 +218,82 @@ class TestFileEntrySerialization:
         assert "summary" not in d
         assert "tags" not in d
 
+    def test_online_source_fields_roundtrip(self):
+        """Online source fields serialize and deserialize correctly."""
+        entry = FileEntry(
+            path="_online/youtube/abc123",
+            name="Test Video",
+            extension="",
+            file_type="online",
+            category="youtube",
+            size_bytes=0,
+            created_at="2025-01-01T00:00:00+00:00",
+            modified_at="2025-01-01T00:00:00+00:00",
+            indexed_at="2025-01-01T00:00:00+00:00",
+            checksum_sha256="",
+            source_type="youtube",
+            source_url="https://youtube.com/watch?v=abc123",
+            source_metadata={"title": "Test Video", "duration": 300},
+            fetch_status="not_implemented",
+        )
+
+        d = entry.to_dict()
+        assert d["source_type"] == "youtube"
+        assert d["source_url"] == "https://youtube.com/watch?v=abc123"
+        assert d["source_metadata"] == {"title": "Test Video", "duration": 300}
+        assert d["fetch_status"] == "not_implemented"
+
+        restored = FileEntry.from_dict(d)
+        assert restored.source_type == entry.source_type
+        assert restored.source_url == entry.source_url
+        assert restored.source_metadata == entry.source_metadata
+        assert restored.fetch_status == entry.fetch_status
+
+    def test_local_file_defaults_not_serialized(self):
+        """Local files don't serialize online source fields with defaults."""
+        entry = FileEntry(
+            path="file.py",
+            name="file.py",
+            extension=".py",
+            file_type="text",
+            category="python",
+            size_bytes=100,
+            created_at="2025-01-01T00:00:00+00:00",
+            modified_at="2025-01-01T00:00:00+00:00",
+            indexed_at="2025-01-01T00:00:00+00:00",
+            checksum_sha256="abc",
+        )
+
+        d = entry.to_dict()
+        # Default values should not be serialized
+        assert "source_type" not in d
+        assert "source_url" not in d
+        assert "source_metadata" not in d
+        assert "fetch_status" not in d
+
+    def test_backwards_compatibility_from_old_catalog(self):
+        """Old catalog entries without online fields load correctly."""
+        old_data = {
+            "path": "file.py",
+            "name": "file.py",
+            "extension": ".py",
+            "file_type": "text",
+            "category": "python",
+            "size_bytes": 100,
+            "created_at": "2025-01-01T00:00:00+00:00",
+            "modified_at": "2025-01-01T00:00:00+00:00",
+            "indexed_at": "2025-01-01T00:00:00+00:00",
+            "checksum_sha256": "abc",
+        }
+
+        entry = FileEntry.from_dict(old_data)
+
+        # Should have defaults for online fields
+        assert entry.source_type == "local"
+        assert entry.source_url is None
+        assert entry.source_metadata == {}
+        assert entry.fetch_status == "completed"
+
 
 # ---------------------------------------------------------------------------
 # DirectoryNode serialization tests
@@ -607,6 +683,209 @@ class TestCatalogUpdate:
         needs_conversion = catalog.get_files_needing_conversion()
         assert len(needs_conversion) == 1
         assert needs_conversion[0].name == "doc.pdf"
+
+
+# ---------------------------------------------------------------------------
+# Online Sources tests
+# ---------------------------------------------------------------------------
+
+
+class TestOnlineSources:
+    """Tests for online source methods in ContentCatalog."""
+
+    def test_add_youtube_source(self, tmp_path):
+        """Add a YouTube video to the catalog."""
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+
+        entry = catalog.add_online_source(
+            "https://www.youtube.com/watch?v=abc123",
+            source_type="youtube",
+        )
+
+        assert entry is not None
+        assert entry.source_type == "youtube"
+        assert entry.source_url == "https://www.youtube.com/watch?v=abc123"
+        assert entry.fetch_status == "not_implemented"
+        assert entry.file_type == "online"
+        assert entry.category == "youtube"
+        assert entry.path.startswith("_online/youtube/")
+
+    def test_add_webpage_source(self, tmp_path):
+        """Add a web page to the catalog."""
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+
+        entry = catalog.add_online_source(
+            "https://docs.python.org/3/",
+            source_type="webpage",
+        )
+
+        assert entry is not None
+        assert entry.source_type == "webpage"
+        assert entry.source_url == "https://docs.python.org/3/"
+        assert entry.fetch_status == "not_implemented"
+
+    def test_add_source_auto_detect_youtube(self, tmp_path):
+        """Auto-detect YouTube URLs."""
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+
+        entry = catalog.add_online_source(
+            "https://youtu.be/abc123",
+            source_type="auto",
+        )
+
+        assert entry is not None
+        assert entry.source_type == "youtube"
+
+    def test_add_source_auto_detect_webpage(self, tmp_path):
+        """Auto-detect web page URLs."""
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+
+        entry = catalog.add_online_source(
+            "https://example.com/page",
+            source_type="auto",
+        )
+
+        assert entry is not None
+        assert entry.source_type == "webpage"
+
+    def test_add_source_with_tags(self, tmp_path):
+        """Add source with tags."""
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+
+        entry = catalog.add_online_source(
+            "https://example.com",
+            tags=["reference", "docs"],
+        )
+
+        assert entry is not None
+        assert entry.tags == ["reference", "docs"]
+
+    def test_add_source_updates_catalog_timestamp(self, tmp_path):
+        """Adding a source updates the catalog timestamp."""
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+        original_timestamp = catalog.catalog_updated_at
+
+        # Small delay to ensure timestamp changes
+        import time
+        time.sleep(0.01)
+
+        catalog.add_online_source("https://example.com")
+
+        assert catalog.catalog_updated_at != original_timestamp
+
+    def test_get_online_sources_empty(self, tmp_path):
+        """Get online sources when none exist."""
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+
+        sources = catalog.get_online_sources()
+        assert sources == []
+
+    def test_get_online_sources_all(self, tmp_path):
+        """Get all online sources."""
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+
+        catalog.add_online_source("https://youtube.com/watch?v=1", source_type="youtube")
+        catalog.add_online_source("https://youtube.com/watch?v=2", source_type="youtube")
+        catalog.add_online_source("https://example.com", source_type="webpage")
+
+        sources = catalog.get_online_sources()
+        assert len(sources) == 3
+
+    def test_get_online_sources_filter_by_type(self, tmp_path):
+        """Filter online sources by type."""
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+
+        catalog.add_online_source("https://youtube.com/watch?v=1", source_type="youtube")
+        catalog.add_online_source("https://youtube.com/watch?v=2", source_type="youtube")
+        catalog.add_online_source("https://example.com", source_type="webpage")
+
+        youtube_sources = catalog.get_online_sources(source_type="youtube")
+        assert len(youtube_sources) == 2
+
+        webpage_sources = catalog.get_online_sources(source_type="webpage")
+        assert len(webpage_sources) == 1
+
+    def test_get_online_sources_filter_by_status(self, tmp_path):
+        """Filter online sources by fetch status."""
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+
+        entry1 = catalog.add_online_source("https://youtube.com/watch?v=1")
+        entry2 = catalog.add_online_source("https://example.com")
+
+        # Manually change one status to test filtering
+        entry2.fetch_status = "completed"
+
+        not_impl = catalog.get_online_sources(fetch_status="not_implemented")
+        completed = catalog.get_online_sources(fetch_status="completed")
+
+        assert len(not_impl) == 1
+        assert len(completed) == 1
+
+    def test_get_pending_fetches(self, tmp_path):
+        """Get sources pending fetch."""
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+
+        entry = catalog.add_online_source("https://example.com")
+
+        # Change status to pending
+        entry.fetch_status = "pending"
+
+        pending = catalog.get_pending_fetches()
+        assert len(pending) == 1
+        assert pending[0] is entry
+
+    def test_stats_include_online_sources(self, tmp_path):
+        """Stats include online source counts."""
+        (tmp_path / "file.txt").write_text("content")
+
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+
+        catalog.add_online_source("https://youtube.com/watch?v=1", source_type="youtube")
+        catalog.add_online_source("https://example.com", source_type="webpage")
+
+        stats = catalog.get_stats()
+
+        assert stats["online_sources"] == 2
+        assert "youtube" in stats["by_source_type"]
+        assert "webpage" in stats["by_source_type"]
+        assert stats["by_source_type"]["youtube"] == 1
+        assert stats["by_source_type"]["webpage"] == 1
+
+    def test_online_sources_persist_to_disk(self, tmp_path):
+        """Online sources are saved and loaded correctly."""
+        config_dir = tmp_path / ".flavia"
+        config_dir.mkdir()
+
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+
+        catalog.add_online_source(
+            "https://youtube.com/watch?v=abc",
+            source_type="youtube",
+            tags=["video"],
+        )
+        catalog.save(config_dir)
+
+        # Load and verify
+        loaded = ContentCatalog.load(config_dir)
+        sources = loaded.get_online_sources()
+
+        assert len(sources) == 1
+        assert sources[0].source_type == "youtube"
+        assert sources[0].source_url == "https://youtube.com/watch?v=abc"
+        assert sources[0].tags == ["video"]
 
 
 # ---------------------------------------------------------------------------

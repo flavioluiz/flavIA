@@ -192,6 +192,12 @@ class FileEntry:
     summary: Optional[str] = None
     tags: list[str] = field(default_factory=list)
 
+    # Online source fields
+    source_type: str = "local"  # "local", "youtube", "webpage"
+    source_url: Optional[str] = None  # URL original for online sources
+    source_metadata: dict = field(default_factory=dict)  # title, duration, author, etc.
+    fetch_status: str = "completed"  # "pending", "completed", "failed", "not_implemented"
+
     def to_dict(self) -> dict:
         """Serialize to dictionary."""
         d = {
@@ -213,6 +219,15 @@ class FileEntry:
             d["summary"] = self.summary
         if self.tags:
             d["tags"] = self.tags
+        # Online source fields (only serialize if not default)
+        if self.source_type != "local":
+            d["source_type"] = self.source_type
+        if self.source_url:
+            d["source_url"] = self.source_url
+        if self.source_metadata:
+            d["source_metadata"] = self.source_metadata
+        if self.fetch_status != "completed":
+            d["fetch_status"] = self.fetch_status
         return d
 
     @classmethod
@@ -233,6 +248,11 @@ class FileEntry:
             converted_to=data.get("converted_to"),
             summary=data.get("summary"),
             tags=data.get("tags", []),
+            # Online source fields (backwards compatible)
+            source_type=data.get("source_type", "local"),
+            source_url=data.get("source_url"),
+            source_metadata=data.get("source_metadata", {}),
+            fetch_status=data.get("fetch_status", "completed"),
         )
 
 

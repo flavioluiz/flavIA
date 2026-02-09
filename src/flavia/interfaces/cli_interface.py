@@ -340,6 +340,7 @@ def print_help() -> None:
 - `/reset` - Reset conversation
 - `/setup` - Configure agents for this project
 - `/agents` - Configure model per agent/subagent
+- `/catalog` - Browse content catalog
 - `/quit` - Exit
 - `/models` - List models (with provider info)
 - `/providers` - List configured providers
@@ -476,6 +477,12 @@ def run_cli(settings: Settings) -> None:
                     console.print(f"  prompts: {prompt_history_file}")
                     console.print(f"  chatlog: {chat_log_file}")
                     console.print()
+                    continue
+
+                elif command == "/catalog":
+                    from flavia.interfaces.catalog_command import run_catalog_command
+
+                    run_catalog_command(settings)
                     continue
 
                 else:
