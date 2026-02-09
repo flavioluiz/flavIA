@@ -13,9 +13,8 @@ from typing import Optional
 from rich.console import Console
 from rich.markdown import Markdown
 
-from flavia.config import Settings, reset_settings, load_settings
-from flavia.agent import RecursiveAgent, AgentProfile
-
+from flavia.agent import AgentProfile, RecursiveAgent
+from flavia.config import Settings, load_settings, reset_settings
 
 console = Console()
 
@@ -90,6 +89,15 @@ def _append_prompt_history(user_input: str, history_file: Path, history_enabled:
         _readline.write_history_file(str(history_file))
     except Exception:
         pass
+
+
+def _read_user_input(history_enabled: bool) -> str:
+    """Read user prompt while keeping readline redraw behavior stable."""
+    if history_enabled and _readline is not None:
+        # Keep a plain prompt with readline; styled ANSI prompts can break redraw
+        # when deleting characters or navigating history with arrows.
+        return input("You: ")
+    return console.input("[bold green]You:[/bold green] ")
 
 
 def _append_chat_log(chat_log_file: Path, role: str, content: str, model_ref: str = "") -> None:
@@ -368,7 +376,7 @@ def run_cli(settings: Settings) -> None:
 
     while True:
         try:
-            user_input = console.input("[bold green]You:[/bold green] ").strip()
+            user_input = _read_user_input(history_enabled).strip()
 
             if not user_input:
                 continue

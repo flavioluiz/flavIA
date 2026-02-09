@@ -62,3 +62,39 @@ def test_append_prompt_history_skips_duplicate_last_entry(monkeypatch, tmp_path)
     cli_interface._append_prompt_history("new query", history_file, history_enabled=True)
     assert events["added"] == ["new query"]
     assert events["written"] == 1
+
+
+def test_read_user_input_uses_plain_prompt_when_history_enabled(monkeypatch):
+    prompts = {"plain": None}
+
+    def fake_input(prompt):
+        prompts["plain"] = prompt
+        return "hello"
+
+    monkeypatch.setattr(cli_interface, "_readline", object())
+    monkeypatch.setattr("builtins.input", fake_input)
+    monkeypatch.setattr(
+        cli_interface.console,
+        "input",
+        lambda _prompt: (_ for _ in ()).throw(AssertionError("console.input should not be used")),
+    )
+
+    assert cli_interface._read_user_input(history_enabled=True) == "hello"
+    assert prompts["plain"] == "You: "
+
+
+def test_read_user_input_uses_rich_prompt_when_history_disabled(monkeypatch):
+    prompts = {"rich": None}
+
+    def fake_console_input(prompt):
+        prompts["rich"] = prompt
+        return "hello"
+
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _prompt: (_ for _ in ()).throw(AssertionError("input should not be used")),
+    )
+    monkeypatch.setattr(cli_interface.console, "input", fake_console_input)
+
+    assert cli_interface._read_user_input(history_enabled=False) == "hello"
+    assert prompts["rich"] == "[bold green]You:[/bold green] "
