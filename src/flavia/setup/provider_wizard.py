@@ -251,22 +251,23 @@ def _get_api_key(provider_name: str, env_var: str) -> tuple[str, str]:
             return existing, f"${{{env_var}}}"
 
     console.print(f"\n[bold]API Key for {provider_name}[/bold]")
-    console.print(f"[dim]You can enter the key directly or use ${{{env_var}}} syntax[/dim]")
 
-    key_input = Prompt.ask("API Key", password=True)
+    # Ask first: use env var or enter key directly?
+    if Confirm.ask(
+        f"Use environment variable ${{{env_var}}}?",
+        default=True,
+    ):
+        # User wants to use env var reference
+        console.print(f"[dim]Set {env_var} in your shell before running flavIA[/dim]")
+        console.print(f"[dim]Example: export {env_var}='your-api-key'[/dim]")
 
-    if key_input.startswith("${") and key_input.endswith("}"):
-        # Environment variable reference
-        resolved, _ = expand_env_vars(key_input)
-        return resolved, key_input
+        # Still need the actual key for validation
+        key_input = Prompt.ask("Enter the API key (for validation)", password=True)
+        return key_input, f"${{{env_var}}}"
     else:
-        # Direct value - suggest using env var
-        console.print(f"\n[yellow]Tip: Set {env_var} in your shell[/yellow]")
-        console.print(f"[dim]Then use ${{{env_var}}} in config to avoid storing secrets[/dim]")
-
-        if Confirm.ask(f"Store as ${{{env_var}}} reference instead?", default=True):
-            return key_input, f"${{{env_var}}}"
-
+        # User wants to enter key directly (will be stored in config)
+        console.print("[dim]The key will be stored directly in the config file[/dim]")
+        key_input = Prompt.ask("API Key", password=True)
         return key_input, key_input
 
 
