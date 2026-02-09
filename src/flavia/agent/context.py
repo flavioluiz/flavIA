@@ -43,7 +43,7 @@ class AgentContext:
             available_tools=profile.tools.copy(),
             subagents=profile.subagents.copy(),
             model_id=resolved_model or str(profile.model),
-            permissions=profile.permissions,
+            permissions=profile.permissions.copy(),
         )
 
     def can_spawn(self) -> bool:
@@ -67,7 +67,7 @@ class AgentContext:
             available_tools=profile.tools.copy(),
             subagents=profile.subagents.copy(),
             model_id=resolved_model or str(profile.model),
-            permissions=profile.permissions,
+            permissions=profile.permissions.copy(),
         )
 
 

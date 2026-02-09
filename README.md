@@ -282,7 +282,9 @@ main:
 
 **Permission Rules:**
 - **Default**: If `permissions` is not specified, the agent has full read/write access to `base_dir`
+- **Backward compatibility**: An empty `permissions` block (`permissions: {}`) also falls back to full `base_dir` access
 - **Inheritance**: Subagents inherit parent permissions unless they specify their own
+- **Dynamic subagents**: Agents created with `spawn_agent` inherit the current agent permissions
 - **Write implies read**: Write permission automatically grants read access to the same path
 - **Paths**: Accept both relative (to base_dir) and absolute paths
 

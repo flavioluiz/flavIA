@@ -12,6 +12,13 @@ class AgentPermissions:
     read_paths: list[Path] = field(default_factory=list)
     write_paths: list[Path] = field(default_factory=list)
 
+    def copy(self) -> "AgentPermissions":
+        """Create a shallow copy of permissions paths."""
+        return AgentPermissions(
+            read_paths=self.read_paths.copy(),
+            write_paths=self.write_paths.copy(),
+        )
+
     @classmethod
     def from_config(cls, config: dict, base_dir: Path) -> "AgentPermissions":
         """Parse permissions from YAML config, resolving relative paths."""
@@ -125,7 +132,7 @@ class AgentProfile:
             permissions = AgentPermissions.from_config(config["permissions"], base_dir)
         elif parent:
             # Inherit from parent if not specified
-            permissions = parent.permissions
+            permissions = parent.permissions.copy()
         else:
             # Default: full access to base_dir
             permissions = AgentPermissions.default_for_base_dir(base_dir)

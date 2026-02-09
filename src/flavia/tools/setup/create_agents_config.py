@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from ..base import BaseTool, ToolSchema, ToolParameter
+from ..permissions import check_write_permission
 from ..registry import register_tool
 
 if TYPE_CHECKING:
@@ -111,6 +112,10 @@ class CreateAgentsConfigTool(BaseTool):
         # Determine output path
         config_dir = agent_context.base_dir / ".flavia"
         config_file = config_dir / "agents.yaml"
+
+        can_write, write_error = check_write_permission(config_file, agent_context)
+        if not can_write:
+            return f"Error: {write_error}"
 
         # Build YAML content with comments
         yaml_content = self._build_yaml_with_comments(config, project_description)

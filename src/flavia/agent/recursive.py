@@ -248,6 +248,7 @@ class RecursiveAgent(BaseAgent):
             subagents={},
             name=f"sub-{self._child_counter}",
             max_depth=self.profile.max_depth,
+            permissions=self.profile.permissions.copy(),
         )
 
         child = RecursiveAgent(

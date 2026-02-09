@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..base import BaseTool, ToolSchema, ToolParameter
+from ..permissions import check_read_permission, check_write_permission, resolve_path
 from ..registry import register_tool
 
 if TYPE_CHECKING:
@@ -67,24 +68,22 @@ class ConvertPdfsTool(BaseTool):
 
         # Determine output directory
         if output_dir:
-            out_path = (base_dir / output_dir).resolve()
+            out_path = resolve_path(output_dir, agent_context.base_dir)
         else:
-            out_path = (base_dir / "converted").resolve()
+            out_path = resolve_path("converted", agent_context.base_dir)
 
-        try:
-            out_path.relative_to(base_dir)
-        except ValueError:
-            return f"Error: Access denied - output_dir '{output_dir}' is outside allowed directory"
+        can_write_output, write_error = check_write_permission(out_path, agent_context)
+        if not can_write_output:
+            return f"Error: {write_error}"
 
         out_path.mkdir(parents=True, exist_ok=True)
 
         for pdf_file in pdf_files:
-            pdf_path = (base_dir / pdf_file).resolve()
+            pdf_path = resolve_path(pdf_file, agent_context.base_dir)
 
-            try:
-                pdf_path.relative_to(base_dir)
-            except ValueError:
-                errors.append(f"{pdf_file}: Access denied - file is outside allowed directory")
+            can_read_input, read_error = check_read_permission(pdf_path, agent_context)
+            if not can_read_input:
+                errors.append(f"{pdf_file}: {read_error}")
                 continue
 
             if not pdf_path.exists():
@@ -119,9 +118,17 @@ class ConvertPdfsTool(BaseTool):
                 # Write output file
                 output_name = pdf_path.stem + f".{output_format}"
                 output_file = out_path / output_name
+                can_write_file, file_write_error = check_write_permission(output_file, agent_context)
+                if not can_write_file:
+                    errors.append(f"{pdf_file}: {file_write_error}")
+                    continue
                 output_file.write_text(content, encoding="utf-8")
 
-                converted.append(f"{pdf_file} -> {output_file.relative_to(base_dir)}")
+                try:
+                    output_ref = output_file.relative_to(base_dir)
+                except ValueError:
+                    output_ref = output_file
+                converted.append(f"{pdf_file} -> {output_ref}")
 
             except ImportError as e:
                 return f"Error: PDF library not installed. Run: pip install pdfplumber\n{e}"
