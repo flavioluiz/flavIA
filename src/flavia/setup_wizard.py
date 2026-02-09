@@ -712,13 +712,17 @@ def _build_content_catalog(target_dir: Path, config_dir: Path) -> None:
         if converted_dir.exists():
             for entry in catalog.files.values():
                 if entry.file_type == "binary_document" and entry.category == "pdf":
-                    # Look for corresponding converted file
-                    converted_path = converted_dir / Path(entry.path).with_suffix(".md")
-                    if converted_path.exists():
+                    # Prefer preserved relative structure, but support legacy flat outputs.
+                    relative_md = Path(entry.path).with_suffix(".md")
+                    candidates = [converted_dir / relative_md, converted_dir / relative_md.name]
+                    for converted_path in candidates:
+                        if not converted_path.exists():
+                            continue
                         try:
                             entry.converted_to = str(converted_path.relative_to(target_dir))
                         except ValueError:
                             entry.converted_to = str(converted_path)
+                        break
 
         catalog_path = catalog.save(config_dir)
         stats = catalog.get_stats()

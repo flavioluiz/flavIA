@@ -192,6 +192,9 @@ class ContentCatalog:
         Returns:
             List of matching FileEntry objects
         """
+        if limit <= 0:
+            return []
+
         results: list[FileEntry] = []
 
         for entry in self.files.values():
@@ -232,11 +235,13 @@ class ContentCatalog:
         return results
 
     def get_files_needing_conversion(self) -> list[FileEntry]:
-        """Get binary document files that have no converted version."""
+        """Get binary documents that should be (re)converted to text."""
         return [
             e
             for e in self.files.values()
-            if e.file_type == "binary_document" and not e.converted_to and e.status != "missing"
+            if e.file_type == "binary_document"
+            and e.status != "missing"
+            and (not e.converted_to or e.status in ("new", "modified"))
         ]
 
     def get_files_needing_summary(self) -> list[FileEntry]:

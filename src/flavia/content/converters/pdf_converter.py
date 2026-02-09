@@ -31,8 +31,13 @@ class PdfConverter(BaseConverter):
         else:
             content = text
 
-        # Build output path preserving relative structure
-        output_file = output_dir / (source_path.stem + f".{output_format}")
+        # Preserve directory structure when source lives under output_dir.parent.
+        # Fallback to flat output if source is outside that tree.
+        try:
+            relative_source = source_path.resolve().relative_to(output_dir.resolve().parent)
+            output_file = output_dir / relative_source.with_suffix(f".{output_format}")
+        except ValueError:
+            output_file = output_dir / (source_path.stem + f".{output_format}")
         output_file.parent.mkdir(parents=True, exist_ok=True)
         output_file.write_text(content, encoding="utf-8")
         return output_file

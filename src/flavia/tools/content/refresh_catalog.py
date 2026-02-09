@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, Any
 
 from ..base import BaseTool, ToolSchema, ToolParameter
+from ..permissions import check_read_permission, check_write_permission
 
 if TYPE_CHECKING:
     from flavia.agent.context import AgentContext
@@ -47,6 +48,15 @@ class RefreshCatalogTool(BaseTool):
         remove_missing = args.get("remove_missing", True)
 
         config_dir = agent_context.base_dir / ".flavia"
+
+        can_read_base, read_base_error = check_read_permission(agent_context.base_dir, agent_context)
+        if not can_read_base:
+            return f"Error: {read_base_error}"
+
+        can_write_catalog, write_catalog_error = check_write_permission(config_dir, agent_context)
+        if not can_write_catalog:
+            return f"Error: {write_catalog_error}"
+
         catalog = ContentCatalog.load(config_dir)
         if catalog is None:
             return "Error: No content catalog found. Run 'flavia --init' to create one first."
@@ -65,16 +75,19 @@ class RefreshCatalogTool(BaseTool):
 
         # Convert new/modified binary documents if requested
         if convert:
+            converted_dir = agent_context.base_dir / "converted"
+            can_write_converted, write_converted_error = check_write_permission(
+                converted_dir,
+                agent_context,
+            )
+            if not can_write_converted:
+                return f"Error: {write_converted_error}"
+
             needs_conversion = catalog.get_files_needing_conversion()
-            # Filter to only new/modified files
-            to_convert = [
-                e for e in needs_conversion if e.status in ("new", "modified") or not e.converted_to
-            ]
-            if to_convert:
+            if needs_conversion:
                 converter = PdfConverter()
-                converted_dir = agent_context.base_dir / "converted"
                 converted_count = 0
-                for entry in to_convert:
+                for entry in needs_conversion:
                     source = agent_context.base_dir / entry.path
                     if not converter.can_handle(source):
                         continue

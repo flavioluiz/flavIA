@@ -17,8 +17,21 @@ The interface uses [Rich](https://github.com/Textualize/rich) for formatting, wi
 | Flag | Description |
 |------|-------------|
 | `--init` | Initialize local configuration with interactive wizard |
+| `--update` | Refresh content catalog (new/modified/deleted files) |
+| `--update-convert` | Refresh catalog and convert pending/modified binary documents (PDFs) |
+| `--update-summarize` | Refresh catalog and generate summaries for pending files |
+| `--update-full` | Rebuild catalog from scratch |
 | `--telegram` | Start in Telegram bot mode |
 | `--version` | Show version and exit |
+
+Catalog examples:
+
+```bash
+flavia --update
+flavia --update-convert
+flavia --update-summarize
+flavia --update-full
+```
 
 ### Model selection
 

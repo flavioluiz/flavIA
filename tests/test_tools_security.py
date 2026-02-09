@@ -8,6 +8,10 @@ import pytest
 
 from flavia.agent.context import AgentContext
 from flavia.agent.profile import AgentPermissions
+from flavia.content.catalog import ContentCatalog
+from flavia.tools.content.get_summary import GetSummaryTool
+from flavia.tools.content.query_catalog import QueryCatalogTool
+from flavia.tools.content.refresh_catalog import RefreshCatalogTool
 from flavia.tools.read.search_files import SearchFilesTool
 from flavia.tools.setup.convert_pdfs import ConvertPdfsTool
 
@@ -95,3 +99,64 @@ def test_convert_pdfs_respects_write_permissions(tmp_path):
     )
 
     assert "Write access denied" in result
+
+
+def _create_catalog(base_dir: Path) -> None:
+    (base_dir / "notes.md").write_text("# Notes", encoding="utf-8")
+    config_dir = base_dir / ".flavia"
+    config_dir.mkdir(exist_ok=True)
+    catalog = ContentCatalog(base_dir)
+    catalog.build()
+    catalog.save(config_dir)
+
+
+def test_refresh_catalog_blocks_when_read_not_allowed(tmp_path):
+    _create_catalog(tmp_path)
+    tool = RefreshCatalogTool()
+    permissions = AgentPermissions(
+        read_paths=[(tmp_path / "allowed").resolve()],
+        write_paths=[(tmp_path / "allowed").resolve()],
+    )
+    ctx = make_context(tmp_path, permissions=permissions)
+
+    result = tool.execute({}, ctx)
+    assert "Access denied" in result
+
+
+def test_refresh_catalog_blocks_when_catalog_write_not_allowed(tmp_path):
+    _create_catalog(tmp_path)
+    tool = RefreshCatalogTool()
+    permissions = AgentPermissions(
+        read_paths=[tmp_path.resolve()],
+        write_paths=[(tmp_path / "allowed_out").resolve()],
+    )
+    ctx = make_context(tmp_path, permissions=permissions)
+
+    result = tool.execute({}, ctx)
+    assert "Write access denied" in result
+
+
+def test_query_catalog_respects_read_permissions(tmp_path):
+    _create_catalog(tmp_path)
+    tool = QueryCatalogTool()
+    permissions = AgentPermissions(
+        read_paths=[(tmp_path / "allowed").resolve()],
+        write_paths=[(tmp_path / "allowed_out").resolve()],
+    )
+    ctx = make_context(tmp_path, permissions=permissions)
+
+    result = tool.execute({}, ctx)
+    assert "Access denied" in result
+
+
+def test_get_catalog_summary_respects_read_permissions(tmp_path):
+    _create_catalog(tmp_path)
+    tool = GetSummaryTool()
+    permissions = AgentPermissions(
+        read_paths=[(tmp_path / "allowed").resolve()],
+        write_paths=[(tmp_path / "allowed_out").resolve()],
+    )
+    ctx = make_context(tmp_path, permissions=permissions)
+
+    result = tool.execute({}, ctx)
+    assert "Access denied" in result

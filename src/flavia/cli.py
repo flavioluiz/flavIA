@@ -532,12 +532,13 @@ def run_catalog_update(
     convert: bool = False,
     summarize: bool = False,
     full_rebuild: bool = False,
+    base_dir: Path | None = None,
 ) -> int:
     """Update the content catalog."""
     from flavia.content.catalog import ContentCatalog
     from flavia.content.converters import PdfConverter
 
-    base_dir = Path.cwd()
+    base_dir = base_dir.resolve() if base_dir else Path.cwd()
     config_dir = base_dir / ".flavia"
 
     if not config_dir.exists():
@@ -671,6 +672,7 @@ def main() -> int:
             convert=args.update_convert,
             summarize=args.update_summarize,
             full_rebuild=args.update_full,
+            base_dir=Path(args.path).resolve() if args.path else None,
         )
 
     # Setup provider wizard

@@ -380,6 +380,17 @@ class TestContentCatalog:
         results = catalog.query(limit=3)
         assert len(results) == 3
 
+    def test_query_zero_limit_returns_no_results(self, tmp_path):
+        """Non-positive limits return no results."""
+        (tmp_path / "a.txt").write_text("a")
+        (tmp_path / "b.txt").write_text("b")
+
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+
+        assert catalog.query(limit=0) == []
+        assert catalog.query(limit=-5) == []
+
     def test_get_stats(self, tmp_path):
         """Get catalog statistics."""
         (tmp_path / "a.py").write_text("code")
@@ -558,6 +569,28 @@ class TestCatalogUpdate:
         needs_conversion = catalog.get_files_needing_conversion()
         assert len(needs_conversion) == 0
 
+    def test_modified_binary_with_existing_conversion_needs_reconversion(self, tmp_path):
+        """Modified binaries are reconverted even when converted_to already exists."""
+        pdf_path = tmp_path / "doc.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 original")
+        config_dir = tmp_path / ".flavia"
+        config_dir.mkdir()
+
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+        catalog.files["doc.pdf"].converted_to = "converted/doc.md"
+        catalog.save(config_dir)
+
+        time.sleep(0.05)
+        pdf_path.write_bytes(b"%PDF-1.4 modified")
+
+        catalog = ContentCatalog.load(config_dir)
+        catalog.update()
+
+        needs_conversion = catalog.get_files_needing_conversion()
+        assert len(needs_conversion) == 1
+        assert needs_conversion[0].name == "doc.pdf"
+
 
 # ---------------------------------------------------------------------------
 # TextReader tests
@@ -618,3 +651,25 @@ class TestPdfConverter:
         assert "# test paper" in result
         assert "## Introduction" in result
         assert "### 1. First Section" in result
+
+    def test_convert_preserves_relative_structure(self, tmp_path, monkeypatch):
+        """Converted outputs preserve source subdirectories to avoid filename collisions."""
+        source_a = tmp_path / "papers" / "v1" / "report.pdf"
+        source_b = tmp_path / "notes" / "v2" / "report.pdf"
+        source_a.parent.mkdir(parents=True)
+        source_b.parent.mkdir(parents=True)
+        source_a.write_bytes(b"%PDF-a")
+        source_b.write_bytes(b"%PDF-b")
+
+        converter = PdfConverter()
+        monkeypatch.setattr(converter, "extract_text", lambda _path: "PDF CONTENT")
+
+        output_dir = tmp_path / "converted"
+        out_a = converter.convert(source_a, output_dir)
+        out_b = converter.convert(source_b, output_dir)
+
+        assert out_a == output_dir / "papers" / "v1" / "report.md"
+        assert out_b == output_dir / "notes" / "v2" / "report.md"
+        assert out_a != out_b
+        assert out_a.exists()
+        assert out_b.exists()

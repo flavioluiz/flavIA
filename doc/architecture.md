@@ -34,6 +34,12 @@ src/flavia/
 │   ├── telegram_wizard.py    # Telegram bot configuration
 │   └── agent_wizard.py       # Per-agent model assignment
 │
+├── content/                  # Content catalog system
+│   ├── scanner.py            # File scanning and metadata extraction
+│   ├── catalog.py            # Persistent content index (.flavia/content_catalog.json)
+│   ├── summarizer.py         # LLM summarization for files/directories
+│   └── converters/           # Document conversion (PDF -> text/markdown)
+│
 ├── tools/                    # Tool system
 │   ├── base.py               # BaseTool (abstract class) + ToolSchema
 │   ├── registry.py           # ToolRegistry (singleton)
@@ -46,6 +52,10 @@ src/flavia/
 │   ├── spawn/                # Agent creation tools
 │   │   ├── spawn_agent.py
 │   │   └── spawn_predefined_agent.py
+│   ├── content/              # Catalog query/update tools
+│   │   ├── query_catalog.py
+│   │   ├── get_summary.py
+│   │   └── refresh_catalog.py
 │   └── setup/                # --init exclusive tools
 │       ├── convert_pdfs.py   # Conversion via pdfplumber
 │       └── create_agents_config.py
@@ -100,19 +110,28 @@ Manages runtime state:
 
 ### ToolRegistry
 
-Singleton that maintains the registry of all tools. Read/spawn tools are automatically registered on import of the `flavia.tools` module, while setup-only tools are registered manually by the setup wizard.
+Singleton that maintains the registry of all tools. Read/spawn/content tools are automatically registered on import of the `flavia.tools` module, while setup-only tools are registered manually by the setup wizard.
 
 ### BaseTool
 
 Abstract class for tools. Each tool defines:
 - Name and description
-- Category (`read`, `spawn`, `setup`)
+- Category (`read`, `spawn`, `content`, `setup`)
 - Parameter schema (compatible with OpenAI function calling)
 - Execution method
 
 ### Permissions
 
 The `permissions.py` module checks whether an agent has read or write access to a path, based on the permissions defined in the `AgentProfile`.
+
+## Content Catalog
+
+The content catalog indexes project files and stores metadata (type, timestamps, checksum, optional converted/summarized artifacts) in `.flavia/content_catalog.json`.
+
+- Built during setup (`flavia --init`)
+- Updated incrementally via CLI (`--update`, `--update-convert`, `--update-summarize`)
+- Queried at runtime through tools (`query_catalog`, `get_catalog_summary`, `refresh_catalog`)
+- Injected into the top-level system prompt as compact project context
 
 ## Configuration system
 

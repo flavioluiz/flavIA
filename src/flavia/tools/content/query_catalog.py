@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, Any
 
 from ..base import BaseTool, ToolSchema, ToolParameter
+from ..permissions import check_read_permission
 
 if TYPE_CHECKING:
     from flavia.agent.context import AgentContext
@@ -74,6 +75,10 @@ class QueryCatalogTool(BaseTool):
         from flavia.content.catalog import ContentCatalog
 
         config_dir = agent_context.base_dir / ".flavia"
+        allowed, error_msg = check_read_permission(config_dir, agent_context)
+        if not allowed:
+            return f"Error: {error_msg}"
+
         catalog = ContentCatalog.load(config_dir)
         if catalog is None:
             return (

@@ -1,0 +1,63 @@
+"""Regression tests for content catalog CLI update flows."""
+
+import time
+from pathlib import Path
+from types import SimpleNamespace
+
+from flavia.cli import main, run_catalog_update
+from flavia.content.catalog import ContentCatalog
+
+
+def test_run_catalog_update_reconverts_modified_pdf(monkeypatch, tmp_path):
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 original")
+
+    config_dir = tmp_path / ".flavia"
+    config_dir.mkdir()
+
+    catalog = ContentCatalog(tmp_path)
+    catalog.build()
+    catalog.files["doc.pdf"].converted_to = "converted/doc.md"
+    catalog.save(config_dir)
+
+    time.sleep(0.05)
+    pdf_path.write_bytes(b"%PDF-1.4 modified")
+
+    converted_calls: list[Path] = []
+
+    def _fake_convert(self, source_path: Path, output_dir: Path, output_format: str = "md"):
+        converted_calls.append(source_path)
+        output_file = output_dir / source_path.with_suffix(f".{output_format}").name
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_text("converted", encoding="utf-8")
+        return output_file
+
+    monkeypatch.setattr("flavia.content.converters.PdfConverter.can_handle", lambda self, _p: True)
+    monkeypatch.setattr("flavia.content.converters.PdfConverter.convert", _fake_convert)
+    monkeypatch.chdir(tmp_path)
+
+    assert run_catalog_update(convert=True) == 0
+    assert converted_calls == [pdf_path]
+
+
+def test_main_passes_path_to_run_catalog_update(monkeypatch, tmp_path):
+    args = SimpleNamespace(
+        version=False,
+        init=False,
+        update=True,
+        update_convert=False,
+        update_summarize=False,
+        update_full=False,
+        path=str(tmp_path),
+    )
+    called = {}
+
+    monkeypatch.setattr("flavia.cli.ensure_project_venv_and_reexec", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("flavia.cli.parse_args", lambda: args)
+    monkeypatch.setattr(
+        "flavia.cli.run_catalog_update",
+        lambda **kwargs: called.update(kwargs) or 0,
+    )
+
+    assert main() == 0
+    assert called["base_dir"] == tmp_path.resolve()
