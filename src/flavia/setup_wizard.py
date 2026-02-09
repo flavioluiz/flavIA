@@ -7,8 +7,8 @@ from typing import Any, List, Optional
 
 import yaml
 from rich.console import Console
-from rich.panel import Panel
 from rich.markdown import Markdown
+from rich.panel import Panel
 from rich.table import Table
 
 from flavia.setup.prompt_utils import safe_confirm, safe_prompt
@@ -16,7 +16,6 @@ from flavia.setup.prompt_utils import safe_confirm, safe_prompt
 console = Console()
 MAX_SETUP_REVISIONS = 5
 CONVERTED_DIR_NAME = ".converted"
-LEGACY_CONVERTED_DIR_NAME = "converted"
 
 
 # System prompt for the setup agent
@@ -150,11 +149,11 @@ def create_setup_agent(
     selected_model: Optional[str] = None,
 ):
     """Create the setup agent with special tools."""
+    from flavia.agent import AgentProfile, RecursiveAgent
     from flavia.config import load_settings
-    from flavia.agent import RecursiveAgent, AgentProfile
     from flavia.tools.registry import registry
-    from flavia.tools.setup.create_agents_config import CreateAgentsConfigTool
     from flavia.tools.setup.convert_pdfs import ConvertPdfsTool
+    from flavia.tools.setup.create_agents_config import CreateAgentsConfigTool
 
     # Load settings
     settings = load_settings()
@@ -686,7 +685,6 @@ def _ask_user_guidance() -> str:
 
 def _offer_provider_setup(config_dir: Path) -> None:
     """Offer to run the provider wizard after basic setup."""
-    import sys
 
     # Skip if not running interactively (e.g., in tests)
     if not sys.stdin.isatty():
@@ -709,16 +707,17 @@ def _build_content_catalog(target_dir: Path, config_dir: Path) -> None:
         catalog = ContentCatalog(target_dir)
         catalog.build()
 
-        # Link converted files if they exist. Prefer .converted/, but support legacy converted/.
-        converted_dirs = [target_dir / CONVERTED_DIR_NAME, target_dir / LEGACY_CONVERTED_DIR_NAME]
-        if any(d.exists() for d in converted_dirs):
+        # Link converted files if they exist in .converted/
+        converted_dir = target_dir / CONVERTED_DIR_NAME
+        if converted_dir.exists():
             for entry in catalog.files.values():
                 if entry.file_type == "binary_document" and entry.category == "pdf":
-                    # Prefer preserved relative structure, but support legacy flat outputs.
+                    # Check both preserved relative structure and flat output naming.
                     relative_md = Path(entry.path).with_suffix(".md")
-                    candidates: list[Path] = []
-                    for converted_dir in converted_dirs:
-                        candidates.extend([converted_dir / relative_md, converted_dir / relative_md.name])
+                    candidates = [
+                        converted_dir / relative_md,
+                        converted_dir / relative_md.name,
+                    ]
                     for converted_path in candidates:
                         if not converted_path.exists():
                             continue
@@ -728,7 +727,7 @@ def _build_content_catalog(target_dir: Path, config_dir: Path) -> None:
                             entry.converted_to = str(converted_path)
                         break
 
-        catalog_path = catalog.save(config_dir)
+        catalog.save(config_dir)
         stats = catalog.get_stats()
         console.print(
             f"[dim]Content catalog created: {stats['total_files']} files indexed "
@@ -1093,8 +1092,8 @@ def run_setup_command_in_cli(settings, base_dir: Path) -> bool:
 
     if pdf_files:
         # Check if already converted
-        converted_dirs = [base_dir / CONVERTED_DIR_NAME, base_dir / LEGACY_CONVERTED_DIR_NAME]
-        if any(d.exists() and list(d.rglob("*.md")) for d in converted_dirs):
+        converted_dir = base_dir / CONVERTED_DIR_NAME
+        if converted_dir.exists() and list(converted_dir.rglob("*.md")):
             console.print(f"[dim]Found existing converted documents in {CONVERTED_DIR_NAME}/[/dim]")
         else:
             console.print(f"[dim]Found {len(pdf_files)} PDF file(s)[/dim]")

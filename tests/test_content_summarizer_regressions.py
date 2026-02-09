@@ -76,3 +76,102 @@ def test_summarize_file_uses_openai_compat_fallback_for_httpx_proxy_error(monkey
     assert "default_headers" in calls[0]
     assert "http_client" in calls[1]
     assert created_http_clients[0].headers == {"X-Test-Header": "value"}
+
+
+def test_summarize_file_handles_empty_response(monkeypatch, tmp_path):
+    """Test handling when LLM returns empty/null content."""
+    md_file = tmp_path / "doc.md"
+    md_file.write_text("This is a document.", encoding="utf-8")
+    entry = _build_entry("doc.md")
+
+    class _FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.chat = SimpleNamespace(
+                completions=SimpleNamespace(
+                    create=lambda **_kwargs: SimpleNamespace(
+                        choices=[SimpleNamespace(message=SimpleNamespace(content=None))]
+                    )
+                )
+            )
+
+    monkeypatch.setitem(sys.modules, "httpx", SimpleNamespace(Timeout=lambda *a, **kw: None))
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=_FakeOpenAI))
+
+    result = summarize_file(
+        entry=entry,
+        base_dir=tmp_path,
+        api_key="test-key",
+        api_base_url="https://api.example.com/v1",
+        model="test-model",
+    )
+
+    assert result is None
+
+
+def test_summarize_file_handles_empty_choices(monkeypatch, tmp_path):
+    """Test handling when LLM returns empty choices list."""
+    md_file = tmp_path / "doc.md"
+    md_file.write_text("This is a document.", encoding="utf-8")
+    entry = _build_entry("doc.md")
+
+    class _FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.chat = SimpleNamespace(
+                completions=SimpleNamespace(create=lambda **_kwargs: SimpleNamespace(choices=[]))
+            )
+
+    monkeypatch.setitem(sys.modules, "httpx", SimpleNamespace(Timeout=lambda *a, **kw: None))
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=_FakeOpenAI))
+
+    result = summarize_file(
+        entry=entry,
+        base_dir=tmp_path,
+        api_key="test-key",
+        api_base_url="https://api.example.com/v1",
+        model="test-model",
+    )
+
+    assert result is None
+
+
+def test_summarize_file_uses_custom_timeouts(monkeypatch, tmp_path):
+    """Test that custom timeout values are passed correctly."""
+    md_file = tmp_path / "doc.md"
+    md_file.write_text("Short doc", encoding="utf-8")
+    entry = _build_entry("doc.md")
+
+    timeout_calls = []
+
+    class _FakeHttpxModule:
+        @staticmethod
+        def Timeout(*args, **kwargs):
+            timeout_calls.append({"args": args, "kwargs": kwargs})
+            return {"args": args, "kwargs": kwargs}
+
+    class _FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.chat = SimpleNamespace(
+                completions=SimpleNamespace(
+                    create=lambda **_kwargs: SimpleNamespace(
+                        choices=[SimpleNamespace(message=SimpleNamespace(content="Summary"))]
+                    )
+                )
+            )
+
+    monkeypatch.setitem(sys.modules, "httpx", _FakeHttpxModule)
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=_FakeOpenAI))
+
+    result = summarize_file(
+        entry=entry,
+        base_dir=tmp_path,
+        api_key="test-key",
+        api_base_url="https://api.example.com/v1",
+        model="test-model",
+        timeout=60.0,
+        connect_timeout=20.0,
+    )
+
+    assert result == "Summary"
+    assert len(timeout_calls) == 1
+    assert timeout_calls[0]["args"] == (60.0,)
+    assert timeout_calls[0]["kwargs"]["connect"] == 20.0

@@ -87,21 +87,18 @@ class TestFileScanner:
         """Converted outputs should not be indexed as separate source files."""
         (tmp_path / "paper.pdf").write_bytes(b"%PDF-1.4")
 
-        hidden_converted = tmp_path / ".converted"
-        hidden_converted.mkdir()
-        (hidden_converted / "paper.md").write_text("# converted", encoding="utf-8")
-
-        legacy_converted = tmp_path / "converted"
-        legacy_converted.mkdir()
-        (legacy_converted / "paper.md").write_text("# converted legacy", encoding="utf-8")
+        # Create .converted directory with converted markdown
+        converted_dir = tmp_path / ".converted"
+        converted_dir.mkdir()
+        (converted_dir / "paper.md").write_text("# converted", encoding="utf-8")
 
         scanner = FileScanner(tmp_path)
         files, _ = scanner.scan()
         paths = {f.path for f in files}
 
+        # Original PDF should be indexed, but not the converted file
         assert "paper.pdf" in paths
         assert ".converted/paper.md" not in paths
-        assert "converted/paper.md" not in paths
 
     def test_file_entry_metadata(self, tmp_path):
         """Verify file entry contains correct metadata."""

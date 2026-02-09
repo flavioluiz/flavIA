@@ -1,9 +1,12 @@
 """LLM-based summarization for files and directories."""
 
+import logging
 from pathlib import Path
 from typing import Any, Optional
 
 from .scanner import FileEntry
+
+logger = logging.getLogger(__name__)
 
 
 SUMMARIZE_FILE_PROMPT = """Summarize the following document in 1-3 concise sentences.
@@ -34,6 +37,8 @@ def summarize_file(
     model: str,
     max_chars: int = 4000,
     headers: Optional[dict[str, str]] = None,
+    timeout: float = 30.0,
+    connect_timeout: float = 10.0,
 ) -> Optional[str]:
     """
     Generate a summary for a single file using an LLM.
@@ -46,6 +51,8 @@ def summarize_file(
         model: Model ID to use.
         max_chars: Maximum characters of content to send.
         headers: Optional additional HTTP headers.
+        timeout: Request timeout in seconds (default: 30.0).
+        connect_timeout: Connection timeout in seconds (default: 10.0).
 
     Returns:
         Summary string, or None on failure.
@@ -77,7 +84,7 @@ def summarize_file(
         content=truncated,
     )
 
-    return _call_llm(prompt, api_key, api_base_url, model, headers)
+    return _call_llm(prompt, api_key, api_base_url, model, headers, timeout, connect_timeout)
 
 
 def summarize_directory(
@@ -87,6 +94,8 @@ def summarize_directory(
     api_base_url: str,
     model: str,
     headers: Optional[dict[str, str]] = None,
+    timeout: float = 30.0,
+    connect_timeout: float = 10.0,
 ) -> Optional[str]:
     """
     Generate a summary for a directory based on its files' summaries.
@@ -98,6 +107,8 @@ def summarize_directory(
         api_base_url: LLM API base URL.
         model: Model ID to use.
         headers: Optional additional HTTP headers.
+        timeout: Request timeout in seconds (default: 30.0).
+        connect_timeout: Connection timeout in seconds (default: 10.0).
 
     Returns:
         Summary string, or None on failure.
@@ -112,7 +123,7 @@ def summarize_directory(
         file_list=file_list,
     )
 
-    return _call_llm(prompt, api_key, api_base_url, model, headers)
+    return _call_llm(prompt, api_key, api_base_url, model, headers, timeout, connect_timeout)
 
 
 def _call_llm(
@@ -121,16 +132,33 @@ def _call_llm(
     api_base_url: str,
     model: str,
     headers: Optional[dict[str, str]] = None,
+    timeout: float = 30.0,
+    connect_timeout: float = 10.0,
 ) -> Optional[str]:
-    """Make a simple LLM call and return the response text."""
+    """
+    Make a simple LLM call and return the response text.
+
+    Args:
+        prompt: The prompt to send to the LLM.
+        api_key: API key for authentication.
+        api_base_url: Base URL for the API.
+        model: Model identifier.
+        headers: Optional HTTP headers.
+        timeout: Request timeout in seconds.
+        connect_timeout: Connection timeout in seconds.
+
+    Returns:
+        Response text, or None on failure.
+    """
     try:
         import httpx
         from openai import OpenAI
 
+        timeout_config = httpx.Timeout(timeout, connect=connect_timeout)
         client_kwargs: dict[str, Any] = {
             "api_key": api_key,
             "base_url": api_base_url,
-            "timeout": httpx.Timeout(30.0, connect=10.0),
+            "timeout": timeout_config,
         }
         if headers:
             client_kwargs["default_headers"] = headers
@@ -138,17 +166,21 @@ def _call_llm(
         try:
             client = OpenAI(**client_kwargs)
         except TypeError as exc:
-            if "unexpected keyword argument 'proxies'" not in str(exc):
+            # Compatibility fallback for OpenAI SDK/httpx version mismatch.
+            # Some versions have incompatible kwargs (e.g., 'proxies' or 'default_headers').
+            exc_str = str(exc).lower()
+            if "proxies" in exc_str or "default_headers" in exc_str or "timeout" in exc_str:
+                logger.debug(f"Using OpenAI SDK compatibility fallback due to: {exc}")
+                openai_kwargs = {"api_key": api_key, "base_url": api_base_url}
+                client = OpenAI(
+                    **openai_kwargs,
+                    http_client=httpx.Client(
+                        timeout=timeout_config,
+                        headers=headers if headers else None,
+                    ),
+                )
+            else:
                 raise
-            # Compatibility fallback for OpenAI SDK/httpx mismatch.
-            openai_kwargs = {k: v for k, v in client_kwargs.items() if k != "default_headers"}
-            client = OpenAI(
-                **openai_kwargs,
-                http_client=httpx.Client(
-                    timeout=httpx.Timeout(30.0, connect=10.0),
-                    headers=headers if headers else None,
-                ),
-            )
 
         response = client.chat.completions.create(
             model=model,
@@ -159,7 +191,19 @@ def _call_llm(
 
         if response.choices and response.choices[0].message and response.choices[0].message.content:
             return response.choices[0].message.content.strip()
+
+        logger.warning(f"LLM returned empty response for model {model}")
         return None
 
-    except Exception:
+    except ImportError as e:
+        logger.error(f"Required library not available: {e}")
+        return None
+    except (httpx.TimeoutException, httpx.ConnectTimeout) as e:
+        logger.warning(f"LLM request timeout for model {model}: {e}")
+        return None
+    except httpx.HTTPStatusError as e:
+        logger.warning(f"LLM HTTP error for model {model}: {e.response.status_code}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error calling LLM model {model}: {e}", exc_info=True)
         return None

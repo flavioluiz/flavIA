@@ -1,12 +1,10 @@
 """File scanner for content cataloging."""
 
 import hashlib
-import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-
 
 # File type classification
 TEXT_EXTENSIONS = {
@@ -147,7 +145,6 @@ DEFAULT_IGNORE_DIRS = {
     ".svn",
     ".flavia",
     ".converted",
-    "converted",
     "__pycache__",
     ".pytest_cache",
     ".mypy_cache",
