@@ -176,6 +176,15 @@ main:
   # Model to use (index or full ID)
   # model: 0
 
+  # Access permissions (optional - defaults to full base_dir access)
+  # permissions:
+  #   read:
+  #     - "."              # Relative to base_dir
+  #     - "./docs"         # Subfolders
+  #     - "/etc/configs"   # Absolute paths (outside project)
+  #   write:
+  #     - "./output"       # Write access (also grants read)
+
   # Tools available to this agent
   tools:
     - read_file
@@ -191,6 +200,7 @@ main:
       context: |
         You are a research specialist.
         Search thoroughly and report findings accurately.
+      # Inherits permissions from parent if not specified
       tools:
         - read_file
         - list_files

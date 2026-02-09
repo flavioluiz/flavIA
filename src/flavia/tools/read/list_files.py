@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..base import BaseTool, ToolSchema, ToolParameter
+from ..permissions import can_read_path, check_read_permission, resolve_path
 from ..registry import register_tool
 
 if TYPE_CHECKING:
@@ -25,7 +26,7 @@ class ListFilesTool(BaseTool):
                 ToolParameter(
                     name="path",
                     type="string",
-                    description="Path to directory (relative to base directory). Use '.' for root.",
+                    description="Path to directory (relative to base directory or absolute). Use '.' for root.",
                     required=False,
                     default=".",
                 ),
@@ -50,14 +51,12 @@ class ListFilesTool(BaseTool):
         recursive = args.get("recursive", False)
         pattern = args.get("pattern", "*")
 
-        base_dir = agent_context.base_dir
-        target_dir = (base_dir / path).resolve()
+        target_dir = resolve_path(path, agent_context.base_dir)
 
-        # Security check
-        try:
-            target_dir.relative_to(base_dir.resolve())
-        except ValueError:
-            return f"Error: Access denied - path '{path}' is outside allowed directory"
+        # Permission check
+        allowed, error_msg = check_read_permission(target_dir, agent_context)
+        if not allowed:
+            return f"Error: {error_msg}"
 
         if not target_dir.exists():
             return f"Error: Directory not found: {path}"
@@ -73,7 +72,13 @@ class ListFilesTool(BaseTool):
 
             result = []
             for item in sorted(items):
-                rel_path = item.relative_to(base_dir)
+                # Check if we can read this item
+                if not can_read_path(item, agent_context):
+                    continue
+                try:
+                    rel_path = item.relative_to(agent_context.base_dir)
+                except ValueError:
+                    rel_path = item
                 if item.is_dir():
                     result.append(f"[DIR]  {rel_path}/")
                 else:

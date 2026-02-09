@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..base import BaseTool, ToolSchema, ToolParameter
+from ..permissions import can_read_path, check_read_permission, resolve_path
 from ..registry import register_tool
 
 if TYPE_CHECKING:
@@ -35,7 +36,7 @@ class SearchFilesTool(BaseTool):
                 ToolParameter(
                     name="path",
                     type="string",
-                    description="Directory to search in (relative to base directory)",
+                    description="Directory to search in (relative to base directory or absolute)",
                     required=False,
                     default=".",
                 ),
@@ -73,14 +74,12 @@ class SearchFilesTool(BaseTool):
         if not pattern:
             return "Error: pattern is required"
 
-        base_dir = agent_context.base_dir.resolve()
-        search_dir = (base_dir / path).resolve()
+        search_dir = resolve_path(path, agent_context.base_dir)
 
-        # Security check
-        try:
-            search_dir.relative_to(base_dir.resolve())
-        except ValueError:
-            return f"Error: Access denied - path '{path}' is outside allowed directory"
+        # Permission check
+        allowed, error_msg = check_read_permission(search_dir, agent_context)
+        if not allowed:
+            return f"Error: {error_msg}"
 
         if not search_dir.exists():
             return f"Error: Directory not found: {path}"
@@ -107,13 +106,12 @@ class SearchFilesTool(BaseTool):
                     continue
 
                 resolved_file = file_path.resolve()
-                try:
-                    resolved_file.relative_to(base_dir)
-                except ValueError:
+                # Check if we can read this file
+                if not can_read_path(resolved_file, agent_context):
                     continue
 
                 files_searched += 1
-                file_results = self._search_file(resolved_file, regex, base_dir)
+                file_results = self._search_file(resolved_file, regex, agent_context.base_dir)
 
                 if file_results:
                     files_with_matches += 1
@@ -152,7 +150,10 @@ class SearchFilesTool(BaseTool):
             return []
 
         lines = content.split("\n")
-        rel_path = str(file_path.relative_to(base_dir))
+        try:
+            rel_path = str(file_path.relative_to(base_dir))
+        except ValueError:
+            rel_path = str(file_path)
 
         for i, line in enumerate(lines, 1):
             if regex.search(line):

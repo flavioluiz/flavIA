@@ -234,6 +234,58 @@ Would you like me to explain any specific part in more detail?
 
 ## Configuration
 
+### Agent Permissions
+
+Control which directories agents can read from and write to. By default, agents have full access to their base directory. Use permissions for fine-grained access control:
+
+```yaml
+# .flavia/agents.yaml
+main:
+  context: |
+    You are a research assistant...
+
+  # Granular access control
+  permissions:
+    read:
+      - "."                    # Relative to base_dir
+      - "./docs"               # Subfolders
+      - "/etc/configs"         # Absolute paths (outside project)
+    write:
+      - "./output"             # Write access (also grants read)
+      - "./generated"
+
+  tools:
+    - read_file
+    - list_files
+    - search_files
+    - spawn_predefined_agent
+
+  subagents:
+    researcher:
+      context: Research and analyze documents
+      # Inherits permissions from parent if not specified
+      tools:
+        - read_file
+        - search_files
+
+    writer:
+      context: Generate output files
+      # Override with specific permissions
+      permissions:
+        read:
+          - "./sources"
+        write:
+          - "./drafts"
+      tools:
+        - read_file
+```
+
+**Permission Rules:**
+- **Default**: If `permissions` is not specified, the agent has full read/write access to `base_dir`
+- **Inheritance**: Subagents inherit parent permissions unless they specify their own
+- **Write implies read**: Write permission automatically grants read access to the same path
+- **Paths**: Accept both relative (to base_dir) and absolute paths
+
 ### Directory Structure
 
 ```

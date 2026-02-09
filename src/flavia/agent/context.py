@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-from .profile import AgentProfile
+from .profile import AgentPermissions, AgentProfile
 
 
 @dataclass
@@ -21,6 +21,7 @@ class AgentContext:
     subagents: dict[str, Any] = field(default_factory=dict)
     model_id: str = "hf:moonshotai/Kimi-K2.5"
     messages: list[dict[str, Any]] = field(default_factory=list)
+    permissions: AgentPermissions = field(default_factory=lambda: AgentPermissions())
 
     @classmethod
     def from_profile(
@@ -42,6 +43,7 @@ class AgentContext:
             available_tools=profile.tools.copy(),
             subagents=profile.subagents.copy(),
             model_id=resolved_model or str(profile.model),
+            permissions=profile.permissions,
         )
 
     def can_spawn(self) -> bool:
@@ -65,6 +67,7 @@ class AgentContext:
             available_tools=profile.tools.copy(),
             subagents=profile.subagents.copy(),
             model_id=resolved_model or str(profile.model),
+            permissions=profile.permissions,
         )
 
 
@@ -91,6 +94,18 @@ def build_system_prompt(
 
     # Working directory
     parts.append(f"\nWorking directory: {context.base_dir}")
+
+    # Permissions info
+    permissions = context.permissions
+    if permissions.read_paths or permissions.write_paths:
+        perm_lines = ["\nAccess permissions:"]
+        if permissions.read_paths:
+            read_paths_str = ", ".join(str(p) for p in permissions.read_paths)
+            perm_lines.append(f"  Read: {read_paths_str}")
+        if permissions.write_paths:
+            write_paths_str = ", ".join(str(p) for p in permissions.write_paths)
+            perm_lines.append(f"  Write: {write_paths_str}")
+        parts.append("\n".join(perm_lines))
 
     # Tools info
     if tools_description:

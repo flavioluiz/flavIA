@@ -38,9 +38,15 @@ class CreateAgentsConfigTool(BaseTool):
                     items={"type": "string"},
                 ),
                 ToolParameter(
+                    name="permissions",
+                    type="object",
+                    description="Access permissions for the main agent. Object with 'read' array (paths with read access) and 'write' array (paths with write access, also grants read). Paths can be relative to base_dir or absolute.",
+                    required=False,
+                ),
+                ToolParameter(
                     name="subagents",
                     type="array",
-                    description="List of subagent configurations. Each subagent has: name, context, tools (array), and optional model",
+                    description="List of subagent configurations. Each subagent has: name, context, tools (array), optional model, and optional permissions",
                     required=False,
                     items={
                         "type": "object",
@@ -49,6 +55,7 @@ class CreateAgentsConfigTool(BaseTool):
                             "context": {"type": "string", "description": "Subagent system prompt"},
                             "tools": {"type": "array", "items": {"type": "string"}, "description": "Subagent tools"},
                             "model": {"type": "string", "description": "Optional model reference (provider:model_id or model_id)"},
+                            "permissions": {"type": "object", "description": "Optional permissions (inherits from parent if not specified)"},
                         },
                     },
                 ),
@@ -64,6 +71,7 @@ class CreateAgentsConfigTool(BaseTool):
     def execute(self, args: dict[str, Any], agent_context: "AgentContext") -> str:
         main_context = args.get("main_context", "")
         main_tools = args.get("main_tools", [])
+        permissions = args.get("permissions", None)
         subagents = args.get("subagents", [])
         project_description = args.get("project_description", "")
 
@@ -80,6 +88,10 @@ class CreateAgentsConfigTool(BaseTool):
             }
         }
 
+        # Add permissions if provided
+        if permissions:
+            config["main"]["permissions"] = permissions
+
         # Add subagents if provided
         if subagents:
             config["main"]["subagents"] = {}
@@ -93,6 +105,8 @@ class CreateAgentsConfigTool(BaseTool):
                 }
                 if sub.get("model"):
                     config["main"]["subagents"][name]["model"] = sub["model"]
+                if sub.get("permissions"):
+                    config["main"]["subagents"][name]["permissions"] = sub["permissions"]
 
         # Determine output path
         config_dir = agent_context.base_dir / ".flavia"
@@ -136,6 +150,21 @@ class CreateAgentsConfigTool(BaseTool):
             lines.append(f"    {ctx_line}")
         lines.append("")
 
+        # Permissions
+        if "permissions" in config["main"]:
+            lines.append("  # Access permissions (write implies read)")
+            lines.append("  permissions:")
+            perm = config["main"]["permissions"]
+            if perm.get("read"):
+                lines.append("    read:")
+                for p in perm["read"]:
+                    lines.append(f"      - \"{p}\"")
+            if perm.get("write"):
+                lines.append("    write:")
+                for p in perm["write"]:
+                    lines.append(f"      - \"{p}\"")
+            lines.append("")
+
         # Tools
         lines.append("  # Available tools for this agent")
         lines.append("  tools:")
@@ -155,6 +184,18 @@ class CreateAgentsConfigTool(BaseTool):
                 lines.append("      context: |")
                 for ctx_line in sub_config["context"].strip().split("\n"):
                     lines.append(f"        {ctx_line}")
+                # Subagent permissions
+                if sub_config.get("permissions"):
+                    lines.append("      permissions:")
+                    perm = sub_config["permissions"]
+                    if perm.get("read"):
+                        lines.append("        read:")
+                        for p in perm["read"]:
+                            lines.append(f"          - \"{p}\"")
+                    if perm.get("write"):
+                        lines.append("        write:")
+                        for p in perm["write"]:
+                            lines.append(f"          - \"{p}\"")
                 lines.append("      tools:")
                 for tool in sub_config["tools"]:
                     lines.append(f"        - {tool}")

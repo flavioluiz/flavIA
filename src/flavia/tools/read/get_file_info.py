@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..base import BaseTool, ToolSchema, ToolParameter
+from ..permissions import check_read_permission, resolve_path
 from ..registry import register_tool
 
 if TYPE_CHECKING:
@@ -26,7 +27,7 @@ class GetFileInfoTool(BaseTool):
                 ToolParameter(
                     name="path",
                     type="string",
-                    description="Path to file or directory (relative to base directory)",
+                    description="Path to file or directory (relative to base directory or absolute)",
                     required=True,
                 )
             ]
@@ -38,14 +39,12 @@ class GetFileInfoTool(BaseTool):
         if not path:
             return "Error: path is required"
 
-        base_dir = agent_context.base_dir
-        full_path = (base_dir / path).resolve()
+        full_path = resolve_path(path, agent_context.base_dir)
 
-        # Security check
-        try:
-            full_path.relative_to(base_dir.resolve())
-        except ValueError:
-            return f"Error: Access denied - path '{path}' is outside allowed directory"
+        # Permission check
+        allowed, error_msg = check_read_permission(full_path, agent_context)
+        if not allowed:
+            return f"Error: {error_msg}"
 
         if not full_path.exists():
             return f"Error: Path not found: {path}"
@@ -53,9 +52,14 @@ class GetFileInfoTool(BaseTool):
         try:
             stat = full_path.stat()
 
+            try:
+                rel_path = str(full_path.relative_to(agent_context.base_dir))
+            except ValueError:
+                rel_path = str(full_path)
+
             info = {
                 "name": full_path.name,
-                "path": str(full_path.relative_to(base_dir)),
+                "path": rel_path,
                 "type": "directory" if full_path.is_dir() else "file",
                 "size": self._format_size(stat.st_size),
                 "size_bytes": stat.st_size,
