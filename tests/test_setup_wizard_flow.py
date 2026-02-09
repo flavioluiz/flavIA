@@ -30,19 +30,14 @@ def test_create_setup_agent_exposes_setup_tools(monkeypatch, tmp_path):
     assert "convert_pdfs" in tool_names
 
 
-def test_run_ai_setup_forces_pdf_conversion_before_analysis(monkeypatch, tmp_path):
+def test_run_ai_setup_analyzes_content_without_conversion(monkeypatch, tmp_path):
+    """Test that AI setup analyzes content (conversion is now done before calling _run_ai_setup)."""
     target_dir = tmp_path
     config_dir = tmp_path / ".flavia"
+    config_dir.mkdir()
     calls: list[tuple[str, dict]] = []
 
     class FakeAgent:
-        def _execute_tool(self, name, args):
-            calls.append((name, args))
-            converted_dir = target_dir / ".converted"
-            converted_dir.mkdir(exist_ok=True)
-            (converted_dir / "paper.md").write_text("# paper", encoding="utf-8")
-            return "Successfully converted 1 file(s)"
-
         def run(self, task):
             calls.append(("run", {"task": task}))
             (config_dir / "agents.yaml").write_text(
@@ -59,21 +54,21 @@ def test_run_ai_setup_forces_pdf_conversion_before_analysis(monkeypatch, tmp_pat
     success = _run_ai_setup(
         target_dir=target_dir,
         config_dir=config_dir,
-        convert_pdfs=True,
+        convert_pdfs=True,  # Flag is passed but conversion already done
         pdf_files=["paper.pdf"],
         interactive_review=False,
     )
 
     assert success is True
-    assert calls[0][0] == "convert_pdfs"
-    assert calls[0][1]["pdf_files"] == ["paper.pdf"]
-    assert calls[1][0] == "run"
-    assert ".converted/" in calls[1][1]["task"]
+    # Only run() is called, no convert_pdfs tool call (conversion done before)
+    assert len(calls) == 1
+    assert calls[0][0] == "run"
 
 
 def test_run_ai_setup_allows_user_revision_and_regenerates(monkeypatch, tmp_path):
     target_dir = tmp_path
     config_dir = tmp_path / ".flavia"
+    config_dir.mkdir()
     run_tasks: list[str] = []
 
     class FakeAgent:
@@ -159,6 +154,8 @@ def test_run_ai_setup_preserves_existing_providers_when_requested(monkeypatch, t
         convert_pdfs=False,
         interactive_review=False,
         preserve_existing_providers=True,
+        include_subagents=False,
+        catalog=None,
     )
 
     assert success is True
@@ -187,13 +184,16 @@ def test_run_basic_setup_writes_selected_model_to_env_and_agents(tmp_path):
 
 
 def test_run_setup_wizard_passes_selected_model_to_basic_setup(monkeypatch, tmp_path):
-    captured: dict[str, str] = {}
+    captured: dict[str, object] = {}
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("flavia.config.load_settings", lambda: Settings(default_model="hf:moonshotai/Kimi-K2.5"))
     monkeypatch.setattr("flavia.setup_wizard._select_model_for_setup", lambda _settings: "openai:gpt-4o")
     monkeypatch.setattr("flavia.setup_wizard._test_selected_model_connection", lambda _settings, _model: (False, False))
-    monkeypatch.setattr("flavia.setup_wizard.find_pdf_files", lambda _directory: [])
+    monkeypatch.setattr("flavia.setup_wizard.find_binary_documents", lambda _directory: [])
+    monkeypatch.setattr("flavia.setup_wizard._build_content_catalog", lambda *args, **kwargs: None)
+    # Option "1" = simple config (no analysis)
+    monkeypatch.setattr("flavia.setup_wizard.safe_prompt", lambda *args, **kwargs: "1")
     monkeypatch.setattr("flavia.setup_wizard.safe_confirm", lambda *args, **kwargs: False)
 
     def _fake_run_basic_setup(
@@ -201,9 +201,11 @@ def test_run_setup_wizard_passes_selected_model_to_basic_setup(monkeypatch, tmp_
         _config_dir,
         selected_model=None,
         preserve_existing_providers=False,
+        catalog_already_built=False,
     ):
         captured["model"] = selected_model
         captured["preserve"] = preserve_existing_providers
+        captured["catalog_already_built"] = catalog_already_built
         return True
 
     monkeypatch.setattr("flavia.setup_wizard._run_basic_setup", _fake_run_basic_setup)
@@ -211,6 +213,7 @@ def test_run_setup_wizard_passes_selected_model_to_basic_setup(monkeypatch, tmp_
     assert run_setup_wizard(tmp_path) is True
     assert captured["model"] == "openai:gpt-4o"
     assert captured["preserve"] is False
+    assert captured["catalog_already_built"] is True
 
 
 def test_run_basic_setup_preserves_existing_providers_when_requested(tmp_path):
@@ -247,14 +250,27 @@ def test_run_setup_wizard_passes_relative_pdf_paths_from_subfolders(monkeypatch,
     pdf_path.parent.mkdir(parents=True)
     pdf_path.write_text("dummy", encoding="utf-8")
 
-    answers = iter([True, True])  # convert PDFs, analyze content
+    # Answers: convert docs?, generate summaries?, config choice "2", include subagents?
+    confirm_answers = iter([True, False, False])  # convert, no summaries, no subagents
+    prompt_answers = iter(["2"])  # analyze content
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("flavia.config.load_settings", lambda: Settings(default_model="openai:gpt-4o"))
     monkeypatch.setattr("flavia.setup_wizard._select_model_for_setup", lambda _settings: "openai:gpt-4o")
     monkeypatch.setattr("flavia.setup_wizard._test_selected_model_connection", lambda _settings, _model: (False, False))
-    monkeypatch.setattr("flavia.setup_wizard.safe_confirm", lambda *args, **kwargs: next(answers))
+    monkeypatch.setattr("flavia.setup_wizard.safe_confirm", lambda *args, **kwargs: next(confirm_answers))
+    monkeypatch.setattr("flavia.setup_wizard.safe_prompt", lambda *args, **kwargs: next(prompt_answers))
     monkeypatch.setattr("flavia.setup_wizard._ask_user_guidance", lambda: "")
+
+    # Mock catalog build to avoid actual file scanning
+    class FakeCatalog:
+        def get_files_needing_summary(self):
+            return []
+
+    monkeypatch.setattr(
+        "flavia.setup_wizard._build_content_catalog",
+        lambda *args, **kwargs: FakeCatalog(),
+    )
 
     def _fake_run_ai_setup(
         _target_dir,
@@ -264,12 +280,15 @@ def test_run_setup_wizard_passes_relative_pdf_paths_from_subfolders(monkeypatch,
         pdf_files=None,
         user_guidance="",
         preserve_existing_providers=False,
+        include_subagents=False,
+        catalog=None,
     ):
         captured["selected_model"] = selected_model
         captured["convert_pdfs"] = convert_pdfs
         captured["pdf_files"] = pdf_files
         captured["user_guidance"] = user_guidance
         captured["preserve_existing_providers"] = preserve_existing_providers
+        captured["include_subagents"] = include_subagents
         return True
 
     monkeypatch.setattr("flavia.setup_wizard._run_ai_setup", _fake_run_ai_setup)
@@ -278,6 +297,7 @@ def test_run_setup_wizard_passes_relative_pdf_paths_from_subfolders(monkeypatch,
     assert captured["selected_model"] == "openai:gpt-4o"
     assert captured["convert_pdfs"] is True
     assert captured["pdf_files"] == ["papers/nested.pdf"]
+    assert captured["include_subagents"] is False
 
 
 def test_run_setup_command_in_cli_uses_relative_pdf_paths_from_subfolders(monkeypatch, tmp_path):
@@ -388,14 +408,16 @@ def test_run_setup_wizard_preserves_existing_providers_on_overwrite(monkeypatch,
     (config_dir / ".env").write_text("SYNTHETIC_API_KEY=old\n", encoding="utf-8")
     (config_dir / "agents.yaml").write_text("main:\n  context: old\n", encoding="utf-8")
 
-    confirm_answers = iter([True, False])  # overwrite existing config, skip AI analysis
+    confirm_answers = iter([True, False])  # overwrite existing config, no summaries
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("flavia.config.load_settings", lambda: Settings(default_model="openai:gpt-4o"))
     monkeypatch.setattr("flavia.setup_wizard._select_model_for_setup", lambda _settings: "openai:gpt-4o")
     monkeypatch.setattr("flavia.setup_wizard._test_selected_model_connection", lambda _settings, _model: (False, False))
-    monkeypatch.setattr("flavia.setup_wizard.find_pdf_files", lambda _directory: [])
+    monkeypatch.setattr("flavia.setup_wizard.find_binary_documents", lambda _directory: [])
+    monkeypatch.setattr("flavia.setup_wizard._build_content_catalog", lambda *args, **kwargs: None)
     monkeypatch.setattr("flavia.setup_wizard.safe_confirm", lambda *args, **kwargs: next(confirm_answers))
+    monkeypatch.setattr("flavia.setup_wizard.safe_prompt", lambda *args, **kwargs: "1")  # simple config
     monkeypatch.setattr("flavia.setup_wizard._offer_provider_setup", lambda _config_dir: None)
 
     assert run_setup_wizard(tmp_path) is True
@@ -407,6 +429,7 @@ def test_run_setup_wizard_preserves_existing_providers_on_overwrite(monkeypatch,
 def test_run_ai_setup_backfills_subagent_models_with_selected_default(monkeypatch, tmp_path):
     target_dir = tmp_path
     config_dir = tmp_path / ".flavia"
+    config_dir.mkdir()
 
     class FakeAgent:
         def run(self, task):
@@ -438,6 +461,8 @@ def test_run_ai_setup_backfills_subagent_models_with_selected_default(monkeypatc
         selected_model="openai:gpt-4o",
         convert_pdfs=False,
         interactive_review=False,
+        include_subagents=True,
+        catalog=None,
     )
 
     assert success is True
@@ -449,6 +474,7 @@ def test_run_ai_setup_backfills_subagent_models_with_selected_default(monkeypatc
 def test_run_ai_setup_preserves_portuguese_accents_in_agents_yaml(monkeypatch, tmp_path):
     target_dir = tmp_path
     config_dir = tmp_path / ".flavia"
+    config_dir.mkdir()
 
     class FakeAgent:
         def run(self, task):
@@ -480,6 +506,8 @@ def test_run_ai_setup_preserves_portuguese_accents_in_agents_yaml(monkeypatch, t
         selected_model="openai:gpt-4o",
         convert_pdfs=False,
         interactive_review=False,
+        include_subagents=True,
+        catalog=None,
     )
 
     assert success is True

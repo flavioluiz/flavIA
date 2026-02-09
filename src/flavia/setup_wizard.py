@@ -3,7 +3,7 @@
 import shutil
 import sys
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 import yaml
 from rich.console import Console
@@ -12,6 +12,9 @@ from rich.panel import Panel
 from rich.table import Table
 
 from flavia.setup.prompt_utils import safe_confirm, safe_prompt
+
+if TYPE_CHECKING:
+    from flavia.content.catalog import ContentCatalog
 
 console = Console()
 MAX_SETUP_REVISIONS = 5
@@ -127,6 +130,21 @@ def find_pdf_files(directory: Path) -> List[Path]:
     """Find all PDF files in a directory (recursive)."""
     return sorted(
         (path for path in directory.rglob("*") if path.is_file() and path.suffix.lower() == ".pdf"),
+        key=lambda path: str(path),
+    )
+
+
+def find_binary_documents(directory: Path) -> List[Path]:
+    """Find all binary documents that can be converted (PDF, DOCX, etc.)."""
+    # Supported extensions for conversion (expandable in the future)
+    convertible_extensions = {".pdf"}  # TODO: add .docx, .xlsx, .pptx when supported
+
+    return sorted(
+        (
+            path
+            for path in directory.rglob("*")
+            if path.is_file() and path.suffix.lower() in convertible_extensions
+        ),
         key=lambda path: str(path),
     )
 
@@ -617,53 +635,86 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
             break
         selected_model = _select_model_for_setup(settings)
 
-    # Check for PDFs
-    pdf_files = find_pdf_files(target_dir)
+    # Check for binary documents (PDFs, and future: DOCX, XLSX, etc.)
+    binary_docs = find_binary_documents(target_dir)
+    convert_docs = False
 
-    if pdf_files:
-        console.print(f"\n[bold]Found {len(pdf_files)} PDF file(s):[/bold]")
+    if binary_docs:
+        # Group by extension for display
+        ext_counts: dict[str, int] = {}
+        for doc in binary_docs:
+            ext = doc.suffix.lower()
+            ext_counts[ext] = ext_counts.get(ext, 0) + 1
+
+        ext_summary = ", ".join(f"{count} {ext.upper()}" for ext, count in ext_counts.items())
+        console.print(f"\n[bold]Found {len(binary_docs)} binary document(s) ({ext_summary}):[/bold]")
+
         table = Table(show_header=False, box=None, padding=(0, 2))
-        for pdf in pdf_files[:10]:  # Show first 10
-            size_kb = pdf.stat().st_size / 1024
-            table.add_row(f"  [cyan]{pdf.name}[/cyan]", f"[dim]{size_kb:.1f} KB[/dim]")
-        if len(pdf_files) > 10:
-            table.add_row(f"  [dim]... and {len(pdf_files) - 10} more[/dim]", "")
+        for doc in binary_docs[:10]:  # Show first 10
+            size_kb = doc.stat().st_size / 1024
+            table.add_row(f"  [cyan]{doc.name}[/cyan]", f"[dim]{size_kb:.1f} KB[/dim]")
+        if len(binary_docs) > 10:
+            table.add_row(f"  [dim]... and {len(binary_docs) - 10} more[/dim]", "")
         console.print(table)
 
-        console.print("\n[bold]Convert PDFs to text for analysis?[/bold]")
+        console.print("\n[bold]Convert documents to text for analysis?[/bold]")
         console.print("  (This allows the AI to read and search the documents)")
-        convert_pdfs = safe_confirm("Convert PDFs?", default=True)
-    else:
-        convert_pdfs = False
+        convert_docs = safe_confirm("Convert documents?", default=True)
 
-    # Ask about AI analysis
-    console.print("\n")
-    console.print(
-        "[bold]Have the AI analyze your content and suggest an agent configuration?[/bold]"
-    )
-    console.print("  (The AI will read files to understand your project/research area)")
-    analyze = safe_confirm("Analyze content?", default=True)
+    # Build content catalog BEFORE AI analysis (so summaries can be used as context)
+    config_dir.mkdir(parents=True, exist_ok=True)
+    catalog = _build_content_catalog(target_dir, config_dir, convert_docs, binary_docs)
 
-    user_guidance = ""
-    if analyze or convert_pdfs:
-        pdf_file_refs = _pdf_paths_for_tools(target_dir, pdf_files) if convert_pdfs else None
-        user_guidance = _ask_user_guidance()
-        return _run_ai_setup(
-            target_dir,
-            config_dir,
-            selected_model=selected_model,
-            convert_pdfs=convert_pdfs,
-            pdf_files=pdf_file_refs,
-            user_guidance=user_guidance,
-            preserve_existing_providers=preserve_existing_providers,
-        )
-    else:
+    # Ask about LLM summaries
+    generate_summaries = False
+    if catalog:
+        files_needing_summary = catalog.get_files_needing_summary()
+        if files_needing_summary:
+            console.print(f"\n[bold]Generate LLM summaries for {len(files_needing_summary)} file(s)?[/bold]")
+            console.print("  (Improves AI understanding of your content, but uses LLM tokens)")
+            generate_summaries = safe_confirm("Generate summaries?", default=False)
+
+            if generate_summaries:
+                _run_summarization(catalog, config_dir, selected_model)
+
+    # Ask about agent configuration
+    console.print("\n[bold]How do you want to configure the agent?[/bold]")
+    console.print("  [1] Simple configuration (generic agent, no content analysis)")
+    console.print("  [2] Analyze content and suggest specialized configuration")
+    config_choice = safe_prompt("Select option", default="2").strip()
+
+    if config_choice == "1":
         return _run_basic_setup(
             target_dir,
             config_dir,
             selected_model=selected_model,
             preserve_existing_providers=preserve_existing_providers,
+            catalog_already_built=True,
         )
+
+    # Option 2: AI-assisted setup
+    include_subagents = False
+    console.print("\n[bold]Include specialized subagents?[/bold]")
+    console.print("  (The AI may suggest subagents like summarizer, explainer, etc.)")
+    include_subagents = safe_confirm("Include subagents?", default=False)
+
+    user_guidance = _ask_user_guidance()
+
+    # Use legacy pdf_files variable for compatibility with existing code
+    pdf_files = [p for p in binary_docs if p.suffix.lower() == ".pdf"]
+    pdf_file_refs = _pdf_paths_for_tools(target_dir, pdf_files) if convert_docs else None
+
+    return _run_ai_setup(
+        target_dir,
+        config_dir,
+        selected_model=selected_model,
+        convert_pdfs=convert_docs,
+        pdf_files=pdf_file_refs,
+        user_guidance=user_guidance,
+        preserve_existing_providers=preserve_existing_providers,
+        include_subagents=include_subagents,
+        catalog=catalog,
+    )
 
 
 def _ask_user_guidance() -> str:
@@ -698,9 +749,44 @@ def _offer_provider_setup(config_dir: Path) -> None:
         run_provider_wizard(config_dir.parent)
 
 
-def _build_content_catalog(target_dir: Path, config_dir: Path) -> None:
-    """Build and save the content catalog during setup."""
+def _build_content_catalog(
+    target_dir: Path,
+    config_dir: Path,
+    convert_docs: bool = False,
+    binary_docs: Optional[List[Path]] = None,
+) -> Optional["ContentCatalog"]:
+    """
+    Build and save the content catalog during setup.
+
+    Args:
+        target_dir: Project root directory.
+        config_dir: The .flavia/ directory.
+        convert_docs: Whether to convert binary documents first.
+        binary_docs: List of binary document paths to convert.
+
+    Returns:
+        The ContentCatalog instance, or None on failure.
+    """
     from flavia.content.catalog import ContentCatalog
+    from flavia.content.converters import PdfConverter
+
+    # Convert binary documents first if requested
+    if convert_docs and binary_docs:
+        console.print("\n[dim]Converting binary documents...[/dim]")
+        converter = PdfConverter()
+        converted_dir = target_dir / CONVERTED_DIR_NAME
+        converted_count = 0
+
+        for doc in binary_docs:
+            if not converter.can_handle(doc):
+                continue
+            result_path = converter.convert(doc, converted_dir)
+            if result_path:
+                converted_count += 1
+                console.print(f"  [dim]Converted: {doc.name}[/dim]")
+
+        if converted_count > 0:
+            console.print(f"[dim]  {converted_count} document(s) converted[/dim]")
 
     console.print("\n[dim]Building content catalog...[/dim]")
     try:
@@ -733,8 +819,55 @@ def _build_content_catalog(target_dir: Path, config_dir: Path) -> None:
             f"[dim]Content catalog created: {stats['total_files']} files indexed "
             f"({stats['total_size_bytes'] / 1024 / 1024:.1f} MB)[/dim]"
         )
+        return catalog
     except Exception as e:
         console.print(f"[yellow]Warning: Could not build content catalog: {e}[/yellow]")
+        return None
+
+
+def _run_summarization(
+    catalog: "ContentCatalog",
+    config_dir: Path,
+    selected_model: str,
+) -> None:
+    """Generate LLM summaries for files that need them."""
+    from flavia.config import load_settings
+    from flavia.content.summarizer import summarize_file
+
+    settings = load_settings()
+    provider, model_id = settings.resolve_model_with_provider(selected_model)
+
+    if not provider or not provider.api_key:
+        console.print("[yellow]Cannot generate summaries: API key not configured.[/yellow]")
+        return
+
+    files_needing_summary = catalog.get_files_needing_summary()
+    if not files_needing_summary:
+        return
+
+    console.print(f"\n[dim]Generating summaries for {len(files_needing_summary)} file(s)...[/dim]")
+    summarized = 0
+
+    for entry in files_needing_summary:
+        summary = summarize_file(
+            entry,
+            catalog.base_dir,
+            api_key=provider.api_key,
+            api_base_url=provider.api_base_url,
+            model=model_id,
+            headers=provider.headers if provider.headers else None,
+        )
+        if summary:
+            entry.summary = summary
+            summarized += 1
+            # Show progress every 5 files
+            if summarized % 5 == 0:
+                console.print(f"  [dim]Summarized {summarized}/{len(files_needing_summary)}...[/dim]")
+
+    console.print(f"[dim]  {summarized} file(s) summarized[/dim]")
+
+    # Save updated catalog
+    catalog.save(config_dir)
 
 
 def _run_basic_setup(
@@ -742,6 +875,7 @@ def _run_basic_setup(
     config_dir: Path,
     selected_model: Optional[str] = None,
     preserve_existing_providers: bool = False,
+    catalog_already_built: bool = False,
 ) -> bool:
     """Create basic default configuration."""
     console.print("\n[dim]Creating default configuration...[/dim]")
@@ -828,8 +962,9 @@ main:
             f".env\n.connection_checks.yaml\ncontent_catalog.json\n{CONVERTED_DIR_NAME}/\n"
         )
 
-        # Build content catalog
-        _build_content_catalog(target_dir, config_dir)
+        # Build content catalog only if not already done
+        if not catalog_already_built:
+            _build_content_catalog(target_dir, config_dir)
 
         _print_success(config_dir)
 
@@ -852,24 +987,33 @@ def _run_ai_setup(
     user_guidance: str = "",
     interactive_review: bool = True,
     preserve_existing_providers: bool = False,
+    include_subagents: bool = False,
+    catalog: Optional[Any] = None,
 ) -> bool:
     """Run AI-assisted setup."""
     console.print("\n[dim]Initializing AI setup agent...[/dim]")
     effective_model = selected_model or "synthetic:hf:moonshotai/Kimi-K2.5"
 
+    # Documents already converted and catalog already built at this point
+    # Just need to create the agent for analysis
     agent, error = create_setup_agent(
         target_dir,
-        include_pdf_tool=convert_pdfs,
-        pdf_files=pdf_files,
+        include_pdf_tool=False,  # Conversion already done
+        pdf_files=None,
         selected_model=effective_model,
     )
 
     if error:
         console.print(f"[red]{error}[/red]")
         console.print("\n[yellow]Falling back to basic setup...[/yellow]")
-        return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
+        return _run_basic_setup(
+            target_dir,
+            config_dir,
+            selected_model=effective_model,
+            catalog_already_built=True,
+        )
 
-    # Create the config dir first
+    # Create the config dir first (should already exist from catalog build)
     config_dir.mkdir(parents=True, exist_ok=True)
 
     # Create .env (API keys are commented out to avoid overriding existing config)
@@ -886,23 +1030,7 @@ def _run_ai_setup(
         f".env\n.connection_checks.yaml\ncontent_catalog.json\n{CONVERTED_DIR_NAME}/\n"
     )
 
-    # Convert PDFs first when requested
-    if convert_pdfs and pdf_files:
-        console.print("\n[bold]Converting PDFs and analyzing content...[/bold]\n")
-        try:
-            conversion_result = agent._execute_tool(
-                "convert_pdfs",
-                {
-                    "pdf_files": pdf_files,
-                    "output_format": "md",
-                    "preserve_structure": True,
-                },
-            )
-            console.print(Markdown(f"```text\n{conversion_result}\n```"))
-        except Exception as e:
-            console.print(f"[yellow]Warning: PDF conversion step failed: {e}[/yellow]")
-    else:
-        console.print("\n[bold]Analyzing content...[/bold]\n")
+    console.print("\n[bold]Analyzing content...[/bold]\n")
 
     agents_file = config_dir / "agents.yaml"
     revision_notes: list[str] = []
@@ -917,6 +1045,8 @@ def _run_ai_setup(
                 selected_model=effective_model,
                 user_guidance=user_guidance,
                 revision_notes=revision_notes,
+                include_subagents=include_subagents,
+                catalog=catalog,
             )
 
             response = agent.run(task)
@@ -926,10 +1056,20 @@ def _run_ai_setup(
                 console.print("\n[yellow]AI did not create the config file.[/yellow]")
                 if not interactive_review:
                     console.print("[yellow]Creating default configuration...[/yellow]")
-                    return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
+                    return _run_basic_setup(
+                        target_dir,
+                        config_dir,
+                        selected_model=effective_model,
+                        catalog_already_built=True,
+                    )
 
                 if safe_confirm("Use default configuration instead?", default=True):
-                    return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
+                    return _run_basic_setup(
+                        target_dir,
+                        config_dir,
+                        selected_model=effective_model,
+                        catalog_already_built=True,
+                    )
 
                 feedback = safe_prompt(
                     "What should be changed in the next proposal?",
@@ -941,23 +1081,33 @@ def _run_ai_setup(
                 console.print(
                     "[yellow]No feedback provided. Creating default configuration.[/yellow]"
                 )
-                return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
+                return _run_basic_setup(
+                    target_dir,
+                    config_dir,
+                    selected_model=effective_model,
+                    catalog_already_built=True,
+                )
 
             _ensure_agent_models(agents_file, effective_model)
 
             if not interactive_review:
-                _build_content_catalog(target_dir, config_dir)
+                # Catalog already built before AI setup
                 _print_success(config_dir, has_pdfs=convert_pdfs)
                 return True
 
             _show_agents_preview(agents_file)
             if safe_confirm("Accept this agent configuration?", default=True):
-                _build_content_catalog(target_dir, config_dir)
+                # Catalog already built before AI setup
                 _print_success(config_dir, has_pdfs=convert_pdfs)
                 return True
 
             if safe_confirm("Use default configuration instead?", default=False):
-                return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
+                return _run_basic_setup(
+                    target_dir,
+                    config_dir,
+                    selected_model=effective_model,
+                    catalog_already_built=True,
+                )
 
             feedback = safe_prompt(
                 "Describe the changes you want in the next version",
@@ -967,7 +1117,12 @@ def _run_ai_setup(
                 console.print(
                     "[yellow]No feedback provided. Creating default configuration.[/yellow]"
                 )
-                return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
+                return _run_basic_setup(
+                    target_dir,
+                    config_dir,
+                    selected_model=effective_model,
+                    catalog_already_built=True,
+                )
 
             revision_notes.append(feedback)
             if attempt < MAX_SETUP_REVISIONS:
@@ -976,7 +1131,12 @@ def _run_ai_setup(
         console.print(
             "\n[yellow]Maximum revision attempts reached. Creating default configuration...[/yellow]"
         )
-        return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
+        return _run_basic_setup(
+            target_dir,
+            config_dir,
+            selected_model=effective_model,
+            catalog_already_built=True,
+        )
 
     except KeyboardInterrupt:
         console.print("\n[yellow]Setup interrupted.[/yellow]")
@@ -984,7 +1144,12 @@ def _run_ai_setup(
     except Exception as e:
         console.print(f"\n[red]Error during AI setup: {e}[/red]")
         console.print("[yellow]Falling back to basic setup...[/yellow]")
-        return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
+        return _run_basic_setup(
+            target_dir,
+            config_dir,
+            selected_model=effective_model,
+            catalog_already_built=True,
+        )
 
 
 def _build_setup_task(
@@ -992,6 +1157,8 @@ def _build_setup_task(
     selected_model: str,
     user_guidance: str,
     revision_notes: List[str],
+    include_subagents: bool = False,
+    catalog: Optional[Any] = None,
 ) -> str:
     """Build setup task including optional user guidance and revision feedback."""
     if convert_pdfs:
@@ -1014,6 +1181,30 @@ def _build_setup_task(
             f"model to '{selected_model}' in agents.yaml."
         ),
     ]
+
+    # Subagent instructions
+    if include_subagents:
+        parts.append(
+            "Include specialized subagents that would be helpful for this content "
+            "(e.g., summarizer, explainer, researcher). Each subagent should have a clear purpose."
+        )
+    else:
+        parts.append(
+            "Create ONLY a main agent, without any subagents. "
+            "The user will configure subagents later if needed."
+        )
+
+    # Include catalog context if available (summaries provide rich context)
+    if catalog:
+        try:
+            context_summary = catalog.generate_context_summary(max_length=3000)
+            if context_summary:
+                parts.append(
+                    f"Here is a summary of the project content catalog:\n\n{context_summary}"
+                )
+        except Exception:
+            pass  # Ignore errors generating context
+
     if user_guidance:
         parts.append(f"User guidance:\n{user_guidance}")
     if revision_notes:
