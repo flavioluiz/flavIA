@@ -392,6 +392,7 @@ def run_cli(settings: Settings) -> None:
                     # Preserve runtime-only flags across reset
                     new_settings.subagents_enabled = settings.subagents_enabled
                     new_settings.active_agent = settings.active_agent
+                    new_settings.parallel_workers = settings.parallel_workers
                     settings = new_settings
                     history_file, chat_log_file = _history_paths(settings.base_dir)
                     history_enabled = _configure_prompt_history(history_file)

@@ -159,12 +159,13 @@ def parse_args() -> argparse.Namespace:
 
 def apply_args_to_settings(args: argparse.Namespace, settings: Settings) -> Settings:
     """Apply command line arguments to settings."""
-    if args.verbose:
+    if getattr(args, "verbose", False):
         settings.verbose = True
 
-    if args.model is not None:
+    model_arg = getattr(args, "model", None)
+    if model_arg is not None:
         try:
-            index = int(args.model)
+            index = int(model_arg)
             if settings.providers.providers:
                 provider, provider_model = settings.providers.resolve_model(index)
                 if provider and provider_model:
@@ -178,22 +179,33 @@ def apply_args_to_settings(args: argparse.Namespace, settings: Settings) -> Sett
                 else:
                     print(f"Warning: Model index {index} not found, using default")
         except ValueError:
-            settings.default_model = args.model
+            settings.default_model = model_arg
 
-    if args.depth is not None:
-        settings.max_depth = args.depth
+    depth_arg = getattr(args, "depth", None)
+    if depth_arg is not None:
+        settings.max_depth = depth_arg
 
-    if args.path is not None:
-        settings.base_dir = Path(args.path).resolve()
+    path_arg = getattr(args, "path", None)
+    if path_arg is not None:
+        settings.base_dir = Path(path_arg).resolve()
 
-    if args.no_subagents:
+    if getattr(args, "no_subagents", False):
         settings.subagents_enabled = False
 
-    if args.agent is not None:
-        settings.active_agent = args.agent
+    agent_arg = getattr(args, "agent", None)
+    if agent_arg is not None:
+        normalized = agent_arg.strip()
+        settings.active_agent = normalized or None
 
-    if args.parallel_workers is not None:
-        settings.parallel_workers = args.parallel_workers
+    parallel_workers_arg = getattr(args, "parallel_workers", None)
+    if parallel_workers_arg is not None:
+        if parallel_workers_arg < 1:
+            print(
+                "Warning: --parallel-workers must be >= 1; "
+                f"keeping current value ({settings.parallel_workers})"
+            )
+        else:
+            settings.parallel_workers = parallel_workers_arg
 
     return settings
 
@@ -360,7 +372,18 @@ def _get_active_model_ref(settings: Settings) -> str | int:
     """Get model reference that main agent will use."""
     active_model_ref: str | int = settings.default_model
     main_agent_config = settings.agents_config.get("main", {})
-    if isinstance(main_agent_config, dict) and "model" in main_agent_config:
+    if not isinstance(main_agent_config, dict):
+        return active_model_ref
+
+    # If a subagent is promoted to main via --agent, use its model when defined.
+    if settings.active_agent and settings.active_agent != "main":
+        subagents = main_agent_config.get("subagents")
+        if isinstance(subagents, dict):
+            subagent_config = subagents.get(settings.active_agent)
+            if isinstance(subagent_config, dict) and "model" in subagent_config:
+                return subagent_config["model"]
+
+    if "model" in main_agent_config:
         active_model_ref = main_agent_config["model"]
     return active_model_ref
 

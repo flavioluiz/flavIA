@@ -163,7 +163,11 @@ class RecursiveAgent(BaseAgent):
             return []
 
         results = []
-        workers = min(len(spawns), self.settings.parallel_workers)
+        try:
+            configured_workers = int(self.settings.parallel_workers)
+        except (TypeError, ValueError):
+            configured_workers = 1
+        workers = max(1, min(len(spawns), configured_workers))
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {}

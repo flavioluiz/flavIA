@@ -118,6 +118,10 @@ flavia --telegram
 flavia -v                    # Verbose mode
 flavia --model 0             # Use specific model by index
 flavia -m openai:gpt-4o      # Use specific provider:model
+flavia --agent summarizer    # Promote a subagent as the main agent
+flavia --no-subagents        # Disable sub-agent spawning
+flavia --depth 2             # Override max recursion depth
+flavia --parallel-workers 8  # Max parallel sub-agents
 flavia --list-models         # Show available models
 flavia --list-providers      # Show configured providers
 flavia --list-tools          # Show available tools
@@ -331,6 +335,7 @@ OPENROUTER_API_KEY=your_openrouter_key
 API_BASE_URL=https://api.synthetic.new/openai/v1
 DEFAULT_MODEL=synthetic:hf:moonshotai/Kimi-K2.5
 AGENT_MAX_DEPTH=3
+AGENT_PARALLEL_WORKERS=4
 
 # For Telegram bot
 TELEGRAM_BOT_TOKEN=123456:ABC-DEF...

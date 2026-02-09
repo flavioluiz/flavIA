@@ -70,3 +70,40 @@ def test_manage_agent_models_returns_false_without_agents_file(tmp_path):
     settings = _make_settings(tmp_path)
     changed = manage_agent_models(settings, base_dir=tmp_path)
     assert changed is False
+
+
+def test_manage_agent_models_updates_all_agents_at_once(monkeypatch, tmp_path):
+    settings = _make_settings(tmp_path)
+    agents_file = tmp_path / ".flavia" / "agents.yaml"
+    agents_file.write_text(
+        (
+            "main:\n"
+            "  model: openai:gpt-4o\n"
+            "  context: test\n"
+            "  tools:\n"
+            "    - read_file\n"
+            "  subagents:\n"
+            "    summarizer:\n"
+            "      context: summarize\n"
+            "      tools:\n"
+            "        - read_file\n"
+            "    reviewer:\n"
+            "      context: review\n"
+            "      model: openai:gpt-4o\n"
+            "      tools:\n"
+            "        - read_file\n"
+        ),
+        encoding="utf-8",
+    )
+
+    prompts = iter(["a", "2"])
+    monkeypatch.setattr("flavia.setup.agent_wizard.Prompt.ask", lambda *args, **kwargs: next(prompts))
+    monkeypatch.setattr("flavia.setup.agent_wizard.Confirm.ask", lambda *args, **kwargs: False)
+
+    changed = manage_agent_models(settings, base_dir=tmp_path)
+
+    assert changed is True
+    data = yaml.safe_load(agents_file.read_text(encoding="utf-8"))
+    assert data["main"]["model"] == "openai:gpt-4o-mini"
+    assert data["main"]["subagents"]["summarizer"]["model"] == "openai:gpt-4o-mini"
+    assert data["main"]["subagents"]["reviewer"]["model"] == "openai:gpt-4o-mini"
