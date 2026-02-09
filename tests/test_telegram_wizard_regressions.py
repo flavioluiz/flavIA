@@ -5,12 +5,32 @@ from flavia.setup import telegram_wizard
 
 def test_prompt_telegram_setup_handles_non_interactive_stdin(monkeypatch):
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
-    monkeypatch.setattr(
-        "flavia.setup.telegram_wizard.safe_confirm",
-        lambda *args, **kwargs: (_ for _ in ()).throw(EOFError()),
-    )
+    called = {"wizard": False}
+
+    class _NonInteractiveStdin:
+        def isatty(self) -> bool:
+            return False
+
+    def _run_wizard(*args, **kwargs):
+        _ = args, kwargs
+        called["wizard"] = True
+        return True
+
+    monkeypatch.setattr("flavia.setup.telegram_wizard.sys.stdin", _NonInteractiveStdin())
+    monkeypatch.setattr("flavia.setup.telegram_wizard.run_telegram_wizard", _run_wizard)
 
     assert telegram_wizard.prompt_telegram_setup_if_needed() is False
+    assert called["wizard"] is False
+
+
+def test_run_telegram_wizard_returns_false_without_interactive_stdin(monkeypatch):
+    class _NonInteractiveStdin:
+        def isatty(self) -> bool:
+            return False
+
+    monkeypatch.setattr("flavia.setup.telegram_wizard.sys.stdin", _NonInteractiveStdin())
+
+    assert telegram_wizard.run_telegram_wizard() is False
 
 
 def test_test_bot_token_masks_token_in_connection_errors(monkeypatch):

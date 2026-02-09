@@ -61,7 +61,7 @@ Numeric indexes follow the combined order shown by `flavia --list-models`.
 | Flag | Description |
 |------|-------------|
 | `--setup-provider` | Interactive provider configuration wizard |
-| `--manage-provider [ID]` | Manage models for a provider (add, remove, fetch from API) |
+| `--manage-provider [ID]` | Manage provider models (add, remove, fetch) or delete provider |
 | `--test-provider [ID]` | Test connection to a provider (no argument: tests default) |
 
 ### Telegram

@@ -2,6 +2,7 @@
 
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -182,6 +183,13 @@ def run_telegram_wizard(target_dir: Optional[Path] = None) -> bool:
     Returns:
         True if configuration was saved successfully
     """
+    if not sys.stdin.isatty():
+        console.print(
+            "[yellow]Interactive Telegram setup requires a TTY.[/yellow]\n"
+            "[dim]Run 'flavia --setup-telegram' in an interactive terminal.[/dim]"
+        )
+        return False
+
     if target_dir is None:
         target_dir = Path.cwd()
 
@@ -366,15 +374,15 @@ def prompt_telegram_setup_if_needed(target_dir: Optional[Path] = None) -> bool:
         )
     )
 
-    try:
-        console.print("\n[bold]Set up Telegram bot now?[/bold]")
-        should_setup = safe_confirm("Set up now?", default=True)
-    except (EOFError, KeyboardInterrupt):
+    if not sys.stdin.isatty():
         console.print(
             "\n[yellow]Interactive setup unavailable (stdin is not interactive).[/yellow]\n"
             "[dim]Run flavia --setup-telegram in an interactive terminal.[/dim]"
         )
         return False
+
+    console.print("\n[bold]Set up Telegram bot now?[/bold]")
+    should_setup = safe_confirm("Set up now?", default=True)
 
     if should_setup:
         return run_telegram_wizard(target_dir)

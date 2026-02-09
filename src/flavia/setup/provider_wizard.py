@@ -964,9 +964,10 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
             table.add_row(f"  [{i}]", f"{model['name']}{marker}", f"[dim]{model['id']}[/dim]")
         console.print(table)
 
+        default_choice = next((str(i) for i, model in enumerate(models, 1) if model.get("default")), "1")
         choice = safe_prompt(
             "Select default model",
-            default="1",
+            default=default_choice,
         )
         try:
             index = int(choice) - 1

@@ -52,6 +52,7 @@ Management menu:
 - **[f] Fetch models** -- fetch models from the provider API
 - **[r] Remove model(s)** -- remove models
 - **[d] Set default** -- change the default model
+- **[x] Delete provider** -- remove the provider entry from config
 - **[s] Save** -- save changes
 
 ### Manual configuration (`providers.yaml`)

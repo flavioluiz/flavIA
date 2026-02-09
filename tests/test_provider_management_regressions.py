@@ -10,6 +10,7 @@ from flavia.setup.provider_wizard import (
     _save_provider_changes,
     _search_models,
     manage_provider_models,
+    run_provider_wizard,
 )
 
 
@@ -222,3 +223,55 @@ def test_save_provider_changes_creates_local_override_without_secret_leak(monkey
     assert provider_data["api_key"] == "${XAI_API_KEY}"
     assert provider_data["api_key"] != "resolved-secret-value"
     assert provider_data["headers"]["X-App-Name"] == "${XAI_APP_NAME}"
+
+
+def test_run_provider_wizard_uses_current_default_model_as_prompt_default(monkeypatch, tmp_path):
+    settings = Settings(
+        providers=ProviderRegistry(
+            providers={
+                "openai": ProviderConfig(
+                    id="openai",
+                    name="OpenAI",
+                    api_base_url="https://api.openai.com/v1",
+                    api_key="test-key",
+                    models=[
+                        ModelConfig(id="gpt-4o", name="GPT-4o", default=False),
+                        ModelConfig(id="gpt-4o-mini", name="GPT-4o Mini", default=True),
+                    ],
+                )
+            },
+            default_provider_id="openai",
+        )
+    )
+    captured: dict[str, str] = {}
+    confirm_answers = iter([False, True])  # Skip connection test, set as default provider.
+
+    monkeypatch.setattr("flavia.setup.provider_wizard._load_settings_for_target_dir", lambda _target_dir: settings)
+    monkeypatch.setattr(
+        "flavia.setup.provider_wizard._select_provider_type",
+        lambda settings=None: {"kind": "known", "provider_id": "openai"},
+    )
+    monkeypatch.setattr(
+        "flavia.setup.provider_wizard._get_api_key",
+        lambda _provider_name, _default_env_var="": ("test-key", "${OPENAI_API_KEY}"),
+    )
+    monkeypatch.setattr(
+        "flavia.setup.provider_wizard._select_models",
+        lambda available_models, **kwargs: available_models,
+    )
+    monkeypatch.setattr("flavia.setup.provider_wizard._select_location", lambda **kwargs: "local")
+    monkeypatch.setattr("flavia.setup.provider_wizard.safe_confirm", lambda *args, **kwargs: next(confirm_answers))
+    monkeypatch.setattr(
+        "flavia.setup.provider_wizard._save_provider_config",
+        lambda *args, **kwargs: tmp_path / ".flavia" / "providers.yaml",
+    )
+
+    def _safe_prompt(prompt, *args, default="", **kwargs):
+        if prompt == "Select default model":
+            captured["default_choice"] = default
+        return default
+
+    monkeypatch.setattr("flavia.setup.provider_wizard.safe_prompt", _safe_prompt)
+
+    assert run_provider_wizard(tmp_path) is True
+    assert captured["default_choice"] == "2"
