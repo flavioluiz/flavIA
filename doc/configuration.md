@@ -10,6 +10,10 @@ flavIA uses a configuration hierarchy with three priority levels:
 
 For `providers.yaml`, higher-priority files can override both provider definitions and `default_provider`.
 
+Important `.env` behavior:
+- flavIA loads only one `.env` file, using the same priority (`.flavia/.env` first, then `~/.config/flavia/.env`)
+- `.env` files are not merged across levels
+
 ## `.flavia/` directory structure
 
 ```
@@ -85,7 +89,7 @@ providers:
 default_provider: synthetic
 ```
 
-API keys are referenced with `${ENV_VAR}` syntax, resolved from `.env` or system environment variables.
+API keys are referenced with `${ENV_VAR}` syntax, resolved from the active `.env` file (highest priority) or system environment variables.
 
 ### Command-line model selection
 

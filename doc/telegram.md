@@ -44,7 +44,7 @@ TELEGRAM_ALLOW_ALL_USERS=true
 flavia --telegram
 ```
 
-If the bot is not yet configured, the wizard will be offered automatically.
+If the bot is not yet configured, the wizard is offered automatically when running in an interactive terminal.
 
 ## How it works
 

@@ -86,7 +86,9 @@ To share provider configurations across projects, use `~/.config/flavia/`:
 
 ```bash
 ~/.config/flavia/providers.yaml   # shared providers
-~/.config/flavia/.env             # shared API keys
+~/.config/flavia/.env             # shared API keys (when no local .flavia/.env exists)
 ```
 
 Local configurations (`.flavia/`) always take priority over user-level ones (`~/.config/flavia/`).
+
+Because flavIA loads only one `.env` file (highest-priority), a project-local `.flavia/.env` shadows `~/.config/flavia/.env`. For cross-project key reuse, prefer exporting API keys in your shell environment.

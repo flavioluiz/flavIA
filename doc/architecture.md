@@ -94,13 +94,13 @@ Contains the agent's static configuration:
 Manages runtime state:
 - System prompt construction
 - Variable substitution (such as `{base_dir}`)
-- `setup_mode` flag for wizard-exclusive tools
+- Runtime `setup_mode` attribute used to enable wizard-exclusive tools
 
 ## Tool system
 
 ### ToolRegistry
 
-Singleton that maintains the registry of all tools. Tools are automatically registered on import of the `flavia.tools` module.
+Singleton that maintains the registry of all tools. Read/spawn tools are automatically registered on import of the `flavia.tools` module, while setup-only tools are registered manually by the setup wizard.
 
 ### BaseTool
 

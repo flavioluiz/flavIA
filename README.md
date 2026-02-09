@@ -8,7 +8,7 @@ The core idea: you have a folder with PDFs, code, notes, or any working material
 # In any folder with your materials
 cd ~/research/quantum-mechanics
 
-# Initialize: converts PDFs, analyzes content, creates specialized agents
+# Initialize: can convert PDFs, analyzes content, creates specialized agents
 flavia --init
 
 # Chat in the terminal
@@ -26,7 +26,7 @@ flavia --telegram
 - **Works in any folder**: each directory can have its own configuration with agents adapted to its content
 - **Multiple interfaces**: chat via terminal (interactive CLI) or set up a Telegram bot for access from anywhere
 - **Recursive agents**: the main agent can delegate tasks to specialized sub-agents (summarizer, explainer, researcher)
-- **Multi-provider**: use OpenAI, OpenRouter, Anthropic, Synthetic, or any OpenAI-compatible API
+- **Multi-provider**: use Synthetic, OpenAI, OpenRouter, and custom OpenAI-compatible APIs
 
 ## Coming soon
 
