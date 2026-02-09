@@ -46,9 +46,9 @@ all = [
 flavia = "flavia.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/flavioribeiro/flavia"
-Documentation = "https://github.com/flavioribeiro/flavia#readme"
-Repository = "https://github.com/flavioribeiro/flavia"
+Homepage = "https://github.com/flavioluiz/flavIA"
+Documentation = "https://github.com/flavioluiz/flavIA#readme"
+Repository = "https://github.com/flavioluiz/flavIA"
 
 [tool.setuptools.packages.find]
 where = ["src"]
