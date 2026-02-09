@@ -21,6 +21,7 @@ from .providers import (
 @dataclass
 class ModelConfig:
     """Configuration for a single model."""
+
     id: str
     name: str
     description: str = ""
@@ -43,6 +44,8 @@ class Settings:
     default_model: str = "hf:moonshotai/Kimi-K2.5"
     max_depth: int = 3
     parallel_workers: int = 4
+    subagents_enabled: bool = True
+    active_agent: Optional[str] = None  # None means "main"; can be a subagent name
 
     # Telegram settings
     telegram_token: str = ""
@@ -124,12 +127,14 @@ def load_models(models_file: Optional[Path]) -> list[ModelConfig]:
 
         models = []
         for m in data.get("models", []):
-            models.append(ModelConfig(
-                id=m["id"],
-                name=m.get("name", m["id"]),
-                description=m.get("description", ""),
-                default=m.get("default", False)
-            ))
+            models.append(
+                ModelConfig(
+                    id=m["id"],
+                    name=m.get("name", m["id"]),
+                    description=m.get("description", ""),
+                    default=m.get("default", False),
+                )
+            )
         return models
     except Exception:
         return []

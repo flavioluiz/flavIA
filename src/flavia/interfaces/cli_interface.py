@@ -8,6 +8,7 @@ import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 from rich.console import Console
 from rich.markdown import Markdown
@@ -229,9 +230,37 @@ def _run_agent_with_feedback(agent: RecursiveAgent, user_input: str) -> str:
 
 
 def create_agent_from_settings(settings: Settings) -> RecursiveAgent:
-    """Create an agent from settings and optional agents.yaml config."""
+    """Create an agent from settings and optional agents.yaml config.
+
+    Respects:
+    - settings.active_agent: use a subagent config as the main agent
+    - settings.subagents_enabled: when False, strips subagents and spawn tools
+    """
     if "main" in settings.agents_config:
-        config = settings.agents_config["main"]
+        main_config = settings.agents_config["main"]
+
+        # If active_agent is set, promote that subagent config to act as main
+        if settings.active_agent and settings.active_agent != "main":
+            subagents = main_config.get("subagents", {})
+            agent_name = settings.active_agent
+            if agent_name in subagents and isinstance(subagents[agent_name], dict):
+                config = subagents[agent_name].copy()
+                # Inherit model from main if not explicitly set in subagent
+                if "model" not in config and "model" in main_config:
+                    config["model"] = main_config["model"]
+                # Subagent promoted to main has no subagents of its own
+                config.pop("subagents", None)
+                config["name"] = agent_name
+            else:
+                available = list(subagents.keys()) if isinstance(subagents, dict) else []
+                console.print(
+                    f"[yellow]Agent '{agent_name}' not found. "
+                    f"Available: {', '.join(available) or '(none)'}. Using 'main'.[/yellow]"
+                )
+                config = main_config
+        else:
+            config = main_config
+
         profile = AgentProfile.from_config(config)
 
         # Use current directory as base unless specified in config
@@ -247,6 +276,15 @@ def create_agent_from_settings(settings: Settings) -> RecursiveAgent:
             name="main",
             max_depth=settings.max_depth,
         )
+
+    # Apply settings overrides
+    profile.max_depth = settings.max_depth
+
+    # When subagents are disabled, strip spawn tools and subagent definitions
+    if not settings.subagents_enabled:
+        profile.subagents = {}
+        spawn_tools = {"spawn_agent", "spawn_predefined_agent"}
+        profile.tools = [t for t in profile.tools if t not in spawn_tools]
 
     return RecursiveAgent(settings=settings, profile=profile)
 
@@ -268,14 +306,22 @@ __ _                Welcome to
 """
     console.print(banner)
     console.print("\nType [bold]/help[/bold] for commands\n")
-    console.print("[dim]Tip: use Up/Down arrows to browse previous prompts in this project.[/dim]\n")
-
-
-def _print_active_model_hint(agent: RecursiveAgent) -> None:
-    """Print current active model used by main replies."""
     console.print(
-        f"[dim]Active model: [cyan]{_get_agent_model_ref(agent)}[/cyan][/dim]\n"
+        "[dim]Tip: use Up/Down arrows to browse previous prompts in this project.[/dim]\n"
     )
+
+
+def _print_active_model_hint(agent: RecursiveAgent, settings: Optional[Settings] = None) -> None:
+    """Print current active model and agent configuration used by main replies."""
+    parts = [f"Active model: [cyan]{_get_agent_model_ref(agent)}[/cyan]"]
+
+    if settings:
+        if settings.active_agent and settings.active_agent != "main":
+            parts.append(f" | agent: [cyan]{settings.active_agent}[/cyan]")
+        if not settings.subagents_enabled:
+            parts.append(" | [yellow]subagents disabled[/yellow]")
+
+    console.print(f"[dim]{''.join(parts)}[/dim]\n")
 
 
 def print_help() -> None:
@@ -296,6 +342,12 @@ def print_help() -> None:
 - Run `flavia --init` to create initial config
 - Run `flavia --setup-provider` to configure providers
 - Use `/setup` to reconfigure agents
+
+**CLI flags:**
+- `--no-subagents` - Disable sub-agent spawning
+- `--agent NAME` - Use a subagent as the main agent
+- `--depth N` - Set max recursion depth
+- `--parallel-workers N` - Max parallel sub-agents
 """
     console.print(Markdown(help_text))
 
@@ -312,7 +364,7 @@ def run_cli(settings: Settings) -> None:
     history_enabled = _configure_prompt_history(history_file)
 
     agent = create_agent_from_settings(settings)
-    _print_active_model_hint(agent)
+    _print_active_model_hint(agent, settings)
 
     while True:
         try:
@@ -337,17 +389,21 @@ def run_cli(settings: Settings) -> None:
                     reset_settings()
                     new_settings = load_settings()
                     new_settings.verbose = settings.verbose
+                    # Preserve runtime-only flags across reset
+                    new_settings.subagents_enabled = settings.subagents_enabled
+                    new_settings.active_agent = settings.active_agent
                     settings = new_settings
                     history_file, chat_log_file = _history_paths(settings.base_dir)
                     history_enabled = _configure_prompt_history(history_file)
 
                     agent = create_agent_from_settings(settings)
                     console.print("[yellow]Conversation reset and config reloaded.[/yellow]")
-                    _print_active_model_hint(agent)
+                    _print_active_model_hint(agent, settings)
                     continue
 
                 elif command == "/setup":
                     from flavia.setup_wizard import run_setup_command_in_cli
+
                     success = run_setup_command_in_cli(settings, settings.base_dir)
                     if success:
                         console.print("[dim]Use /reset to load new configuration.[/dim]")
@@ -355,6 +411,7 @@ def run_cli(settings: Settings) -> None:
 
                 elif command == "/agents":
                     from flavia.setup import manage_agent_models
+
                     success = manage_agent_models(settings, settings.base_dir)
                     if success:
                         console.print("[dim]Use /reset to reload updated agent models.[/dim]")
@@ -384,11 +441,13 @@ def run_cli(settings: Settings) -> None:
 
                 elif command == "/providers":
                     from flavia.setup.provider_wizard import list_providers
+
                     list_providers(settings)
                     continue
 
                 elif command == "/tools":
                     from flavia.tools import list_available_tools
+
                     tools = list_available_tools()
                     console.print("\n[bold]Available Tools:[/bold]")
                     for tool in tools:
@@ -428,6 +487,7 @@ def run_cli(settings: Settings) -> None:
                 console.print(f"[red]Error: {e}[/red]")
                 if settings.verbose:
                     import traceback
+
                     traceback.print_exc()
 
             console.print()

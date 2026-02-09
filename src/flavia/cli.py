@@ -45,26 +45,50 @@ def parse_args() -> argparse.Namespace:
 
     # Model selection
     parser.add_argument(
-        "-m", "--model",
+        "-m",
+        "--model",
         type=str,
         help="Model to use (index, model ID, or provider:model_id format)",
     )
 
     # Options
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Enable verbose output",
     )
 
     parser.add_argument(
-        "-d", "--depth",
+        "-d",
+        "--depth",
         type=int,
         help="Maximum agent recursion depth",
     )
 
     parser.add_argument(
-        "-p", "--path",
+        "--no-subagents",
+        action="store_true",
+        help="Disable sub-agent spawning (single-agent mode)",
+    )
+
+    parser.add_argument(
+        "--agent",
+        type=str,
+        metavar="AGENT_NAME",
+        help="Use a specific agent/subagent config as the main agent (e.g. 'summarizer')",
+    )
+
+    parser.add_argument(
+        "--parallel-workers",
+        type=int,
+        metavar="N",
+        help="Maximum number of sub-agents running in parallel (default: 4)",
+    )
+
+    parser.add_argument(
+        "-p",
+        "--path",
         type=str,
         help="Base directory for file operations (default: current directory)",
     )
@@ -162,12 +186,22 @@ def apply_args_to_settings(args: argparse.Namespace, settings: Settings) -> Sett
     if args.path is not None:
         settings.base_dir = Path(args.path).resolve()
 
+    if args.no_subagents:
+        settings.subagents_enabled = False
+
+    if args.agent is not None:
+        settings.active_agent = args.agent
+
+    if args.parallel_workers is not None:
+        settings.parallel_workers = args.parallel_workers
+
     return settings
 
 
 def show_version() -> None:
     """Show version information."""
     from flavia import __version__
+
     print(f"flavIA version {__version__}")
 
 
@@ -193,6 +227,9 @@ def show_config_info(settings: Settings) -> None:
     print(f"  Default Model: {settings.default_model}")
     print(f"  Base Directory: {settings.base_dir}")
     print(f"  Max Depth: {settings.max_depth}")
+    print(f"  Parallel Workers: {settings.parallel_workers}")
+    print(f"  Subagents Enabled: {settings.subagents_enabled}")
+    print(f"  Active Agent: {settings.active_agent or 'main'}")
     print(f"  Models Loaded: {len(settings.models)}")
     print(f"  Agents Config: {'Yes' if settings.agents_config else 'No'}")
 
@@ -262,6 +299,7 @@ def list_tools_info() -> None:
 def list_providers(settings: Settings) -> None:
     """Print configured providers."""
     from flavia.setup.provider_wizard import list_providers as _list_providers
+
     _list_providers(settings)
 
 
@@ -415,8 +453,7 @@ def _ensure_default_connection_checked_once(settings: Settings) -> None:
     else:
         print(f"[Startup Check] WARNING: {message}")
         print(
-            "[Startup Check] Continuing startup; failures will also appear "
-            "when sending messages."
+            "[Startup Check] Continuing startup; failures will also appear when sending messages."
         )
 
 
@@ -434,18 +471,21 @@ def main() -> int:
     # Init command - use setup wizard
     if args.init:
         from flavia.setup_wizard import run_setup_wizard
+
         success = run_setup_wizard()
         return 0 if success else 1
 
     # Setup provider wizard
     if args.setup_provider:
         from flavia.setup.provider_wizard import run_provider_wizard
+
         success = run_provider_wizard()
         return 0 if success else 1
 
     # Setup telegram wizard
     if args.setup_telegram:
         from flavia.setup.telegram_wizard import run_telegram_wizard
+
         success = run_telegram_wizard()
         return 0 if success else 1
 
@@ -476,6 +516,7 @@ def main() -> int:
 
     if args.manage_provider is not None:
         from flavia.setup.provider_wizard import manage_provider_models
+
         provider_id = args.manage_provider if args.manage_provider else None
         success = manage_provider_models(settings, provider_id)
         return 0 if success else 1
@@ -503,6 +544,7 @@ def main() -> int:
     # Run appropriate interface
     if args.telegram:
         from flavia.setup.telegram_wizard import prompt_telegram_setup_if_needed
+
         if not prompt_telegram_setup_if_needed():
             return 1
         # Reload settings after potential telegram setup
@@ -510,10 +552,12 @@ def main() -> int:
         settings = apply_args_to_settings(args, settings)
         _ensure_default_connection_checked_once(settings)
         from flavia.interfaces import run_telegram_bot
+
         run_telegram_bot(settings)
     else:
         _ensure_default_connection_checked_once(settings)
         from flavia.interfaces import run_cli
+
         run_cli(settings)
 
     return 0

@@ -138,6 +138,22 @@ def _set_model_at_path(config: dict[str, Any], path: str, model_ref: str) -> boo
     return True
 
 
+def _set_model_all_agents(config: dict[str, Any], model_ref: str) -> int:
+    """Set model for main agent and all subagents. Returns number of agents updated."""
+    count = 0
+    main = config.get("main")
+    if isinstance(main, dict):
+        main["model"] = model_ref
+        count += 1
+        subagents = main.get("subagents")
+        if isinstance(subagents, dict):
+            for sub in subagents.values():
+                if isinstance(sub, dict):
+                    sub["model"] = model_ref
+                    count += 1
+    return count
+
+
 def manage_agent_models(settings, base_dir: Optional[Path] = None) -> bool:
     """
     Interactively assign models to agents/subagents in agents.yaml.
@@ -176,24 +192,36 @@ def manage_agent_models(settings, base_dir: Optional[Path] = None) -> bool:
                 f"[dim]explicit: {explicit}[/dim]",
                 f"[cyan]effective: {target['effective_model']}[/cyan]",
             )
+        if len(targets) > 1:
+            table.add_row(
+                "  [a]",
+                "[bold]All agents[/bold]",
+                "",
+                "[dim]Apply same model to all[/dim]",
+            )
         console.print(table)
 
-        selection = Prompt.ask("Select agent/subagent number (or 'q' to exit)", default="q").strip().lower()
+        hint = "number, 'a' for all, or 'q'" if len(targets) > 1 else "number or 'q'"
+        selection = Prompt.ask(f"Select agent ({hint})", default="q").strip().lower()
         if selection in {"q", "quit", "exit"}:
             return changed
 
-        try:
-            target_index = int(selection) - 1
-        except ValueError:
-            console.print("[yellow]Invalid selection.[/yellow]")
-            continue
+        apply_all = selection == "a" and len(targets) > 1
 
-        if not 0 <= target_index < len(targets):
-            console.print("[yellow]Invalid selection.[/yellow]")
-            continue
+        if not apply_all:
+            try:
+                target_index = int(selection) - 1
+            except ValueError:
+                console.print("[yellow]Invalid selection.[/yellow]")
+                continue
 
-        target = targets[target_index]
+            if not 0 <= target_index < len(targets):
+                console.print("[yellow]Invalid selection.[/yellow]")
+                continue
 
+            target = targets[target_index]
+
+        # Show model picker
         console.print("\n[bold]Available models:[/bold]")
         model_table = Table(show_header=False, box=None, padding=(0, 2))
         for i, option in enumerate(model_options, 1):
@@ -204,11 +232,18 @@ def manage_agent_models(settings, base_dir: Optional[Path] = None) -> bool:
             )
         console.print(model_table)
 
-        current_ref = target["effective_model"]
-        default_choice = next(
-            (str(i + 1) for i, option in enumerate(model_options) if option["ref"] == current_ref),
-            "1",
-        )
+        if apply_all:
+            default_choice = "1"
+        else:
+            current_ref = target["effective_model"]
+            default_choice = next(
+                (
+                    str(i + 1)
+                    for i, option in enumerate(model_options)
+                    if option["ref"] == current_ref
+                ),
+                "1",
+            )
         model_selection = Prompt.ask("Select model number", default=default_choice).strip().lower()
         if model_selection in {"q", "quit", "exit"}:
             continue
@@ -224,18 +259,30 @@ def manage_agent_models(settings, base_dir: Optional[Path] = None) -> bool:
             continue
 
         selected_model = model_options[model_index]["ref"]
-        if not _set_model_at_path(config, target["path"], selected_model):
-            console.print("[red]Could not update selected agent entry.[/red]")
-            continue
 
-        if not _save_agents_config(agents_file, config):
-            console.print(f"[red]Failed to save {agents_file}.[/red]")
-            continue
-
-        changed = True
-        console.print(
-            f"[green]Updated {target['label']} model to {selected_model} in {agents_file}.[/green]"
-        )
+        if apply_all:
+            count = _set_model_all_agents(config, selected_model)
+            if count == 0:
+                console.print("[red]Could not update agent entries.[/red]")
+                continue
+            if not _save_agents_config(agents_file, config):
+                console.print(f"[red]Failed to save {agents_file}.[/red]")
+                continue
+            changed = True
+            console.print(
+                f"[green]Updated {count} agent(s) to {selected_model} in {agents_file}.[/green]"
+            )
+        else:
+            if not _set_model_at_path(config, target["path"], selected_model):
+                console.print("[red]Could not update selected agent entry.[/red]")
+                continue
+            if not _save_agents_config(agents_file, config):
+                console.print(f"[red]Failed to save {agents_file}.[/red]")
+                continue
+            changed = True
+            console.print(
+                f"[green]Updated {target['label']} model to {selected_model} in {agents_file}.[/green]"
+            )
 
         if not Confirm.ask("Edit another agent?", default=False):
             return changed
