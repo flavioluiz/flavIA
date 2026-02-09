@@ -689,7 +689,7 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
             config_dir,
             selected_model=selected_model,
             preserve_existing_providers=preserve_existing_providers,
-            catalog_already_built=True,
+            catalog_already_built=catalog is not None,
         )
 
     # Option 2: AI-assisted setup
@@ -776,17 +776,27 @@ def _build_content_catalog(
         converter = PdfConverter()
         converted_dir = target_dir / CONVERTED_DIR_NAME
         converted_count = 0
+        failed_count = 0
 
         for doc in binary_docs:
             if not converter.can_handle(doc):
                 continue
-            result_path = converter.convert(doc, converted_dir)
+
+            try:
+                result_path = converter.convert(doc, converted_dir)
+            except Exception as exc:
+                failed_count += 1
+                console.print(f"  [yellow]Failed to convert: {doc.name} ({exc})[/yellow]")
+                continue
+
             if result_path:
                 converted_count += 1
                 console.print(f"  [dim]Converted: {doc.name}[/dim]")
 
         if converted_count > 0:
             console.print(f"[dim]  {converted_count} document(s) converted[/dim]")
+        if failed_count > 0:
+            console.print(f"[yellow]  {failed_count} document(s) failed conversion[/yellow]")
 
     console.print("\n[dim]Building content catalog...[/dim]")
     try:
@@ -993,6 +1003,14 @@ def _run_ai_setup(
     """Run AI-assisted setup."""
     console.print("\n[dim]Initializing AI setup agent...[/dim]")
     effective_model = selected_model or "synthetic:hf:moonshotai/Kimi-K2.5"
+    catalog_already_built = catalog is not None
+
+    def _ensure_catalog_built() -> None:
+        nonlocal catalog_already_built
+        if catalog_already_built:
+            return
+        rebuilt_catalog = _build_content_catalog(target_dir, config_dir)
+        catalog_already_built = rebuilt_catalog is not None
 
     # Documents already converted and catalog already built at this point
     # Just need to create the agent for analysis
@@ -1010,7 +1028,7 @@ def _run_ai_setup(
             target_dir,
             config_dir,
             selected_model=effective_model,
-            catalog_already_built=True,
+            catalog_already_built=catalog_already_built,
         )
 
     # Create the config dir first (should already exist from catalog build)
@@ -1060,7 +1078,7 @@ def _run_ai_setup(
                         target_dir,
                         config_dir,
                         selected_model=effective_model,
-                        catalog_already_built=True,
+                        catalog_already_built=catalog_already_built,
                     )
 
                 if safe_confirm("Use default configuration instead?", default=True):
@@ -1068,7 +1086,7 @@ def _run_ai_setup(
                         target_dir,
                         config_dir,
                         selected_model=effective_model,
-                        catalog_already_built=True,
+                        catalog_already_built=catalog_already_built,
                     )
 
                 feedback = safe_prompt(
@@ -1085,19 +1103,19 @@ def _run_ai_setup(
                     target_dir,
                     config_dir,
                     selected_model=effective_model,
-                    catalog_already_built=True,
+                    catalog_already_built=catalog_already_built,
                 )
 
             _ensure_agent_models(agents_file, effective_model)
 
             if not interactive_review:
-                # Catalog already built before AI setup
+                _ensure_catalog_built()
                 _print_success(config_dir, has_pdfs=convert_pdfs)
                 return True
 
             _show_agents_preview(agents_file)
             if safe_confirm("Accept this agent configuration?", default=True):
-                # Catalog already built before AI setup
+                _ensure_catalog_built()
                 _print_success(config_dir, has_pdfs=convert_pdfs)
                 return True
 
@@ -1106,7 +1124,7 @@ def _run_ai_setup(
                     target_dir,
                     config_dir,
                     selected_model=effective_model,
-                    catalog_already_built=True,
+                    catalog_already_built=catalog_already_built,
                 )
 
             feedback = safe_prompt(
@@ -1121,7 +1139,7 @@ def _run_ai_setup(
                     target_dir,
                     config_dir,
                     selected_model=effective_model,
-                    catalog_already_built=True,
+                    catalog_already_built=catalog_already_built,
                 )
 
             revision_notes.append(feedback)
@@ -1135,7 +1153,7 @@ def _run_ai_setup(
             target_dir,
             config_dir,
             selected_model=effective_model,
-            catalog_already_built=True,
+            catalog_already_built=catalog_already_built,
         )
 
     except KeyboardInterrupt:
@@ -1148,7 +1166,7 @@ def _run_ai_setup(
             target_dir,
             config_dir,
             selected_model=effective_model,
-            catalog_already_built=True,
+            catalog_already_built=catalog_already_built,
         )
 
 

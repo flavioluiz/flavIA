@@ -8,7 +8,7 @@ The core idea: you have a folder with PDFs, code, notes, or any working material
 # In any folder with your materials
 cd ~/research/quantum-mechanics
 
-# Initialize: can convert PDFs, analyzes content, creates specialized agents
+# Initialize: can convert documents, build catalog/summaries, and create agents
 flavia --init
 
 # Chat in the terminal
@@ -50,14 +50,14 @@ Details in [doc/installation.md](doc/installation.md).
 
 ```bash
 cd ~/folder-with-your-materials
-flavia --init    # interactive wizard: picks model, converts PDFs, creates agents
+flavia --init    # interactive wizard: picks model, builds catalog, creates agents
 flavia           # start chatting
 
 # Keep project index in sync after file changes
 flavia --update
 ```
 
-The wizard guides you through each step: model/provider selection, connection test, PDF conversion, and AI-assisted agent configuration generation.
+The wizard guides you through each step: model/provider selection, connection test, optional document conversion, content catalog build, optional LLM summaries, and agent configuration (simple or AI-assisted, with optional subagents).
 
 ## Documentation
 

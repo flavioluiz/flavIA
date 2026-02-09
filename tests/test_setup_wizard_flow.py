@@ -7,6 +7,7 @@ import yaml
 from flavia.config.settings import Settings
 from flavia.setup_wizard import (
     create_setup_agent,
+    _build_content_catalog,
     _run_ai_setup,
     _run_basic_setup,
     run_setup_command_in_cli,
@@ -63,6 +64,45 @@ def test_run_ai_setup_analyzes_content_without_conversion(monkeypatch, tmp_path)
     # Only run() is called, no convert_pdfs tool call (conversion done before)
     assert len(calls) == 1
     assert calls[0][0] == "run"
+
+
+def test_run_ai_setup_builds_catalog_when_not_prebuilt(monkeypatch, tmp_path):
+    target_dir = tmp_path
+    config_dir = tmp_path / ".flavia"
+    config_dir.mkdir()
+    catalog_build_calls: list[bool] = []
+
+    class FakeAgent:
+        def run(self, task):
+            _ = task
+            (config_dir / "agents.yaml").write_text(
+                "main:\n  context: test\n  tools:\n    - read_file\n",
+                encoding="utf-8",
+            )
+            return "done"
+
+    class FakeCatalog:
+        pass
+
+    monkeypatch.setattr(
+        "flavia.setup_wizard.create_setup_agent",
+        lambda *args, **kwargs: (FakeAgent(), None),
+    )
+    monkeypatch.setattr(
+        "flavia.setup_wizard._build_content_catalog",
+        lambda *args, **kwargs: (catalog_build_calls.append(True), FakeCatalog())[1],
+    )
+
+    success = _run_ai_setup(
+        target_dir=target_dir,
+        config_dir=config_dir,
+        convert_pdfs=False,
+        interactive_review=False,
+        catalog=None,
+    )
+
+    assert success is True
+    assert len(catalog_build_calls) == 1
 
 
 def test_run_ai_setup_allows_user_revision_and_regenerates(monkeypatch, tmp_path):
@@ -213,7 +253,34 @@ def test_run_setup_wizard_passes_selected_model_to_basic_setup(monkeypatch, tmp_
     assert run_setup_wizard(tmp_path) is True
     assert captured["model"] == "openai:gpt-4o"
     assert captured["preserve"] is False
-    assert captured["catalog_already_built"] is True
+    assert captured["catalog_already_built"] is False
+
+
+def test_build_content_catalog_continues_on_conversion_error(monkeypatch, tmp_path):
+    target_dir = tmp_path
+    config_dir = tmp_path / ".flavia"
+    config_dir.mkdir()
+    pdf_file = tmp_path / "broken.pdf"
+    pdf_file.write_text("not a real pdf", encoding="utf-8")
+
+    def _raise_conversion_error(self, _source_path, _output_dir):
+        raise RuntimeError("conversion exploded")
+
+    monkeypatch.setattr(
+        "flavia.content.converters.PdfConverter.convert",
+        _raise_conversion_error,
+    )
+
+    catalog = _build_content_catalog(
+        target_dir,
+        config_dir,
+        convert_docs=True,
+        binary_docs=[pdf_file],
+    )
+
+    assert catalog is not None
+    assert "broken.pdf" in catalog.files
+    assert (config_dir / "content_catalog.json").exists()
 
 
 def test_run_basic_setup_preserves_existing_providers_when_requested(tmp_path):
