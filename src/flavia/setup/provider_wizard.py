@@ -313,30 +313,35 @@ def _load_settings_for_target_dir(target_dir: Path):
         os.chdir(current_dir)
 
 
-def _get_api_key(provider_name: str, env_var: str) -> tuple[str, str]:
+def _get_api_key(provider_name: str, default_env_var: str = "") -> tuple[str, str]:
     """
     Get API key from user.
+
+    Args:
+        provider_name: Display name of the provider
+        default_env_var: Suggested environment variable name (optional)
 
     Returns:
         Tuple of (api_key_value, api_key_config_string)
         The config string is either the literal value or ${ENV_VAR}
     """
-    # Check if env var is already set
-    existing = os.getenv(env_var, "")
-
-    if existing:
-        console.print(f"\n[green]Found existing {env_var} in environment[/green]")
-        if Confirm.ask(f"Use existing {env_var}?", default=True):
-            return existing, f"${{{env_var}}}"
-
     console.print(f"\n[bold]API Key for {provider_name}[/bold]")
 
-    # Ask first: use env var or enter key directly?
-    if Confirm.ask(
-        f"Use environment variable ${{{env_var}}}?",
-        default=True,
-    ):
+    # Check if suggested env var is already set
+    if default_env_var:
+        existing = os.getenv(default_env_var, "")
+        if existing:
+            console.print(f"[green]Found existing {default_env_var} in environment[/green]")
+            if Confirm.ask(f"Use existing {default_env_var}?", default=True):
+                return existing, f"${{{default_env_var}}}"
+
+    # Ask if user wants to use an environment variable
+    if Confirm.ask("Store API key as environment variable reference?", default=True):
         # User wants to use env var reference
+        env_var = Prompt.ask(
+            "Environment variable name",
+            default=default_env_var or "API_KEY",
+        )
         console.print(f"[dim]Set {env_var} in your shell before running flavIA[/dim]")
         console.print(f"[dim]Example: export {env_var}='your-api-key'[/dim]")
 
@@ -345,7 +350,7 @@ def _get_api_key(provider_name: str, env_var: str) -> tuple[str, str]:
         return key_input, f"${{{env_var}}}"
     else:
         # User wants to enter key directly (will be stored in config)
-        console.print("[dim]The key will be stored directly in the config file[/dim]")
+        console.print("[yellow]The key will be stored directly in the config file[/yellow]")
         key_input = Prompt.ask("API Key", password=True)
         return key_input, key_input
 
@@ -838,9 +843,7 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
             "API Base URL",
             default="https://api.example.com/v1",
         )
-        api_key_env = Prompt.ask("API Key env variable name", default="CUSTOM_API_KEY")
-
-        api_key, api_key_config = _get_api_key(provider_name, api_key_env)
+        api_key, api_key_config = _get_api_key(provider_name, _guess_api_key_env_var(provider_id))
 
         # Custom model
         model_id = Prompt.ask("Model ID", default="model-name")
@@ -862,14 +865,14 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
                 if existing_provider and existing_provider.api_base_url
                 else template["api_base_url"]
             )
-            api_key_env = (
+            default_env_var = (
                 existing_provider.api_key_env_var
                 if existing_provider and existing_provider.api_key_env_var
                 else template["api_key_env"]
             )
             headers = _headers_for_known_provider(provider_id, settings=settings)
 
-            api_key, api_key_config = _get_api_key(provider_name, api_key_env)
+            api_key, api_key_config = _get_api_key(provider_name, default_env_var)
 
             initial_models = _models_source_for_provider(provider_id, settings=settings)
             if existing_provider:
@@ -891,11 +894,8 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
 
             provider_name = Prompt.ask("\nProvider display name", default=existing_provider.name)
             api_base_url = Prompt.ask("API Base URL", default=existing_provider.api_base_url)
-            api_key_env = Prompt.ask(
-                "API Key env variable name",
-                default=existing_provider.api_key_env_var or _guess_api_key_env_var(provider_id),
-            )
-            api_key, api_key_config = _get_api_key(provider_name, api_key_env)
+            default_env_var = existing_provider.api_key_env_var or _guess_api_key_env_var(provider_id)
+            api_key, api_key_config = _get_api_key(provider_name, default_env_var)
             headers = copy.deepcopy(existing_provider.headers) if existing_provider.headers else None
 
             initial_models = _provider_models_to_dicts(existing_provider)
