@@ -1101,9 +1101,10 @@ def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
         "new_id": provider_id,
         "api_base_url": provider.api_base_url,
         "api_key_config": None,  # Set if user changes it
-        "headers": dict(provider.headers) if provider.headers else {},
+        "headers": None,  # Set only when user edits headers
         "id_changed": False,
         "update_default": False,
+        "headers_changed": False,
     }
 
     console.print(
@@ -1252,9 +1253,10 @@ def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
             else:
                 console.print(f"Current: [dim](stored directly)[/dim]")
 
+            effective_provider_id = changes["new_id"] if changes.get("id_changed") else provider_id
             api_key, api_key_config = _get_api_key(
                 provider.name,
-                provider.api_key_env_var or _guess_api_key_env_var(provider_id)
+                provider.api_key_env_var or _guess_api_key_env_var(effective_provider_id)
             )
             if api_key:
                 changes['api_key_config'] = api_key_config
@@ -1268,7 +1270,11 @@ def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
         elif choice == "h":
             # Change headers
             console.print(f"\n[bold]Edit Headers[/bold]")
-            current = changes['headers']
+            current = (
+                copy.deepcopy(changes["headers"])
+                if changes["headers"] is not None
+                else copy.deepcopy(provider.headers) if provider.headers else {}
+            )
             if current:
                 console.print("Current headers:")
                 for k, v in current.items():
@@ -1282,48 +1288,58 @@ def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
             console.print("  \\[c] Clear all")
             console.print("  \\[d] Done")
 
+            modified = False
             while True:
                 h_choice = safe_prompt("Header action", default="d").lower()
                 if h_choice == "a":
                     name = safe_prompt("Header name")
                     if name:
                         value = safe_prompt(f"Value for {name}")
-                        changes['headers'][name] = value
+                        current[name] = value
+                        modified = True
                         console.print(f"[green]Added: {name}[/green]")
-                elif h_choice == "e" and changes['headers']:
-                    headers_list = list(changes['headers'].keys())
+                elif h_choice == "e" and current:
+                    headers_list = list(current.keys())
                     for idx, name in enumerate(headers_list, 1):
-                        console.print(f"  [{idx}] {name}: {changes['headers'][name]}")
+                        console.print(f"  [{idx}] {name}: {current[name]}")
                     try:
                         idx = int(safe_prompt("Number")) - 1
                         if 0 <= idx < len(headers_list):
                             name = headers_list[idx]
-                            value = safe_prompt(f"New value for {name}", default=changes['headers'][name])
-                            changes['headers'][name] = value
+                            value = safe_prompt(f"New value for {name}", default=current[name])
+                            current[name] = value
+                            modified = True
                             console.print(f"[green]Updated: {name}[/green]")
                     except ValueError:
                         pass
-                elif h_choice == "r" and changes['headers']:
-                    headers_list = list(changes['headers'].keys())
+                elif h_choice == "r" and current:
+                    headers_list = list(current.keys())
                     for idx, name in enumerate(headers_list, 1):
                         console.print(f"  [{idx}] {name}")
                     try:
                         idx = int(safe_prompt("Number to remove")) - 1
                         if 0 <= idx < len(headers_list):
                             name = headers_list[idx]
-                            del changes['headers'][name]
+                            del current[name]
+                            modified = True
                             console.print(f"[yellow]Removed: {name}[/yellow]")
                     except ValueError:
                         pass
                 elif h_choice == "c":
                     if safe_confirm("Clear all headers?", default=False):
-                        changes['headers'].clear()
+                        current.clear()
+                        modified = True
                         console.print("[yellow]Headers cleared.[/yellow]")
                 elif h_choice == "d":
                     break
 
-            provider.headers = changes['headers']
-            console.print("[green]Headers updated.[/green]")
+            if modified:
+                changes["headers"] = copy.deepcopy(current)
+                changes["headers_changed"] = True
+                provider.headers = current
+                console.print("[green]Headers updated.[/green]")
+            else:
+                console.print("[dim]Headers unchanged.[/dim]")
 
         elif choice == "x":
             # Delete provider
@@ -1531,9 +1547,10 @@ def _save_provider_changes(settings, provider_id: str, provider, changes: Option
             - new_id: New provider ID (if changed)
             - api_base_url: New API base URL
             - api_key_config: New API key configuration string
-            - headers: New headers dict
+            - headers: New headers dict (when headers_changed is True)
             - id_changed: Whether ID was changed
             - update_default: Whether to update default_provider
+            - headers_changed: Whether headers were edited by the user
 
     Returns:
         True if changes were saved successfully
@@ -1585,7 +1602,7 @@ def _save_provider_changes(settings, provider_id: str, provider, changes: Option
         if provider_id in providers:
             del providers[provider_id]
         # Update default_provider if needed
-        if changes.get('update_default') and existing_data.get('default_provider') == provider_id:
+        if changes.get('update_default'):
             existing_data['default_provider'] = new_provider_id
 
     # Build provider data
@@ -1608,14 +1625,15 @@ def _save_provider_changes(settings, provider_id: str, provider, changes: Option
         provider_data['api_key'] = _build_api_key_reference(new_provider_id, provider, raw_provider=raw_provider)
 
     # Handle headers
-    if changes is not None:
-        if changes.get('headers'):
-            provider_data['headers'] = changes['headers']
-        elif 'headers' in provider_data and not changes.get('headers'):
+    if changes and changes.get("headers_changed"):
+        headers = changes.get("headers") or {}
+        if headers:
+            provider_data["headers"] = headers
+        elif "headers" in provider_data:
             # User cleared headers
-            del provider_data['headers']
-    elif 'headers' not in provider_data:
-        # When changes is None (backwards compatibility), preserve raw config headers
+            del provider_data["headers"]
+    elif "headers" not in provider_data:
+        # Preserve raw/template headers when user did not edit them.
         if raw_provider and raw_provider.get('headers'):
             provider_data['headers'] = copy.deepcopy(raw_provider['headers'])
         elif getattr(provider, "headers", None):

@@ -39,6 +39,7 @@ The wizard allows you to:
 - Fetch models automatically from the provider API (when available)
 - Add models manually
 - Select which models to enable
+- Redirect to provider management when selecting a provider that is already configured
 
 ### Model management
 
@@ -52,8 +53,14 @@ Management menu:
 - **[f] Fetch models** -- fetch models from the provider API
 - **[r] Remove model(s)** -- remove models
 - **[d] Set default** -- change the default model
+- **[n] Change display name** -- update provider display name
+- **[i] Change provider ID** -- rename provider identifier
+- **[u] Change API base URL** -- update endpoint URL
+- **[k] Change API key** -- update key source/value
+- **[h] Change headers** -- add/edit/remove custom headers
 - **[x] Delete provider** -- remove the provider entry from config
 - **[s] Save** -- save changes
+- **[q] Quit** -- exit without saving
 
 ### Manual configuration (`providers.yaml`)
 

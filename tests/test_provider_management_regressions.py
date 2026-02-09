@@ -264,3 +264,134 @@ def test_run_provider_wizard_redirects_to_manage_for_configured_provider(monkeyp
 
     assert run_provider_wizard(tmp_path) is True
     assert manage_called["provider_id"] == "openai"
+
+
+def test_manage_provider_save_without_header_edits_preserves_header_placeholders(monkeypatch, tmp_path):
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    monkeypatch.chdir(project_dir)
+
+    home_dir = tmp_path / "home"
+    home_dir.mkdir()
+    monkeypatch.setenv("HOME", str(home_dir))
+
+    user_config_dir = home_dir / ".config" / "flavia"
+    user_config_dir.mkdir(parents=True)
+    (user_config_dir / "providers.yaml").write_text(
+        (
+            "providers:\n"
+            "  xai:\n"
+            "    name: xAI\n"
+            "    api_base_url: https://api.x.ai/v1\n"
+            "    api_key: ${XAI_API_KEY}\n"
+            "    headers:\n"
+            "      X-App-Name: ${XAI_APP_NAME}\n"
+            "    models:\n"
+            "      - id: grok-2\n"
+            "        name: Grok 2\n"
+            "        default: true\n"
+            "default_provider: xai\n"
+        ),
+        encoding="utf-8",
+    )
+
+    settings = Settings(
+        providers=ProviderRegistry(
+            providers={
+                "xai": ProviderConfig(
+                    id="xai",
+                    name="xAI",
+                    api_base_url="https://api.x.ai/v1",
+                    api_key="resolved-secret-value",
+                    api_key_env_var="XAI_API_KEY",
+                    headers={"X-App-Name": "resolved-from-env"},
+                    models=[ModelConfig(id="grok-2", name="Grok 2", default=True)],
+                )
+            },
+            default_provider_id="xai",
+        )
+    )
+
+    def _safe_prompt(prompt, *args, default="", **kwargs):
+        if "Choice" in str(prompt):
+            return "s"
+        if str(prompt) == "Enter number":
+            return "1"
+        return default
+
+    monkeypatch.setattr("flavia.setup.provider_wizard.safe_prompt", _safe_prompt)
+    monkeypatch.setattr("flavia.setup.provider_wizard.safe_confirm", lambda *args, **kwargs: True)
+
+    assert manage_provider_models(settings, "xai") is True
+
+    local_file = project_dir / ".flavia" / "providers.yaml"
+    data = yaml.safe_load(local_file.read_text(encoding="utf-8"))
+    provider_data = data["providers"]["xai"]
+
+    assert provider_data["headers"]["X-App-Name"] == "${XAI_APP_NAME}"
+    assert provider_data["headers"]["X-App-Name"] != "resolved-from-env"
+
+
+def test_save_provider_changes_rename_updates_default_provider(monkeypatch, tmp_path):
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    monkeypatch.chdir(project_dir)
+
+    home_dir = tmp_path / "home"
+    home_dir.mkdir()
+    monkeypatch.setenv("HOME", str(home_dir))
+
+    user_config_dir = home_dir / ".config" / "flavia"
+    user_config_dir.mkdir(parents=True)
+    (user_config_dir / "providers.yaml").write_text(
+        (
+            "providers:\n"
+            "  xai:\n"
+            "    name: xAI\n"
+            "    api_base_url: https://api.x.ai/v1\n"
+            "    api_key: ${XAI_API_KEY}\n"
+            "    models:\n"
+            "      - id: grok-2\n"
+            "        name: Grok 2\n"
+            "        default: true\n"
+            "default_provider: xai\n"
+        ),
+        encoding="utf-8",
+    )
+
+    provider = ProviderConfig(
+        id="xai",
+        name="xAI",
+        api_base_url="https://api.x.ai/v1",
+        api_key="resolved-secret-value",
+        api_key_env_var="XAI_API_KEY",
+        models=[ModelConfig(id="grok-2", name="Grok 2", default=True)],
+    )
+    settings = Settings(
+        providers=ProviderRegistry(
+            providers={"xai": provider},
+            default_provider_id="xai",
+        )
+    )
+    changes = {
+        "name": "xAI",
+        "new_id": "xai-renamed",
+        "api_base_url": "https://api.x.ai/v1",
+        "api_key_config": None,
+        "headers": None,
+        "id_changed": True,
+        "update_default": True,
+        "headers_changed": False,
+    }
+
+    monkeypatch.setattr("flavia.setup.provider_wizard.safe_prompt", lambda *args, **kwargs: "1")
+    monkeypatch.setattr("flavia.setup.provider_wizard.safe_confirm", lambda *args, **kwargs: True)
+
+    assert _save_provider_changes(settings, "xai", provider, changes=changes) is True
+
+    local_file = project_dir / ".flavia" / "providers.yaml"
+    data = yaml.safe_load(local_file.read_text(encoding="utf-8"))
+
+    assert data["default_provider"] == "xai-renamed"
+    assert "xai-renamed" in data["providers"]
+    assert "xai" not in data["providers"]
