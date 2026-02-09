@@ -1,5 +1,6 @@
 """Tests for online source converters."""
 
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -182,3 +183,18 @@ class TestOnlineSourceConverterBase:
         ok, missing = converter.check_dependencies()
         # At least one should be missing
         assert not ok or len(missing) == 0
+
+    def test_check_dependencies_uses_import_map(self, monkeypatch):
+        """Package-to-module mapping is honored (e.g., beautifulsoup4 -> bs4)."""
+        converter = WebPageConverter()
+
+        def fake_find_spec(module_name):
+            if module_name in {"httpx", "bs4", "markdownify"}:
+                return object()
+            return None
+
+        monkeypatch.setattr(importlib.util, "find_spec", fake_find_spec)
+        ok, missing = converter.check_dependencies()
+
+        assert ok is True
+        assert missing == []

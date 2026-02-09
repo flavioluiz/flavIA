@@ -85,9 +85,11 @@ class ContentCatalog:
         )
         current_entries, dir_tree = scanner.scan()
 
-        # Build set of currently scanned paths
+        # Build set of currently scanned paths (scanner only returns local files)
         current_paths = {e.path for e in current_entries}
-        existing_paths = set(self.files.keys())
+        existing_local_paths = {
+            path for path, entry in self.files.items() if entry.source_type == "local"
+        }
 
         new_paths: list[str] = []
         modified_paths: list[str] = []
@@ -96,7 +98,7 @@ class ContentCatalog:
 
         # Detect new and modified files
         for entry in current_entries:
-            if entry.path not in existing_paths:
+            if entry.path not in existing_local_paths:
                 # New file
                 entry.status = "new"
                 self.files[entry.path] = entry
@@ -126,7 +128,7 @@ class ContentCatalog:
                     unchanged_paths.append(entry.path)
 
         # Detect missing files
-        for path in existing_paths - current_paths:
+        for path in existing_local_paths - current_paths:
             self.files[path].status = "missing"
             missing_paths.append(path)
 
@@ -280,22 +282,28 @@ class ContentCatalog:
         """
         from .converters import converter_registry
 
+        normalized_url = source_url.strip()
+        if not normalized_url:
+            return None
+
+        normalized_source_type = source_type.strip().lower()
+
         # Auto-detect source type if needed
-        if source_type == "auto":
+        if normalized_source_type == "auto":
             # Try YouTube first (more specific patterns)
             youtube_converter = converter_registry.get_for_source("youtube")
-            if youtube_converter and youtube_converter.can_handle_source(source_url):
-                source_type = "youtube"
+            if youtube_converter and youtube_converter.can_handle_source(normalized_url):
+                normalized_source_type = "youtube"
             else:
                 # Fall back to webpage for any HTTP/HTTPS URL
                 webpage_converter = converter_registry.get_for_source("webpage")
-                if webpage_converter and webpage_converter.can_handle_source(source_url):
-                    source_type = "webpage"
+                if webpage_converter and webpage_converter.can_handle_source(normalized_url):
+                    normalized_source_type = "webpage"
                 else:
                     return None
 
         # Get the converter for this source type
-        converter = converter_registry.get_for_source(source_type)
+        converter = converter_registry.get_for_source(normalized_source_type)
         if converter is None:
             return None
 
@@ -305,20 +313,25 @@ class ContentCatalog:
         # Get metadata if possible
         source_metadata = {}
         if hasattr(converter, "get_metadata"):
-            source_metadata = converter.get_metadata(source_url)
+            source_metadata = converter.get_metadata(normalized_url)
 
         # Generate a unique path for the online source
-        url_hash = hashlib.sha256(source_url.encode()).hexdigest()[:12]
-        path = f"_online/{source_type}/{url_hash}"
+        url_hash = hashlib.sha256(normalized_url.encode()).hexdigest()[:12]
+        base_path = f"_online/{normalized_source_type}/{url_hash}"
+        path = base_path
+        suffix = 1
+        while path in self.files and self.files[path].source_url != normalized_url:
+            path = f"{base_path}_{suffix}"
+            suffix += 1
 
         now = datetime.now(timezone.utc).isoformat()
 
         entry = FileEntry(
             path=path,
-            name=source_metadata.get("title", source_url),
+            name=source_metadata.get("title", normalized_url),
             extension="",
             file_type="online",
-            category=source_type,
+            category=normalized_source_type,
             size_bytes=0,
             created_at=now,
             modified_at=now,
@@ -326,8 +339,8 @@ class ContentCatalog:
             checksum_sha256="",
             status="new",
             tags=tags or [],
-            source_type=source_type,
-            source_url=source_url,
+            source_type=normalized_source_type,
+            source_url=normalized_url,
             source_metadata=source_metadata,
             fetch_status=fetch_status,
         )

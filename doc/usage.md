@@ -100,6 +100,24 @@ Inside a chat session, the following commands are available:
 | `/config` | Show configuration paths |
 | `/quit` | Exit session (aliases: `/exit`, `/q`) |
 
+## `/catalog` quick workflow
+
+Inside the interactive CLI:
+
+1. Run `/catalog`.
+2. Use the menu:
+   - `1` overview/statistics
+   - `2` directory tree
+   - `3` search
+   - `4` summaries
+   - `5` list online sources
+   - `6` add online source URL
+3. Press `q` to return to chat.
+
+Notes:
+- Online source converters are currently placeholders (URLs are cataloged, but content fetching/conversion is not implemented yet).
+- Online sources are persisted in `.flavia/content_catalog.json`.
+
 ## Startup connection check
 
 When starting flavIA (CLI or Telegram), connectivity to the active provider/model is verified automatically the first time. The result is cached in `.connection_checks.yaml` so the check is not repeated on every run.

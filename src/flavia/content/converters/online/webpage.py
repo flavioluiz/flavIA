@@ -26,6 +26,7 @@ class WebPageConverter(OnlineSourceConverter):
     url_patterns = ["http://", "https://"]
     is_implemented = False
     requires_dependencies = ["httpx", "beautifulsoup4", "markdownify"]
+    dependency_import_map = {"beautifulsoup4": "bs4"}
 
     def can_handle_source(self, source_url: str) -> bool:
         """

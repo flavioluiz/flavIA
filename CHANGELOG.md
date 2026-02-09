@@ -31,6 +31,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Setup robustness during conversion**: Conversion failures in individual binary documents during `--init` no longer abort the setup flow.
 - **Duplicate catalog entries**: Converted PDF files no longer appear as separate entries in the content catalog alongside their original PDFs.
 - **Better error diagnostics**: Failed LLM calls are now properly logged with context, making debugging easier.
+- **Online sources preserved on catalog refresh**: `ContentCatalog.update()` no longer marks online source entries as `missing` during local filesystem scans.
+- **Online source type normalization**: `add_online_source()` now normalizes source type values (e.g., `YouTube` -> `youtube`) for consistent storage and filtering.
+- **Online/source path collision handling**: Adding an online source no longer overwrites an existing local file entry when generated paths collide.
 
 ### Removed
 

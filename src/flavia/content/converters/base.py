@@ -1,5 +1,6 @@
 """Base converter interface."""
 
+import importlib.util
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional
@@ -16,6 +17,9 @@ class BaseConverter(ABC):
 
     # Dependencies required for this converter
     requires_dependencies: list[str] = []
+
+    # Optional mapping of package names to import module names
+    dependency_import_map: dict[str, str] = {}
 
     @abstractmethod
     def convert(
@@ -99,9 +103,11 @@ class BaseConverter(ABC):
 
         missing = []
         for dep in self.requires_dependencies:
+            module_name = self.dependency_import_map.get(dep, dep).replace("-", "_")
             try:
-                __import__(dep.replace("-", "_"))
-            except ImportError:
+                if importlib.util.find_spec(module_name) is None:
+                    missing.append(dep)
+            except (ImportError, ModuleNotFoundError, ValueError):
                 missing.append(dep)
 
         return len(missing) == 0, missing

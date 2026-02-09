@@ -3,6 +3,7 @@
 import json
 import os
 import time
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -726,6 +727,41 @@ class TestOnlineSources:
         assert entry.source_url == "https://docs.python.org/3/"
         assert entry.fetch_status == "not_implemented"
 
+    def test_add_source_normalizes_source_type(self, tmp_path):
+        """Source type is normalized to lowercase."""
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+
+        entry = catalog.add_online_source(
+            "https://youtube.com/watch?v=abc123",
+            source_type="YouTube",
+        )
+
+        assert entry is not None
+        assert entry.source_type == "youtube"
+        assert entry.category == "youtube"
+        assert entry.path.startswith("_online/youtube/")
+
+    def test_add_source_does_not_overwrite_existing_local_path(self, tmp_path):
+        """Online source path collisions must not overwrite local file entries."""
+        url = "https://youtube.com/watch?v=abc123"
+        url_hash = hashlib.sha256(url.encode()).hexdigest()[:12]
+
+        collision_file = tmp_path / "_online" / "youtube" / url_hash
+        collision_file.parent.mkdir(parents=True)
+        collision_file.write_text("local file")
+
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+        local_entry = catalog.files[f"_online/youtube/{url_hash}"]
+        assert local_entry.source_type == "local"
+
+        online_entry = catalog.add_online_source(url, source_type="youtube")
+        assert online_entry is not None
+        assert online_entry.path != local_entry.path
+        assert catalog.files[local_entry.path].source_type == "local"
+        assert catalog.files[online_entry.path].source_type == "youtube"
+
     def test_add_source_auto_detect_youtube(self, tmp_path):
         """Auto-detect YouTube URLs."""
         catalog = ContentCatalog(tmp_path)
@@ -886,6 +922,24 @@ class TestOnlineSources:
         assert sources[0].source_type == "youtube"
         assert sources[0].source_url == "https://youtube.com/watch?v=abc"
         assert sources[0].tags == ["video"]
+
+    def test_update_keeps_online_sources_active(self, tmp_path):
+        """Incremental update should not mark online sources as missing."""
+        (tmp_path / "file.txt").write_text("content")
+        config_dir = tmp_path / ".flavia"
+        config_dir.mkdir()
+
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+        online_entry = catalog.add_online_source("https://example.com")
+        catalog.save(config_dir)
+
+        loaded = ContentCatalog.load(config_dir)
+        result = loaded.update()
+
+        assert result["counts"]["missing"] == 0
+        assert loaded.files[online_entry.path].status == "new"
+        assert loaded.get_stats()["online_sources"] == 1
 
 
 # ---------------------------------------------------------------------------
