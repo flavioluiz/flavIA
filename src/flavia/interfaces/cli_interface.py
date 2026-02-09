@@ -62,6 +62,7 @@ def print_help() -> None:
 - `/help` - Show this message
 - `/reset` - Reset conversation
 - `/setup` - Configure agents for this project
+- `/agents` - Configure model per agent/subagent
 - `/quit` - Exit
 - `/models` - List models (with provider info)
 - `/providers` - List configured providers
@@ -120,6 +121,13 @@ def run_cli(settings: Settings) -> None:
                     success = run_setup_command_in_cli(settings, settings.base_dir)
                     if success:
                         console.print("[dim]Use /reset to load new configuration.[/dim]")
+                    continue
+
+                elif command == "/agents":
+                    from flavia.setup import manage_agent_models
+                    success = manage_agent_models(settings, settings.base_dir)
+                    if success:
+                        console.print("[dim]Use /reset to reload updated agent models.[/dim]")
                     continue
 
                 elif command == "/models":

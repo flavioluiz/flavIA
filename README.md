@@ -144,6 +144,7 @@ provider/model at least once and caches the result, so startup checks are not re
 | `/help` | Show help |
 | `/reset` | Reset conversation and reload config |
 | `/setup` | Reconfigure agents (re-analyze content) |
+| `/agents` | Configure model per agent/subagent |
 | `/quit` | Exit |
 | `/models` | List available models with provider info |
 | `/providers` | List configured LLM providers |
