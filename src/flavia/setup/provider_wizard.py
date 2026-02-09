@@ -3,7 +3,7 @@
 import copy
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 import yaml
@@ -13,7 +13,6 @@ from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
-from flavia.config.loader import ensure_user_config
 from flavia.config.providers import (
     ModelConfig as ProviderModelConfig,
     expand_env_vars,
@@ -146,6 +145,53 @@ KNOWN_PROVIDERS = {
 }
 
 
+def _guess_api_key_env_var(provider_id: str) -> str:
+    """Guess API key environment variable for a provider ID."""
+    clean = "".join(c if c.isalnum() else "_" for c in provider_id).upper()
+    return f"{clean}_API_KEY"
+
+
+def _collect_provider_choices(settings=None) -> list[dict[str, str]]:
+    """Build provider choices including configured providers from merged settings."""
+    choices: list[dict[str, str]] = []
+    configured_ids = set(settings.providers.providers.keys()) if settings else set()
+
+    for provider_id, template in KNOWN_PROVIDERS.items():
+        status = " (configured)" if provider_id in configured_ids else ""
+        choices.append(
+            {
+                "kind": "known",
+                "provider_id": provider_id,
+                "name": f"{template['name']}{status}",
+                "description": template["api_base_url"],
+            }
+        )
+
+    if settings:
+        for provider_id, provider in settings.providers.providers.items():
+            if provider_id in KNOWN_PROVIDERS:
+                continue
+            choices.append(
+                {
+                    "kind": "existing",
+                    "provider_id": provider_id,
+                    "name": f"{provider.name} (configured)",
+                    "description": provider.api_base_url,
+                }
+            )
+
+    choices.append(
+        {
+            "kind": "custom",
+            "provider_id": "custom",
+            "name": "Custom Provider",
+            "description": "Configure a custom OpenAI-compatible provider",
+        }
+    )
+
+    return choices
+
+
 def test_provider_connection(
     api_key: str,
     api_base_url: str,
@@ -202,20 +248,18 @@ def test_provider_connection(
         return False, f"Connection failed: {e}"
 
 
-def _select_provider_type() -> Optional[str]:
-    """Ask user to select a provider type."""
+def _select_provider_type(settings=None) -> Optional[dict[str, str]]:
+    """Ask user to select provider source/type."""
     console.print("\n[bold]Select a provider:[/bold]")
 
     table = Table(show_header=False, box=None, padding=(0, 2))
-    providers = list(KNOWN_PROVIDERS.keys()) + ["custom"]
-    for i, provider_id in enumerate(providers, 1):
-        if provider_id == "custom":
-            name = "Custom Provider"
-            desc = "Configure a custom OpenAI-compatible provider"
-        else:
-            name = KNOWN_PROVIDERS[provider_id]["name"]
-            desc = KNOWN_PROVIDERS[provider_id]["api_base_url"]
-        table.add_row(f"  [{i}]", f"[bold]{name}[/bold]", f"[dim]{desc}[/dim]")
+    choices = _collect_provider_choices(settings=settings)
+    for i, choice in enumerate(choices, 1):
+        table.add_row(
+            f"  [{i}]",
+            f"[bold]{choice['name']}[/bold]",
+            f"[dim]{choice['description']}[/dim]",
+        )
     console.print(table)
 
     choice = Prompt.ask(
@@ -225,13 +269,45 @@ def _select_provider_type() -> Optional[str]:
 
     try:
         index = int(choice) - 1
-        if 0 <= index < len(providers):
-            return providers[index]
+        if 0 <= index < len(choices):
+            return choices[index]
     except ValueError:
         pass
 
     console.print("[red]Invalid choice[/red]")
     return None
+
+
+def _headers_for_known_provider(provider_id: str, settings=None) -> Optional[dict[str, str]]:
+    """Resolve headers for a known provider while preserving template placeholders."""
+    template_headers = copy.deepcopy(KNOWN_PROVIDERS[provider_id].get("headers"))
+    if settings is None:
+        return template_headers
+
+    existing_provider = settings.providers.get_provider(provider_id)
+    if not existing_provider or not existing_provider.headers:
+        return template_headers
+
+    existing_headers = copy.deepcopy(existing_provider.headers)
+    if template_headers and all(str(v) == "" for v in existing_headers.values()):
+        return template_headers
+    return existing_headers
+
+
+def _load_settings_for_target_dir(target_dir: Path):
+    """Load settings as if current working directory were target_dir."""
+    from flavia.config import load_settings
+
+    current_dir = Path.cwd().resolve()
+    resolved_target = target_dir.resolve()
+    if current_dir == resolved_target:
+        return load_settings()
+
+    os.chdir(resolved_target)
+    try:
+        return load_settings()
+    finally:
+        os.chdir(current_dir)
 
 
 def _get_api_key(provider_name: str, env_var: str) -> tuple[str, str]:
@@ -585,13 +661,68 @@ def _ensure_single_default(models: list[ProviderModelConfig]) -> None:
         model.default = idx == default_index
 
 
-def _select_location() -> str:
-    """Ask user where to save the configuration."""
-    console.print("\n[bold]Where to save provider configuration?[/bold]")
-    console.print("  [1] Local (.flavia/providers.yaml) - Project-specific")
-    console.print("  [2] Global (~/.config/flavia/providers.yaml) - User-wide")
+def _providers_file_for_location(location: str, target_dir: Optional[Path] = None) -> Path:
+    """Resolve providers.yaml path for local/global location."""
+    if location == "global":
+        return Path.home() / ".config" / "flavia" / "providers.yaml"
 
-    choice = Prompt.ask("Enter number", default="1")
+    base_dir = target_dir.resolve() if target_dir is not None else Path.cwd()
+    return base_dir / ".flavia" / "providers.yaml"
+
+
+def _load_yaml_data(file_path: Path) -> dict[str, Any]:
+    """Load YAML as dictionary, returning empty dict on failures."""
+    if not file_path.exists():
+        return {}
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            loaded = yaml.safe_load(f) or {}
+    except Exception:
+        return {}
+
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _extract_provider_from_file(file_path: Path, provider_id: str) -> Optional[dict[str, Any]]:
+    """Extract raw provider config from a providers.yaml file."""
+    data = _load_yaml_data(file_path)
+    providers = data.get("providers")
+    if not isinstance(providers, dict):
+        return None
+    provider_data = providers.get(provider_id)
+    if not isinstance(provider_data, dict):
+        return None
+    return copy.deepcopy(provider_data)
+
+
+def _select_location(
+    provider_id: Optional[str] = None,
+    target_dir: Optional[Path] = None,
+    title: str = "Where to save provider configuration?",
+) -> str:
+    """Ask user where to save configuration, showing where provider already exists."""
+    local_file = _providers_file_for_location("local", target_dir=target_dir)
+    global_file = _providers_file_for_location("global")
+    local_exists = bool(provider_id and _extract_provider_from_file(local_file, provider_id))
+    global_exists = bool(provider_id and _extract_provider_from_file(global_file, provider_id))
+
+    local_hint = "Project-specific"
+    global_hint = "User-wide"
+    if local_exists:
+        local_hint += " [configured]"
+    if global_exists:
+        global_hint += " [configured]"
+
+    console.print(f"\n[bold]{title}[/bold]")
+    console.print(f"  [1] Local ({local_file}) - {local_hint}")
+    console.print(f"  [2] Global ({global_file}) - {global_hint}")
+
+    default_choice = "1"
+    if global_exists and not local_exists:
+        default_choice = "2"
+
+    choice = Prompt.ask("Enter number", default=default_choice)
 
     if choice == "2":
         return "global"
@@ -628,14 +759,8 @@ def _save_provider_config(
     target_dir: Optional[Path] = None,
 ) -> Path:
     """Save provider configuration to file."""
-    if location == "global":
-        config_dir = ensure_user_config()
-    else:
-        base_dir = target_dir if target_dir is not None else Path.cwd()
-        config_dir = base_dir / ".flavia"
-        config_dir.mkdir(parents=True, exist_ok=True)
-
-    providers_file = config_dir / "providers.yaml"
+    providers_file = _providers_file_for_location(location, target_dir=target_dir)
+    providers_file.parent.mkdir(parents=True, exist_ok=True)
 
     # Load existing config if present
     existing_data = {}
@@ -682,8 +807,8 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
     """
     if target_dir is None:
         target_dir = Path.cwd()
-    from flavia.config import load_settings
-    settings = load_settings()
+    target_dir = target_dir.resolve()
+    settings = _load_settings_for_target_dir(target_dir)
 
     console.print(
         Panel.fit(
@@ -694,12 +819,15 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
     )
 
     # Step 1: Select provider type
-    provider_type = _select_provider_type()
-    if not provider_type:
+    provider_selection = _select_provider_type(settings=settings)
+    if not provider_selection:
         return False
 
     # Step 2: Get configuration based on provider type
-    if provider_type == "custom":
+    selection_kind = provider_selection["kind"]
+    selected_provider_id = provider_selection["provider_id"]
+
+    if selection_kind == "custom":
         # Custom provider
         provider_id = Prompt.ask("\nProvider ID (short name)", default="custom")
         provider_name = Prompt.ask("Provider display name", default="Custom Provider")
@@ -719,29 +847,66 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
         headers = None
 
     else:
-        # Known provider
-        template = KNOWN_PROVIDERS[provider_type]
-        provider_id = provider_type
-        provider_name = template["name"]
-        api_base_url = template["api_base_url"]
-        api_key_env = template["api_key_env"]
-        headers = template.get("headers")
+        provider_id = selected_provider_id
+        existing_provider = settings.providers.get_provider(provider_id)
 
-        api_key, api_key_config = _get_api_key(provider_name, api_key_env)
-
-        initial_models = _models_source_for_provider(provider_type, settings=settings)
-        if len(initial_models) != len(template["models"]):
-            console.print(
-                f"[dim]Using {len(initial_models)} model(s) already configured for {provider_name}.[/dim]"
+        if selection_kind == "known":
+            # Known provider template with existing values as defaults when available.
+            template = KNOWN_PROVIDERS[provider_id]
+            provider_name = existing_provider.name if existing_provider else template["name"]
+            api_base_url = (
+                existing_provider.api_base_url
+                if existing_provider and existing_provider.api_base_url
+                else template["api_base_url"]
             )
+            api_key_env = (
+                existing_provider.api_key_env_var
+                if existing_provider and existing_provider.api_key_env_var
+                else template["api_key_env"]
+            )
+            headers = _headers_for_known_provider(provider_id, settings=settings)
 
-        # Select models (pass API info for optional model fetching)
-        models = _select_models(
-            initial_models,
-            api_key=api_key,
-            api_base_url=api_base_url,
-            headers=headers,
-        )
+            api_key, api_key_config = _get_api_key(provider_name, api_key_env)
+
+            initial_models = _models_source_for_provider(provider_id, settings=settings)
+            if existing_provider:
+                console.print(
+                    f"[dim]Using {len(initial_models)} model(s) already configured for {provider_name}.[/dim]"
+                )
+
+            models = _select_models(
+                initial_models,
+                api_key=api_key,
+                api_base_url=api_base_url,
+                headers=headers,
+            )
+        else:
+            # Existing configured provider (typically custom/non-template).
+            if not existing_provider:
+                console.print(f"[red]Provider '{provider_id}' is not available in current settings.[/red]")
+                return False
+
+            provider_name = Prompt.ask("\nProvider display name", default=existing_provider.name)
+            api_base_url = Prompt.ask("API Base URL", default=existing_provider.api_base_url)
+            api_key_env = Prompt.ask(
+                "API Key env variable name",
+                default=existing_provider.api_key_env_var or _guess_api_key_env_var(provider_id),
+            )
+            api_key, api_key_config = _get_api_key(provider_name, api_key_env)
+            headers = copy.deepcopy(existing_provider.headers) if existing_provider.headers else None
+
+            initial_models = _provider_models_to_dicts(existing_provider)
+            if not initial_models:
+                initial_models = [{"id": "model-name", "name": "model-name", "default": True}]
+            if not any(bool(m.get("default")) for m in initial_models):
+                initial_models[0]["default"] = True
+
+            models = _select_models(
+                initial_models,
+                api_key=api_key,
+                api_base_url=api_base_url,
+                headers=headers,
+            )
 
     # Step 3: Test connection (optional)
     if api_key and Confirm.ask("\nTest connection?", default=True):
@@ -770,7 +935,7 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
                 return False
 
     # Step 4: Select save location
-    location = _select_location()
+    location = _select_location(provider_id=provider_id, target_dir=target_dir)
 
     # Step 5: Set as default?
     set_default = Confirm.ask("\nSet as default provider?", default=True)
@@ -1063,35 +1228,76 @@ def _fetch_models_for_provider(provider) -> list[dict]:
     return selected
 
 
-def _save_provider_changes(settings, provider_id: str, provider) -> bool:
-    """Save provider model changes to config file."""
+def _find_provider_raw_config(provider_id: str) -> Optional[dict[str, Any]]:
+    """Find raw provider config in local, global, or package providers.yaml."""
     from flavia.config.loader import get_config_paths
 
     paths = get_config_paths()
+    candidates: list[Path] = []
 
-    # Determine which file to update
-    if paths.providers_file:
-        providers_file = paths.providers_file
-    elif paths.local_dir:
-        providers_file = paths.local_dir / "providers.yaml"
-    else:
-        providers_file = ensure_user_config() / "providers.yaml"
+    if paths.local_dir:
+        candidates.append(paths.local_dir / "providers.yaml")
+    if paths.user_dir:
+        candidates.append(paths.user_dir / "providers.yaml")
+    if paths.package_dir:
+        candidates.append(paths.package_dir / "providers.yaml")
+
+    seen: set[Path] = set()
+    for file_path in candidates:
+        resolved = file_path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        provider_data = _extract_provider_from_file(file_path, provider_id)
+        if provider_data:
+            return provider_data
+
+    return None
+
+
+def _build_api_key_reference(provider_id: str, provider, raw_provider: Optional[dict[str, Any]] = None) -> str:
+    """Build safe api_key value without persisting resolved secret values."""
+    if raw_provider:
+        raw_key = raw_provider.get("api_key")
+        if isinstance(raw_key, str) and raw_key:
+            return raw_key
+
+    if getattr(provider, "api_key_env_var", None):
+        return f"${{{provider.api_key_env_var}}}"
+
+    known = KNOWN_PROVIDERS.get(provider_id)
+    if known and known.get("api_key_env"):
+        return f"${{{known['api_key_env']}}}"
+
+    return f"${{{_guess_api_key_env_var(provider_id)}}}"
+
+
+def _save_provider_changes(settings, provider_id: str, provider) -> bool:
+    """Save provider model changes to config file."""
+    _ = settings
+    location = _select_location(
+        provider_id=provider_id,
+        title=f"Where should changes for provider '{provider_id}' be saved?",
+    )
+    providers_file = _providers_file_for_location(location)
+    providers_file.parent.mkdir(parents=True, exist_ok=True)
+
+    console.print(f"[dim]Target file: {providers_file}[/dim]")
+    if not Confirm.ask("Save changes to this file?", default=True):
+        console.print("[yellow]Save cancelled.[/yellow]")
+        return False
 
     # Load existing config
-    existing_data = {}
-    if providers_file.exists():
-        try:
-            with open(providers_file, "r", encoding="utf-8") as f:
-                existing_data = yaml.safe_load(f) or {}
-        except Exception:
-            pass
+    existing_data = _load_yaml_data(providers_file)
 
     # Ensure providers dict exists
-    if "providers" not in existing_data:
-        existing_data["providers"] = {}
+    providers = existing_data.get("providers")
+    if not isinstance(providers, dict):
+        providers = {}
+        existing_data["providers"] = providers
 
     # Convert models to serializable format
-    models_data = []
+    models_data: list[dict[str, Any]] = []
     for m in provider.models:
         model = _to_provider_model(m)
         model_dict = {"id": model.id, "name": model.name}
@@ -1104,16 +1310,35 @@ def _save_provider_changes(settings, provider_id: str, provider) -> bool:
         models_data.append(model_dict)
 
     # Update provider config
-    if provider_id in existing_data["providers"]:
-        existing_data["providers"][provider_id]["models"] = models_data
+    existing_provider_data = providers.get(provider_id)
+    if isinstance(existing_provider_data, dict):
+        existing_provider_data["models"] = models_data
     else:
-        # New provider - need full config
-        existing_data["providers"][provider_id] = {
-            "name": provider.name,
-            "api_base_url": provider.api_base_url,
-            "api_key": f"${{{provider.api_key_env_var}}}" if provider.api_key_env_var else provider.api_key,
-            "models": models_data,
-        }
+        raw_provider = _find_provider_raw_config(provider_id)
+        new_provider: dict[str, Any] = copy.deepcopy(raw_provider) if raw_provider else {}
+
+        if not new_provider:
+            new_provider = {
+                "name": provider.name,
+                "api_base_url": provider.api_base_url,
+            }
+        else:
+            if "name" not in new_provider:
+                new_provider["name"] = provider.name
+            if "api_base_url" not in new_provider:
+                new_provider["api_base_url"] = provider.api_base_url
+
+        if not new_provider.get("api_key"):
+            new_provider["api_key"] = _build_api_key_reference(provider_id, provider, raw_provider=raw_provider)
+
+        if "headers" not in new_provider and getattr(provider, "headers", None):
+            template_headers = KNOWN_PROVIDERS.get(provider_id, {}).get("headers")
+            new_provider["headers"] = (
+                copy.deepcopy(template_headers) if template_headers else copy.deepcopy(provider.headers)
+            )
+
+        new_provider["models"] = models_data
+        providers[provider_id] = new_provider
 
     # Write back
     with open(providers_file, "w", encoding="utf-8") as f:
