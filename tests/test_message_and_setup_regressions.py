@@ -74,7 +74,7 @@ def test_basic_setup_succeeds_when_config_dir_already_exists(tmp_path):
 
     assert success is True
     assert (config_dir / ".env").exists()
-    assert (config_dir / "models.yaml").exists()
+    assert (config_dir / "providers.yaml").exists()
     assert (config_dir / "agents.yaml").exists()
     env_text = (config_dir / ".env").read_text(encoding="utf-8")
     assert "TELEGRAM_BOT_TOKEN" in env_text

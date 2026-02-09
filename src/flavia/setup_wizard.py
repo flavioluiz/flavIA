@@ -375,8 +375,98 @@ def _build_env_content(selected_model: str, include_optional_settings: bool) -> 
     )
 
 
-def _ensure_main_agent_model(agents_file: Path, selected_model: str) -> None:
-    """Ensure main agent configuration has the selected model."""
+def _guess_api_key_env_var(provider_id: str) -> str:
+    """Guess API key env var name from provider ID."""
+    clean = "".join(c if c.isalnum() else "_" for c in provider_id).upper()
+    return f"{clean}_API_KEY"
+
+
+def _build_providers_config(selected_model: str) -> dict[str, Any]:
+    """Build local providers.yaml data for the selected model/provider."""
+    from flavia.config import load_settings
+
+    settings = load_settings()
+    provider, model_id = settings.resolve_model_with_provider(selected_model)
+
+    if provider is None:
+        return {
+            "providers": {
+                "synthetic": {
+                    "name": "Synthetic",
+                    "api_base_url": "https://api.synthetic.new/openai/v1",
+                    "api_key": "${SYNTHETIC_API_KEY}",
+                    "models": [
+                        {
+                            "id": model_id,
+                            "name": model_id.split(":")[-1] if ":" in model_id else model_id,
+                            "default": True,
+                        }
+                    ],
+                }
+            },
+            "default_provider": "synthetic",
+        }
+
+    api_key_env_var = provider.api_key_env_var or _guess_api_key_env_var(provider.id)
+    models: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+
+    for model in provider.models:
+        if model.id in seen_ids:
+            continue
+        seen_ids.add(model.id)
+        model_data: dict[str, Any] = {
+            "id": model.id,
+            "name": model.name,
+        }
+        if model.id == model_id:
+            model_data["default"] = True
+        models.append(model_data)
+
+    if model_id not in seen_ids:
+        models.insert(
+            0,
+            {
+                "id": model_id,
+                "name": model_id.split("/")[-1],
+                "default": True,
+            },
+        )
+
+    if not any(m.get("default") for m in models) and models:
+        models[0]["default"] = True
+
+    provider_config: dict[str, Any] = {
+        "name": provider.name,
+        "api_base_url": provider.api_base_url,
+        "api_key": f"${{{api_key_env_var}}}",
+        "models": models,
+    }
+
+    # Keep OpenRouter headers templated in generated config.
+    if provider.id == "openrouter":
+        provider_config["headers"] = {
+            "HTTP-Referer": "${OPENROUTER_SITE_URL}",
+            "X-Title": "${OPENROUTER_APP_NAME}",
+        }
+
+    return {
+        "providers": {
+            provider.id: provider_config,
+        },
+        "default_provider": provider.id,
+    }
+
+
+def _write_providers_file(config_dir: Path, selected_model: str) -> None:
+    """Write providers.yaml for selected default provider/model."""
+    providers_data = _build_providers_config(selected_model)
+    with open(config_dir / "providers.yaml", "w", encoding="utf-8") as f:
+        yaml.dump(providers_data, f, default_flow_style=False, sort_keys=False)
+
+
+def _ensure_agent_models(agents_file: Path, selected_model: str) -> None:
+    """Ensure main agent and subagents have explicit model configuration."""
     if not agents_file.exists():
         return
 
@@ -393,10 +483,21 @@ def _ensure_main_agent_model(agents_file: Path, selected_model: str) -> None:
     if not isinstance(main, dict):
         return
 
-    if main.get("model") == selected_model:
+    changed = False
+    if main.get("model") != selected_model:
+        main["model"] = selected_model
+        changed = True
+
+    subagents = main.get("subagents")
+    if isinstance(subagents, dict):
+        for sub_config in subagents.values():
+            if isinstance(sub_config, dict) and "model" not in sub_config:
+                sub_config["model"] = selected_model
+                changed = True
+
+    if not changed:
         return
 
-    main["model"] = selected_model
     data["main"] = main
 
     with open(agents_file, "w", encoding="utf-8") as f:
@@ -542,20 +643,8 @@ def _run_basic_setup(target_dir: Path, config_dir: Path, selected_model: Optiona
         env_content = _build_env_content(effective_model, include_optional_settings=True)
         (config_dir / ".env").write_text(env_content)
 
-        # Create models.yaml
-        models_content = """\
-models:
-  - id: "hf:moonshotai/Kimi-K2.5"
-    name: "Kimi-K2.5"
-    default: true
-
-  - id: "hf:zai-org/GLM-4.7"
-    name: "GLM-4.7"
-
-  - id: "hf:MiniMaxAI/MiniMax-M2.1"
-    name: "MiniMax-M2.1"
-"""
-        (config_dir / "models.yaml").write_text(models_content)
+        # Create providers.yaml
+        _write_providers_file(config_dir, effective_model)
 
         # Create academic-focused default agents.yaml
         agents_content = f"""\
@@ -584,6 +673,7 @@ main:
 
   subagents:
     summarizer:
+      model: "{effective_model}"
       context: |
         You are a summarization specialist.
         Create clear, concise summaries that capture the key points.
@@ -592,6 +682,7 @@ main:
         - read_file
 
     explainer:
+      model: "{effective_model}"
       context: |
         You are an expert at explaining complex concepts.
         Break down difficult ideas into understandable parts.
@@ -601,6 +692,7 @@ main:
         - search_files
 
     researcher:
+      model: "{effective_model}"
       context: |
         You are a research specialist.
         Find specific information, quotes, and references across documents.
@@ -613,7 +705,7 @@ main:
         (config_dir / "agents.yaml").write_text(agents_content)
 
         # Create .gitignore
-        (config_dir / ".gitignore").write_text(".env\n")
+        (config_dir / ".gitignore").write_text(".env\n.connection_checks.yaml\n")
 
         _print_success(config_dir)
 
@@ -659,23 +751,11 @@ def _run_ai_setup(
     env_content = _build_env_content(effective_model, include_optional_settings=False)
     (config_dir / ".env").write_text(env_content)
 
-    # Create models.yaml
-    models_content = """\
-models:
-  - id: "hf:moonshotai/Kimi-K2.5"
-    name: "Kimi-K2.5"
-    default: true
-
-  - id: "hf:zai-org/GLM-4.7"
-    name: "GLM-4.7"
-
-  - id: "hf:MiniMaxAI/MiniMax-M2.1"
-    name: "MiniMax-M2.1"
-"""
-    (config_dir / "models.yaml").write_text(models_content)
+    # Create providers.yaml
+    _write_providers_file(config_dir, effective_model)
 
     # Create .gitignore
-    (config_dir / ".gitignore").write_text(".env\nconverted/\n")
+    (config_dir / ".gitignore").write_text(".env\n.connection_checks.yaml\nconverted/\n")
 
     # Convert PDFs first when requested
     if convert_pdfs and pdf_files:
@@ -732,7 +812,7 @@ models:
                 console.print("[yellow]No feedback provided. Creating default configuration.[/yellow]")
                 return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
 
-            _ensure_main_agent_model(agents_file, effective_model)
+            _ensure_agent_models(agents_file, effective_model)
 
             if not interactive_review:
                 _print_success(config_dir, has_pdfs=convert_pdfs)
@@ -836,7 +916,7 @@ def _print_success(config_dir: Path, has_pdfs: bool = False):
         "[bold green]Setup complete![/bold green]\n\n"
         f"Configuration created at:\n"
         f"  [cyan]{config_dir}/.env[/cyan] - API keys\n"
-        f"  [cyan]{config_dir}/models.yaml[/cyan] - Models\n"
+        f"  [cyan]{config_dir}/providers.yaml[/cyan] - Providers and models\n"
         f"  [cyan]{config_dir}/agents.yaml[/cyan] - Agents\n"
         f"{extra_info}\n"
         "[bold]Next steps:[/bold]\n"
@@ -914,6 +994,7 @@ def run_setup_command_in_cli(settings, base_dir: Path) -> bool:
         console.print(Markdown(response))
 
         if (config_dir / "agents.yaml").exists():
+            _ensure_agent_models(config_dir / "agents.yaml", str(settings.default_model))
             console.print("\n[green]Configuration updated![/green]")
             console.print("[yellow]Run /reset to load the new configuration.[/yellow]")
             return True

@@ -175,7 +175,7 @@ my-research/
 │   └── paper3.md
 └── .flavia/
     ├── .env
-    ├── models.yaml
+    ├── providers.yaml
     └── agents.yaml      # ← Specialized for your content
 ```
 
@@ -235,8 +235,7 @@ Would you like me to explain any specific part in more detail?
 .flavia/
 ├── .env            # API keys (don't commit!)
 ├── .connection_checks.yaml  # Startup connectivity check cache
-├── models.yaml     # Available models (legacy)
-├── providers.yaml  # Multi-provider configuration (new)
+├── providers.yaml  # Provider + models configuration
 └── agents.yaml     # Agent configuration
 ```
 

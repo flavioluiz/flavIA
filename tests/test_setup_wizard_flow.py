@@ -125,6 +125,14 @@ def test_run_basic_setup_writes_selected_model_to_env_and_agents(tmp_path):
 
     agents_data = yaml.safe_load((config_dir / "agents.yaml").read_text(encoding="utf-8"))
     assert agents_data["main"]["model"] == "openai:gpt-4o"
+    assert agents_data["main"]["subagents"]["summarizer"]["model"] == "openai:gpt-4o"
+    assert agents_data["main"]["subagents"]["explainer"]["model"] == "openai:gpt-4o"
+    assert agents_data["main"]["subagents"]["researcher"]["model"] == "openai:gpt-4o"
+
+    providers_data = yaml.safe_load((config_dir / "providers.yaml").read_text(encoding="utf-8"))
+    assert providers_data["default_provider"] == "openai"
+    assert "openai" in providers_data["providers"]
+    assert providers_data["providers"]["openai"]["models"][0]["id"] == "gpt-4o"
 
 
 def test_run_setup_wizard_passes_selected_model_to_basic_setup(monkeypatch, tmp_path):
@@ -145,3 +153,45 @@ def test_run_setup_wizard_passes_selected_model_to_basic_setup(monkeypatch, tmp_
 
     assert run_setup_wizard(tmp_path) is True
     assert captured["model"] == "openai:gpt-4o"
+
+
+def test_run_ai_setup_backfills_subagent_models_with_selected_default(monkeypatch, tmp_path):
+    target_dir = tmp_path
+    config_dir = tmp_path / ".flavia"
+
+    class FakeAgent:
+        def run(self, task):
+            _ = task
+            (config_dir / "agents.yaml").write_text(
+                (
+                    "main:\n"
+                    "  context: test\n"
+                    "  tools:\n"
+                    "    - read_file\n"
+                    "  subagents:\n"
+                    "    helper:\n"
+                    "      context: helper\n"
+                    "      tools:\n"
+                    "        - read_file\n"
+                ),
+                encoding="utf-8",
+            )
+            return "done"
+
+    monkeypatch.setattr(
+        "flavia.setup_wizard.create_setup_agent",
+        lambda *args, **kwargs: (FakeAgent(), None),
+    )
+
+    success = _run_ai_setup(
+        target_dir=target_dir,
+        config_dir=config_dir,
+        selected_model="openai:gpt-4o",
+        convert_pdfs=False,
+        interactive_review=False,
+    )
+
+    assert success is True
+    agents_data = yaml.safe_load((config_dir / "agents.yaml").read_text(encoding="utf-8"))
+    assert agents_data["main"]["model"] == "openai:gpt-4o"
+    assert agents_data["main"]["subagents"]["helper"]["model"] == "openai:gpt-4o"

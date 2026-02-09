@@ -40,7 +40,7 @@ class CreateAgentsConfigTool(BaseTool):
                 ToolParameter(
                     name="subagents",
                     type="array",
-                    description="List of subagent configurations. Each subagent has: name, context, tools (array)",
+                    description="List of subagent configurations. Each subagent has: name, context, tools (array), and optional model",
                     required=False,
                     items={
                         "type": "object",
@@ -48,6 +48,7 @@ class CreateAgentsConfigTool(BaseTool):
                             "name": {"type": "string", "description": "Subagent name (lowercase, no spaces)"},
                             "context": {"type": "string", "description": "Subagent system prompt"},
                             "tools": {"type": "array", "items": {"type": "string"}, "description": "Subagent tools"},
+                            "model": {"type": "string", "description": "Optional model reference (provider:model_id or model_id)"},
                         },
                     },
                 ),
@@ -90,6 +91,8 @@ class CreateAgentsConfigTool(BaseTool):
                     "context": sub.get("context", ""),
                     "tools": sub.get("tools", ["read_file"]),
                 }
+                if sub.get("model"):
+                    config["main"]["subagents"][name]["model"] = sub["model"]
 
         # Determine output path
         config_dir = agent_context.base_dir / ".flavia"
@@ -147,6 +150,8 @@ class CreateAgentsConfigTool(BaseTool):
 
             for name, sub_config in config["main"]["subagents"].items():
                 lines.append(f"    {name}:")
+                if sub_config.get("model"):
+                    lines.append(f"      model: \"{sub_config['model']}\"")
                 lines.append("      context: |")
                 for ctx_line in sub_config["context"].strip().split("\n"):
                     lines.append(f"        {ctx_line}")
