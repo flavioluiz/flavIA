@@ -2,7 +2,11 @@
 
 from flavia.config.providers import ModelConfig, ProviderConfig, ProviderRegistry
 from flavia.config.settings import Settings
-from flavia.setup.provider_wizard import _search_models, manage_provider_models
+from flavia.setup.provider_wizard import (
+    _models_source_for_provider,
+    _search_models,
+    manage_provider_models,
+)
 
 
 def _build_settings(models: list[ModelConfig]) -> Settings:
@@ -94,3 +98,31 @@ def test_search_models_select_all_returns_all_matches(monkeypatch):
     selected = _search_models(models)
 
     assert len(selected) == 25
+
+
+def test_models_source_for_provider_prefers_existing_configured_models():
+    settings = Settings(
+        providers=ProviderRegistry(
+            providers={
+                "synthetic": ProviderConfig(
+                    id="synthetic",
+                    name="Synthetic",
+                    api_base_url="https://api.synthetic.new/openai/v1",
+                    api_key="test-key",
+                    models=[
+                        ModelConfig(id="hf:deepseek-ai/DeepSeek-V3", name="DeepSeek-V3", default=True),
+                        ModelConfig(id="hf:Qwen/Qwen3-235B-A22B-Instruct-2507", name="Qwen3-235B"),
+                    ],
+                )
+            },
+            default_provider_id="synthetic",
+        )
+    )
+
+    models = _models_source_for_provider("synthetic", settings=settings)
+
+    assert [m["id"] for m in models] == [
+        "hf:deepseek-ai/DeepSeek-V3",
+        "hf:Qwen/Qwen3-235B-A22B-Instruct-2507",
+    ]
+    assert models[0]["default"] is True

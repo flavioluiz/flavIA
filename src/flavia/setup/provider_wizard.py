@@ -1,5 +1,6 @@
 """Interactive provider configuration wizard for flavIA."""
 
+import copy
 import os
 from pathlib import Path
 from typing import Optional
@@ -267,6 +268,54 @@ def _get_api_key(provider_name: str, env_var: str) -> tuple[str, str]:
             return key_input, f"${{{env_var}}}"
 
         return key_input, key_input
+
+
+def _clone_models(models: list[dict]) -> list[dict]:
+    """Clone model dictionaries to avoid mutating shared templates."""
+    return [copy.deepcopy(m) for m in models]
+
+
+def _provider_models_to_dicts(provider) -> list[dict]:
+    """Convert provider models to wizard-friendly dict list."""
+    converted: list[dict] = []
+    for model in provider.models:
+        normalized = _to_provider_model(model)
+        item = {
+            "id": normalized.id,
+            "name": normalized.name,
+        }
+        if normalized.default:
+            item["default"] = True
+        if normalized.description:
+            item["description"] = normalized.description
+        converted.append(item)
+
+    return converted
+
+
+def _models_source_for_provider(provider_type: str, settings=None) -> list[dict]:
+    """
+    Resolve initial model list for provider wizard.
+
+    Priority:
+    1. Existing configured models for this provider (if available)
+    2. Built-in template list
+    """
+    template_models = _clone_models(KNOWN_PROVIDERS[provider_type]["models"])
+    if settings is None:
+        return template_models
+
+    existing_provider = settings.providers.get_provider(provider_type)
+    if not existing_provider or not existing_provider.models:
+        return template_models
+
+    existing_models = _provider_models_to_dicts(existing_provider)
+    if not existing_models:
+        return template_models
+
+    if not any(bool(m.get("default")) for m in existing_models):
+        existing_models[0]["default"] = True
+    return existing_models
 
 
 def _select_models(
@@ -632,6 +681,8 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
     """
     if target_dir is None:
         target_dir = Path.cwd()
+    from flavia.config import load_settings
+    settings = load_settings()
 
     console.print(
         Panel.fit(
@@ -677,9 +728,15 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
 
         api_key, api_key_config = _get_api_key(provider_name, api_key_env)
 
+        initial_models = _models_source_for_provider(provider_type, settings=settings)
+        if len(initial_models) != len(template["models"]):
+            console.print(
+                f"[dim]Using {len(initial_models)} model(s) already configured for {provider_name}.[/dim]"
+            )
+
         # Select models (pass API info for optional model fetching)
         models = _select_models(
-            template["models"],
+            initial_models,
             api_key=api_key,
             api_base_url=api_base_url,
             headers=headers,
