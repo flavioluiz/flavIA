@@ -118,6 +118,10 @@ def test_main_checks_api_key_for_selected_provider(monkeypatch):
         test_provider=None,
         config=False,
         version=False,
+        update=False,
+        update_convert=False,
+        update_summarize=False,
+        update_full=False,
     )
     settings = Settings(
         api_key="",
@@ -134,8 +138,12 @@ def test_main_checks_api_key_for_selected_provider(monkeypatch):
     monkeypatch.setattr("flavia.cli.ensure_project_venv_and_reexec", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("flavia.cli.parse_args", lambda: args)
     monkeypatch.setattr("flavia.cli.load_settings", lambda: settings)
-    monkeypatch.setattr("flavia.cli._ensure_default_connection_checked_once", lambda _settings: None)
-    monkeypatch.setattr("flavia.interfaces.run_cli", lambda cfg: run_cli_calls.append(cfg.default_model))
+    monkeypatch.setattr(
+        "flavia.cli._ensure_default_connection_checked_once", lambda _settings: None
+    )
+    monkeypatch.setattr(
+        "flavia.interfaces.run_cli", lambda cfg: run_cli_calls.append(cfg.default_model)
+    )
 
     assert main() == 0
     assert run_cli_calls == ["openai:gpt-4o"]
@@ -158,6 +166,10 @@ def test_main_runs_setup_wizard_on_first_run_when_provider_key_is_missing(monkey
         test_provider=None,
         config=False,
         version=False,
+        update=False,
+        update_convert=False,
+        update_summarize=False,
+        update_full=False,
     )
     settings = Settings(
         api_key="",
@@ -174,10 +186,17 @@ def test_main_runs_setup_wizard_on_first_run_when_provider_key_is_missing(monkey
     monkeypatch.setattr("flavia.cli.ensure_project_venv_and_reexec", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("flavia.cli.parse_args", lambda: args)
     monkeypatch.setattr("flavia.cli.load_settings", lambda: settings)
-    monkeypatch.setattr("flavia.cli._ensure_default_connection_checked_once", lambda _settings: None)
+    monkeypatch.setattr(
+        "flavia.cli._ensure_default_connection_checked_once", lambda _settings: None
+    )
     monkeypatch.setattr("flavia.cli._should_offer_initial_setup", lambda: True)
-    monkeypatch.setattr("flavia.setup_wizard.run_setup_wizard", lambda: wizard_runs.append(True) or True)
-    monkeypatch.setattr("flavia.interfaces.run_cli", lambda _cfg: (_ for _ in ()).throw(RuntimeError("should not run")))
+    monkeypatch.setattr(
+        "flavia.setup_wizard.run_setup_wizard", lambda: wizard_runs.append(True) or True
+    )
+    monkeypatch.setattr(
+        "flavia.interfaces.run_cli",
+        lambda _cfg: (_ for _ in ()).throw(RuntimeError("should not run")),
+    )
 
     assert main() == 0
     assert wizard_runs == [True]
@@ -200,12 +219,18 @@ def test_main_validates_main_agent_model_provider_key(monkeypatch, capsys):
         test_provider=None,
         config=False,
         version=False,
+        update=False,
+        update_convert=False,
+        update_summarize=False,
+        update_full=False,
     )
     settings = Settings(
         api_key="synthetic-key",
         providers=ProviderRegistry(
             providers={
-                "synthetic": _make_provider("synthetic", "synthetic-key", "hf:moonshotai/Kimi-K2.5"),
+                "synthetic": _make_provider(
+                    "synthetic", "synthetic-key", "hf:moonshotai/Kimi-K2.5"
+                ),
                 "openai": _make_provider("openai", "", "gpt-4o"),
             },
             default_provider_id="synthetic",
@@ -223,8 +248,13 @@ def test_main_validates_main_agent_model_provider_key(monkeypatch, capsys):
     monkeypatch.setattr("flavia.cli.ensure_project_venv_and_reexec", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("flavia.cli.parse_args", lambda: args)
     monkeypatch.setattr("flavia.cli.load_settings", lambda: settings)
-    monkeypatch.setattr("flavia.cli._ensure_default_connection_checked_once", lambda _settings: None)
-    monkeypatch.setattr("flavia.interfaces.run_cli", lambda _cfg: (_ for _ in ()).throw(RuntimeError("should not run")))
+    monkeypatch.setattr(
+        "flavia.cli._ensure_default_connection_checked_once", lambda _settings: None
+    )
+    monkeypatch.setattr(
+        "flavia.interfaces.run_cli",
+        lambda _cfg: (_ for _ in ()).throw(RuntimeError("should not run")),
+    )
 
     assert main() == 1
     assert "provider 'openai'" in capsys.readouterr().out
@@ -250,12 +280,18 @@ def test_main_validates_promoted_subagent_model_provider_key(monkeypatch, capsys
         test_provider=None,
         config=False,
         version=False,
+        update=False,
+        update_convert=False,
+        update_summarize=False,
+        update_full=False,
     )
     settings = Settings(
         api_key="synthetic-key",
         providers=ProviderRegistry(
             providers={
-                "synthetic": _make_provider("synthetic", "synthetic-key", "hf:moonshotai/Kimi-K2.5"),
+                "synthetic": _make_provider(
+                    "synthetic", "synthetic-key", "hf:moonshotai/Kimi-K2.5"
+                ),
                 "openai": _make_provider("openai", "", "gpt-4o"),
             },
             default_provider_id="synthetic",
@@ -280,8 +316,13 @@ def test_main_validates_promoted_subagent_model_provider_key(monkeypatch, capsys
     monkeypatch.setattr("flavia.cli.ensure_project_venv_and_reexec", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("flavia.cli.parse_args", lambda: args)
     monkeypatch.setattr("flavia.cli.load_settings", lambda: settings)
-    monkeypatch.setattr("flavia.cli._ensure_default_connection_checked_once", lambda _settings: None)
-    monkeypatch.setattr("flavia.interfaces.run_cli", lambda _cfg: (_ for _ in ()).throw(RuntimeError("should not run")))
+    monkeypatch.setattr(
+        "flavia.cli._ensure_default_connection_checked_once", lambda _settings: None
+    )
+    monkeypatch.setattr(
+        "flavia.interfaces.run_cli",
+        lambda _cfg: (_ for _ in ()).throw(RuntimeError("should not run")),
+    )
 
     assert main() == 1
     assert "provider 'openai'" in capsys.readouterr().out
@@ -357,7 +398,9 @@ def test_run_provider_wizard_loads_settings_from_target_dir(monkeypatch, tmp_pat
         captured["provider_ids"] = list(settings.providers.providers.keys())
         return None
 
-    monkeypatch.setattr("flavia.setup.provider_wizard._select_provider_type", _fake_select_provider_type)
+    monkeypatch.setattr(
+        "flavia.setup.provider_wizard._select_provider_type", _fake_select_provider_type
+    )
 
     assert run_provider_wizard(target_dir=project_b) is False
     assert "from_b" in captured["provider_ids"]

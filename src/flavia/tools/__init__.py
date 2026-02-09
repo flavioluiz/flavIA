@@ -11,6 +11,7 @@ from .registry import ToolRegistry, registry, register_tool, get_registry
 # Auto-register all tools by importing submodules
 from . import read
 from . import spawn
+from . import content
 
 __all__ = [
     "BaseTool",

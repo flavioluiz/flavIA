@@ -36,6 +36,31 @@ def parse_args() -> argparse.Namespace:
         help="Initialize local configuration with setup wizard",
     )
 
+    # Update content catalog
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Update content catalog (detect new/modified files)",
+    )
+
+    parser.add_argument(
+        "--update-convert",
+        action="store_true",
+        help="Update catalog and convert new binary documents to text",
+    )
+
+    parser.add_argument(
+        "--update-summarize",
+        action="store_true",
+        help="Update catalog and generate LLM summaries for new files",
+    )
+
+    parser.add_argument(
+        "--update-full",
+        action="store_true",
+        help="Full catalog rebuild (rescan everything from scratch)",
+    )
+
     # Mode selection
     parser.add_argument(
         "--telegram",
@@ -503,6 +528,125 @@ def _maybe_run_initial_setup_for_missing_key() -> int | None:
     return 0 if success else 1
 
 
+def run_catalog_update(
+    convert: bool = False,
+    summarize: bool = False,
+    full_rebuild: bool = False,
+) -> int:
+    """Update the content catalog."""
+    from flavia.content.catalog import ContentCatalog
+    from flavia.content.converters import PdfConverter
+
+    base_dir = Path.cwd()
+    config_dir = base_dir / ".flavia"
+
+    if not config_dir.exists():
+        print("Error: No .flavia/ directory found. Run 'flavia --init' first.")
+        return 1
+
+    if full_rebuild:
+        print("Rebuilding content catalog from scratch...")
+        catalog = ContentCatalog(base_dir)
+        catalog.build()
+    else:
+        catalog = ContentCatalog.load(config_dir)
+        if catalog is None:
+            print("No existing catalog found. Building from scratch...")
+            catalog = ContentCatalog(base_dir)
+            catalog.build()
+        else:
+            print("Updating content catalog...")
+            result = catalog.update()
+            counts = result["counts"]
+            print(f"  New files:      {counts['new']}")
+            print(f"  Modified files: {counts['modified']}")
+            print(f"  Missing files:  {counts['missing']}")
+            print(f"  Unchanged:      {counts['unchanged']}")
+
+            if result["new"]:
+                print("\nNew files:")
+                for p in result["new"][:20]:
+                    print(f"  + {p}")
+                if len(result["new"]) > 20:
+                    print(f"  ... and {len(result['new']) - 20} more")
+
+            if result["modified"]:
+                print("\nModified files:")
+                for p in result["modified"][:20]:
+                    print(f"  ~ {p}")
+                if len(result["modified"]) > 20:
+                    print(f"  ... and {len(result['modified']) - 20} more")
+
+            if result["missing"]:
+                removed = catalog.remove_missing()
+                print(f"\nRemoved {len(removed)} missing file(s) from catalog")
+
+    # Convert binary documents if requested
+    if convert:
+        needs_conversion = catalog.get_files_needing_conversion()
+        if needs_conversion:
+            print(f"\nConverting {len(needs_conversion)} binary document(s)...")
+            converter = PdfConverter()
+            converted_dir = base_dir / "converted"
+            converted_count = 0
+            for entry in needs_conversion:
+                source = base_dir / entry.path
+                if not converter.can_handle(source):
+                    continue
+                result_path = converter.convert(source, converted_dir)
+                if result_path:
+                    try:
+                        entry.converted_to = str(result_path.relative_to(base_dir))
+                    except ValueError:
+                        entry.converted_to = str(result_path)
+                    converted_count += 1
+                    print(f"  Converted: {entry.path}")
+            print(f"  {converted_count} file(s) converted")
+        else:
+            print("\nNo binary documents need conversion.")
+
+    # Generate summaries if requested
+    if summarize:
+        settings = load_settings()
+        provider, model_id = settings.resolve_model_with_provider(settings.default_model)
+        if provider and provider.api_key:
+            from flavia.content.summarizer import summarize_file
+
+            needs_summary = catalog.get_files_needing_summary()
+            if needs_summary:
+                print(f"\nGenerating summaries for {len(needs_summary)} file(s)...")
+                summarized = 0
+                for entry in needs_summary:
+                    summary = summarize_file(
+                        entry,
+                        base_dir,
+                        api_key=provider.api_key,
+                        api_base_url=provider.api_base_url,
+                        model=model_id,
+                        headers=provider.headers if provider.headers else None,
+                    )
+                    if summary:
+                        entry.summary = summary
+                        summarized += 1
+                        print(f"  Summarized: {entry.path}")
+                print(f"  {summarized} file(s) summarized")
+            else:
+                print("\nNo files need summaries.")
+        else:
+            print("\nWarning: Cannot generate summaries — no API key configured.")
+
+    # Mark all as current and save
+    catalog.mark_all_current()
+    catalog.save(config_dir)
+
+    stats = catalog.get_stats()
+    print(
+        f"\nCatalog saved: {stats['total_files']} files indexed "
+        f"({stats['total_size_bytes'] / 1024 / 1024:.1f} MB)"
+    )
+    return 0
+
+
 def main() -> int:
     """Main entry point."""
     ensure_project_venv_and_reexec(sys.argv[1:])
@@ -520,6 +664,14 @@ def main() -> int:
 
         success = run_setup_wizard()
         return 0 if success else 1
+
+    # Update content catalog
+    if args.update or args.update_convert or args.update_summarize or args.update_full:
+        return run_catalog_update(
+            convert=args.update_convert,
+            summarize=args.update_summarize,
+            full_rebuild=args.update_full,
+        )
 
     # Setup provider wizard
     if args.setup_provider:

@@ -71,6 +71,20 @@ class AgentContext:
         )
 
 
+def _load_catalog_context(base_dir: Path, max_length: int = 2000) -> str:
+    """Load content catalog summary if available."""
+    try:
+        from flavia.content.catalog import ContentCatalog
+
+        config_dir = base_dir / ".flavia"
+        catalog = ContentCatalog.load(config_dir)
+        if catalog is not None:
+            return catalog.generate_context_summary(max_length=max_length)
+    except Exception:
+        pass
+    return ""
+
+
 def build_system_prompt(
     profile: AgentProfile,
     context: AgentContext,
@@ -94,6 +108,12 @@ def build_system_prompt(
 
     # Working directory
     parts.append(f"\nWorking directory: {context.base_dir}")
+
+    # Content catalog context (inject project overview for main agents)
+    if context.current_depth == 0:
+        catalog_context = _load_catalog_context(context.base_dir)
+        if catalog_context:
+            parts.append(f"\n{catalog_context}")
 
     # Permissions info
     permissions = context.permissions

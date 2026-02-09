@@ -56,6 +56,8 @@ Available tools:
 - list_files: List directory contents
 - search_files: Search for patterns in files
 - get_file_info: Get file metadata
+- query_catalog: Search the content catalog for files by name, type, or content
+- get_catalog_summary: Get a high-level overview of the project content
 - spawn_agent: Create dynamic sub-agents
 - spawn_predefined_agent: Use predefined subagents
 
@@ -160,7 +162,11 @@ def create_setup_agent(
     selected_provider, _ = settings.resolve_model_with_provider(model_ref)
     if selected_provider is not None:
         if not selected_provider.api_key:
-            env_hint = f" Set {selected_provider.api_key_env_var} and try again." if selected_provider.api_key_env_var else ""
+            env_hint = (
+                f" Set {selected_provider.api_key_env_var} and try again."
+                if selected_provider.api_key_env_var
+                else ""
+            )
             return None, f"API key not configured for provider '{selected_provider.id}'.{env_hint}"
     elif not settings.api_key:
         return None, "API key not configured. Please set SYNTHETIC_API_KEY environment variable."
@@ -219,7 +225,9 @@ def _format_provider_model_ref(provider_id: str, model_id: str) -> str:
 def _collect_model_choices(settings) -> tuple[list[dict[str, Any]], str]:
     """Collect model choices for setup selection."""
     choices: list[dict[str, Any]] = []
-    default_provider, default_model_id = settings.resolve_model_with_provider(settings.default_model)
+    default_provider, default_model_id = settings.resolve_model_with_provider(
+        settings.default_model
+    )
     preferred_ref = (
         _format_provider_model_ref(default_provider.id, default_model_id)
         if default_provider is not None
@@ -253,13 +261,18 @@ def _collect_model_choices(settings) -> tuple[list[dict[str, Any]], str]:
 
     if not choices:
         fallback = settings.default_model
-        return ([{
-            "ref": fallback,
-            "provider": "default",
-            "provider_id": "",
-            "name": fallback,
-            "model_id": fallback,
-        }], fallback)
+        return (
+            [
+                {
+                    "ref": fallback,
+                    "provider": "default",
+                    "provider_id": "",
+                    "name": fallback,
+                    "model_id": fallback,
+                }
+            ],
+            fallback,
+        )
 
     refs = {choice["ref"] for choice in choices}
     if preferred_ref in refs:
@@ -271,7 +284,9 @@ def _collect_model_choices(settings) -> tuple[list[dict[str, Any]], str]:
 def _select_model_for_setup(settings) -> str:
     """Select model/provider to use during setup."""
     choices, default_ref = _collect_model_choices(settings)
-    default_choice = next((choice for choice in choices if choice["ref"] == default_ref), choices[0])
+    default_choice = next(
+        (choice for choice in choices if choice["ref"] == default_ref), choices[0]
+    )
     default_label = (
         f"{default_choice['provider_id']}:{default_choice['model_id']}"
         if default_choice["provider_id"]
@@ -294,7 +309,9 @@ def _select_model_for_setup(settings) -> str:
         )
     console.print(table)
 
-    default_index = next((i + 1 for i, choice in enumerate(choices) if choice["ref"] == default_ref), 1)
+    default_index = next(
+        (i + 1 for i, choice in enumerate(choices) if choice["ref"] == default_ref), 1
+    )
     selection = safe_prompt("Enter number", default=str(default_index))
     try:
         idx = int(selection) - 1
@@ -329,7 +346,9 @@ def _test_selected_model_connection(settings, model_ref: str) -> tuple[bool, boo
                     f"[yellow]Cannot test connection yet: {provider.api_key_env_var} is not configured.[/yellow]"
                 )
             else:
-                console.print("[yellow]Cannot test connection yet: provider API key is not configured.[/yellow]")
+                console.print(
+                    "[yellow]Cannot test connection yet: provider API key is not configured.[/yellow]"
+                )
             return False, False
 
         console.print("[dim]Testing provider/model connectivity...[/dim]")
@@ -342,7 +361,9 @@ def _test_selected_model_connection(settings, model_ref: str) -> tuple[bool, boo
     else:
         console.print(f"  Model: [cyan]{model_id}[/cyan]")
         if not settings.api_key:
-            console.print("[yellow]Cannot test connection yet: SYNTHETIC_API_KEY is not configured.[/yellow]")
+            console.print(
+                "[yellow]Cannot test connection yet: SYNTHETIC_API_KEY is not configured.[/yellow]"
+            )
             return False, False
 
         console.print("[dim]Testing connectivity using legacy API settings...[/dim]")
@@ -364,11 +385,7 @@ def _build_env_content(selected_model: str, include_optional_settings: bool) -> 
     """Build .env template with selected default model."""
     optional_block = ""
     if include_optional_settings:
-        optional_block = (
-            "\n"
-            "# Optional settings\n"
-            "# AGENT_MAX_DEPTH=3\n"
-        )
+        optional_block = "\n# Optional settings\n# AGENT_MAX_DEPTH=3\n"
 
     return (
         "# flavIA Configuration\n"
@@ -559,12 +576,14 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
 
     config_dir = target_dir / ".flavia"
 
-    console.print(Panel.fit(
-        "[bold blue]flavIA Setup Wizard[/bold blue]\n\n"
-        "[dim]AI assistant for academic and research work[/dim]\n\n"
-        f"Initializing in:\n[cyan]{target_dir}[/cyan]",
-        title="Welcome",
-    ))
+    console.print(
+        Panel.fit(
+            "[bold blue]flavIA Setup Wizard[/bold blue]\n\n"
+            "[dim]AI assistant for academic and research work[/dim]\n\n"
+            f"Initializing in:\n[cyan]{target_dir}[/cyan]",
+            title="Welcome",
+        )
+    )
 
     preserve_existing_providers = False
 
@@ -580,6 +599,7 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
         _reset_config_dir(config_dir, keep_files=keep_files)
 
     from flavia.config import load_settings
+
     settings = load_settings()
 
     selected_model = _select_model_for_setup(settings)
@@ -617,7 +637,9 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
 
     # Ask about AI analysis
     console.print("\n")
-    console.print("[bold]Have the AI analyze your content and suggest an agent configuration?[/bold]")
+    console.print(
+        "[bold]Have the AI analyze your content and suggest an agent configuration?[/bold]"
+    )
     console.print("  (The AI will read files to understand your project/research area)")
     analyze = safe_confirm("Analyze content?", default=True)
 
@@ -672,7 +694,40 @@ def _offer_provider_setup(config_dir: Path) -> None:
     console.print("  (Set up API keys and models for OpenAI, OpenRouter, etc.)")
     if safe_confirm("Configure providers?", default=False):
         from flavia.setup.provider_wizard import run_provider_wizard
+
         run_provider_wizard(config_dir.parent)
+
+
+def _build_content_catalog(target_dir: Path, config_dir: Path) -> None:
+    """Build and save the content catalog during setup."""
+    from flavia.content.catalog import ContentCatalog
+
+    console.print("\n[dim]Building content catalog...[/dim]")
+    try:
+        catalog = ContentCatalog(target_dir)
+        catalog.build()
+
+        # Link converted files if they exist
+        converted_dir = target_dir / "converted"
+        if converted_dir.exists():
+            for entry in catalog.files.values():
+                if entry.file_type == "binary_document" and entry.category == "pdf":
+                    # Look for corresponding converted file
+                    converted_path = converted_dir / Path(entry.path).with_suffix(".md")
+                    if converted_path.exists():
+                        try:
+                            entry.converted_to = str(converted_path.relative_to(target_dir))
+                        except ValueError:
+                            entry.converted_to = str(converted_path)
+
+        catalog_path = catalog.save(config_dir)
+        stats = catalog.get_stats()
+        console.print(
+            f"[dim]Content catalog created: {stats['total_files']} files indexed "
+            f"({stats['total_size_bytes'] / 1024 / 1024:.1f} MB)[/dim]"
+        )
+    except Exception as e:
+        console.print(f"[yellow]Warning: Could not build content catalog: {e}[/yellow]")
 
 
 def _run_basic_setup(
@@ -719,6 +774,9 @@ main:
     - list_files
     - search_files
     - get_file_info
+    - query_catalog
+    - get_catalog_summary
+    - refresh_catalog
     - spawn_agent
     - spawn_predefined_agent
 
@@ -731,6 +789,7 @@ main:
         Include important details, arguments, and conclusions.
       tools:
         - read_file
+        - query_catalog
 
     explainer:
       model: "{effective_model}"
@@ -741,6 +800,7 @@ main:
       tools:
         - read_file
         - search_files
+        - query_catalog
 
     researcher:
       model: "{effective_model}"
@@ -752,11 +812,17 @@ main:
         - read_file
         - list_files
         - search_files
+        - query_catalog
 """
         (config_dir / "agents.yaml").write_text(agents_content)
 
         # Create .gitignore
-        (config_dir / ".gitignore").write_text(".env\n.connection_checks.yaml\n")
+        (config_dir / ".gitignore").write_text(
+            ".env\n.connection_checks.yaml\ncontent_catalog.json\n"
+        )
+
+        # Build content catalog
+        _build_content_catalog(target_dir, config_dir)
 
         _print_success(config_dir)
 
@@ -809,7 +875,9 @@ def _run_ai_setup(
         _write_providers_file(config_dir, effective_model)
 
     # Create .gitignore
-    (config_dir / ".gitignore").write_text(".env\n.connection_checks.yaml\nconverted/\n")
+    (config_dir / ".gitignore").write_text(
+        ".env\n.connection_checks.yaml\ncontent_catalog.json\nconverted/\n"
+    )
 
     # Convert PDFs first when requested
     if convert_pdfs and pdf_files:
@@ -863,17 +931,21 @@ def _run_ai_setup(
                 if feedback:
                     revision_notes.append(feedback)
                     continue
-                console.print("[yellow]No feedback provided. Creating default configuration.[/yellow]")
+                console.print(
+                    "[yellow]No feedback provided. Creating default configuration.[/yellow]"
+                )
                 return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
 
             _ensure_agent_models(agents_file, effective_model)
 
             if not interactive_review:
+                _build_content_catalog(target_dir, config_dir)
                 _print_success(config_dir, has_pdfs=convert_pdfs)
                 return True
 
             _show_agents_preview(agents_file)
             if safe_confirm("Accept this agent configuration?", default=True):
+                _build_content_catalog(target_dir, config_dir)
                 _print_success(config_dir, has_pdfs=convert_pdfs)
                 return True
 
@@ -885,14 +957,18 @@ def _run_ai_setup(
                 default="",
             ).strip()
             if not feedback:
-                console.print("[yellow]No feedback provided. Creating default configuration.[/yellow]")
+                console.print(
+                    "[yellow]No feedback provided. Creating default configuration.[/yellow]"
+                )
                 return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
 
             revision_notes.append(feedback)
             if attempt < MAX_SETUP_REVISIONS:
                 console.print("\n[dim]Regenerating configuration with your feedback...[/dim]\n")
 
-        console.print("\n[yellow]Maximum revision attempts reached. Creating default configuration...[/yellow]")
+        console.print(
+            "\n[yellow]Maximum revision attempts reached. Creating default configuration...[/yellow]"
+        )
         return _run_basic_setup(target_dir, config_dir, selected_model=effective_model)
 
     except KeyboardInterrupt:
@@ -936,8 +1012,7 @@ def _build_setup_task(
     if revision_notes:
         notes = "\n".join(f"- {note}" for note in revision_notes)
         parts.append(
-            "Revision feedback from user (apply all points below in this new proposal):\n"
-            f"{notes}"
+            f"Revision feedback from user (apply all points below in this new proposal):\n{notes}"
         )
     return "\n\n".join(parts)
 
@@ -966,19 +1041,21 @@ def _print_success(config_dir: Path, has_pdfs: bool = False):
     if has_pdfs:
         extra_info = "\n[dim]Converted documents are in: converted/[/dim]\n"
 
-    console.print(Panel.fit(
-        "[bold green]Setup complete![/bold green]\n\n"
-        f"Configuration created at:\n"
-        f"  [cyan]{config_dir}/.env[/cyan] - API keys\n"
-        f"  [cyan]{config_dir}/providers.yaml[/cyan] - Providers and models\n"
-        f"  [cyan]{config_dir}/agents.yaml[/cyan] - Agents\n"
-        f"{extra_info}\n"
-        "[bold]Next steps:[/bold]\n"
-        f"  1. Edit [cyan]{config_dir}/.env[/cyan] with your API key\n"
-        "  2. Run [bold]flavia[/bold] to start chatting with your documents\n\n"
-        "[dim]Tip: Run 'flavia --setup-provider' to configure multiple LLM providers[/dim]",
-        title="Success",
-    ))
+    console.print(
+        Panel.fit(
+            "[bold green]Setup complete![/bold green]\n\n"
+            f"Configuration created at:\n"
+            f"  [cyan]{config_dir}/.env[/cyan] - API keys\n"
+            f"  [cyan]{config_dir}/providers.yaml[/cyan] - Providers and models\n"
+            f"  [cyan]{config_dir}/agents.yaml[/cyan] - Agents\n"
+            f"{extra_info}\n"
+            "[bold]Next steps:[/bold]\n"
+            f"  1. Edit [cyan]{config_dir}/.env[/cyan] with your API key\n"
+            "  2. Run [bold]flavia[/bold] to start chatting with your documents\n\n"
+            "[dim]Tip: Run 'flavia --setup-provider' to configure multiple LLM providers[/dim]",
+            title="Success",
+        )
+    )
 
 
 def run_setup_command_in_cli(settings, base_dir: Path) -> bool:
