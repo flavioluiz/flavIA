@@ -175,3 +175,150 @@ def test_summarize_file_uses_custom_timeouts(monkeypatch, tmp_path):
     assert len(timeout_calls) == 1
     assert timeout_calls[0]["args"] == (60.0,)
     assert timeout_calls[0]["kwargs"]["connect"] == 20.0
+
+
+def test_summarize_file_handles_openai_api_status_error(monkeypatch, tmp_path, caplog):
+    """OpenAI APIStatusError should be handled as a warning and return None."""
+    md_file = tmp_path / "doc.md"
+    md_file.write_text("This is a document.", encoding="utf-8")
+    entry = _build_entry("doc.md")
+
+    class _FakeAPIConnectionError(Exception):
+        pass
+
+    class _FakeAPITimeoutError(Exception):
+        pass
+
+    class _FakeAPIStatusError(Exception):
+        def __init__(self, status_code):
+            super().__init__(f"status={status_code}")
+            self.status_code = status_code
+
+    class _FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.chat = SimpleNamespace(
+                completions=SimpleNamespace(
+                    create=lambda **_kwargs: (_ for _ in ()).throw(_FakeAPIStatusError(429))
+                )
+            )
+
+    class _FakeHttpxModule:
+        class TimeoutException(Exception):
+            pass
+
+        class ConnectTimeout(TimeoutException):
+            pass
+
+        class HTTPStatusError(Exception):
+            pass
+
+        @staticmethod
+        def Timeout(*args, **kwargs):
+            return None
+
+    monkeypatch.setitem(sys.modules, "httpx", _FakeHttpxModule)
+    monkeypatch.setitem(
+        sys.modules,
+        "openai",
+        SimpleNamespace(
+            OpenAI=_FakeOpenAI,
+            APIConnectionError=_FakeAPIConnectionError,
+            APITimeoutError=_FakeAPITimeoutError,
+            APIStatusError=_FakeAPIStatusError,
+        ),
+    )
+
+    with caplog.at_level("WARNING"):
+        result = summarize_file(
+            entry=entry,
+            base_dir=tmp_path,
+            api_key="test-key",
+            api_base_url="https://api.example.com/v1",
+            model="test-model",
+        )
+
+    assert result is None
+    assert "LLM OpenAI API error for model test-model: status=429" in caplog.text
+
+
+def test_summarize_file_handles_openai_timeout_error(monkeypatch, tmp_path, caplog):
+    """OpenAI APITimeoutError should be handled as warning and return None."""
+    md_file = tmp_path / "doc.md"
+    md_file.write_text("This is a document.", encoding="utf-8")
+    entry = _build_entry("doc.md")
+
+    class _FakeAPIConnectionError(Exception):
+        pass
+
+    class _FakeAPITimeoutError(Exception):
+        pass
+
+    class _FakeAPIStatusError(Exception):
+        pass
+
+    class _FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.chat = SimpleNamespace(
+                completions=SimpleNamespace(
+                    create=lambda **_kwargs: (_ for _ in ()).throw(_FakeAPITimeoutError("timeout"))
+                )
+            )
+
+    class _FakeHttpxModule:
+        class TimeoutException(Exception):
+            pass
+
+        class ConnectTimeout(TimeoutException):
+            pass
+
+        class HTTPStatusError(Exception):
+            pass
+
+        @staticmethod
+        def Timeout(*args, **kwargs):
+            return None
+
+    monkeypatch.setitem(sys.modules, "httpx", _FakeHttpxModule)
+    monkeypatch.setitem(
+        sys.modules,
+        "openai",
+        SimpleNamespace(
+            OpenAI=_FakeOpenAI,
+            APIConnectionError=_FakeAPIConnectionError,
+            APITimeoutError=_FakeAPITimeoutError,
+            APIStatusError=_FakeAPIStatusError,
+        ),
+    )
+
+    with caplog.at_level("WARNING"):
+        result = summarize_file(
+            entry=entry,
+            base_dir=tmp_path,
+            api_key="test-key",
+            api_base_url="https://api.example.com/v1",
+            model="test-model",
+        )
+
+    assert result is None
+    assert "LLM OpenAI timeout/connection error for model test-model: timeout" in caplog.text
+
+
+def test_summarize_file_rejects_path_traversal_from_converted_to(tmp_path, caplog):
+    """Converted path must not escape the project base directory."""
+    outside_file = tmp_path.parent / "outside.md"
+    outside_file.write_text("sensitive content", encoding="utf-8")
+
+    entry = _build_entry("paper.pdf")
+    entry.converted_to = "../outside.md"
+
+    with caplog.at_level("WARNING"):
+        result = summarize_file(
+            entry=entry,
+            base_dir=tmp_path,
+            api_key="test-key",
+            api_base_url="https://api.example.com/v1",
+            model="test-model",
+        )
+
+    assert result is None
+    assert "Skipping summary for path outside base_dir: ../outside.md" in caplog.text

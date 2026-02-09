@@ -36,6 +36,6 @@ If you have existing converted PDFs in a `converted/` directory:
    mv converted .converted
    ```
 
-3. **Option 3 - Keep as is**: The old `converted/` directory will be ignored by the scanner, so it won't cause issues, but links in the catalog won't work until you reconvert or migrate.
+3. **Option 3 - Remove legacy directory**: Delete `converted/` after reconversion/migration to avoid stale duplicate markdown files in your project tree.
 
 After migration, run `flavia` and use the `refresh_catalog` tool to rebuild the content catalog with correct links.

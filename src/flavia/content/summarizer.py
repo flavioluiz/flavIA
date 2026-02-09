@@ -58,10 +58,16 @@ def summarize_file(
         Summary string, or None on failure.
     """
     # Determine which file to read (converted version or original)
-    if entry.converted_to:
-        file_path = base_dir / entry.converted_to
-    else:
-        file_path = base_dir / entry.path
+    relative_path = Path(entry.converted_to) if entry.converted_to else Path(entry.path)
+    file_path = (base_dir / relative_path).resolve()
+    base_dir_resolved = base_dir.resolve()
+
+    # Prevent reading files outside project directory from manipulated catalog paths.
+    try:
+        file_path.relative_to(base_dir_resolved)
+    except ValueError:
+        logger.warning(f"Skipping summary for path outside base_dir: {relative_path}")
+        return None
 
     if not file_path.exists():
         return None
@@ -152,7 +158,15 @@ def _call_llm(
     """
     try:
         import httpx
+        import openai as openai_module
         from openai import OpenAI
+
+        api_connection_error = getattr(openai_module, "APIConnectionError", None)
+        api_timeout_error = getattr(openai_module, "APITimeoutError", None)
+        api_status_error = getattr(openai_module, "APIStatusError", None)
+        timeout_error_types = tuple(
+            err for err in (api_timeout_error, api_connection_error) if isinstance(err, type)
+        )
 
         timeout_config = httpx.Timeout(timeout, connect=connect_timeout)
         client_kwargs: dict[str, Any] = {
@@ -182,12 +196,22 @@ def _call_llm(
             else:
                 raise
 
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=200,
-            temperature=0.3,
-        )
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=200,
+                temperature=0.3,
+            )
+        except Exception as e:
+            if timeout_error_types and isinstance(e, timeout_error_types):
+                logger.warning(f"LLM OpenAI timeout/connection error for model {model}: {e}")
+                return None
+            if isinstance(api_status_error, type) and isinstance(e, api_status_error):
+                status_code = getattr(e, "status_code", "unknown")
+                logger.warning(f"LLM OpenAI API error for model {model}: status={status_code}")
+                return None
+            raise
 
         if response.choices and response.choices[0].message and response.choices[0].message.content:
             return response.choices[0].message.content.strip()
