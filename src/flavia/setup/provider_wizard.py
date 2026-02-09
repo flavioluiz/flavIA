@@ -221,6 +221,9 @@ def test_provider_connection(
         if headers:
             kwargs["default_headers"] = headers
 
+        # Add timeout to avoid hanging indefinitely
+        kwargs["timeout"] = httpx.Timeout(30.0, connect=10.0)
+
         try:
             client = OpenAI(**kwargs)
         except TypeError as exc:
@@ -228,7 +231,7 @@ def test_provider_connection(
                 raise
             # Compatibility fallback for environments where OpenAI SDK and httpx versions mismatch.
             http_kwargs = {k: v for k, v in kwargs.items() if k != "default_headers"}
-            client = OpenAI(**http_kwargs, http_client=httpx.Client())
+            client = OpenAI(**http_kwargs, http_client=httpx.Client(timeout=httpx.Timeout(30.0, connect=10.0)))
 
         # Try a simple completion
         response = client.chat.completions.create(
@@ -409,10 +412,10 @@ def _select_models(
         default_marker = " [default]" if model.get("default") else ""
         table.add_row(f"  [{i}]", f"{model['name']}{default_marker}", f"[dim]{model['id']}[/dim]")
     console.print(table)
-    console.print("  [a] All models")
+    console.print("  \\[a] All models")
     if api_key and api_base_url:
-        console.print("  [f] Fetch models from provider API")
-    console.print("  [+] Add custom model")
+        console.print("  \\[f] Fetch models from provider API")
+    console.print("  \\[+] Add custom model")
 
     choice = Prompt.ask(
         "\nEnter numbers separated by comma, 'a' for all, 'f' to fetch, or '+' to add",
@@ -491,10 +494,10 @@ def _fetch_and_select_models(
     for i, model in enumerate(displayed_models, 1):
         table.add_row(f"  [{i}]", f"{model['name']}", f"[dim]{model['id']}[/dim]")
     console.print(table)
-    console.print("  [a] All displayed models")
-    console.print("  [s] Search by name")
+    console.print("  \\[a] All displayed models")
+    console.print("  \\[s] Search by name")
     if len(models) > page_size:
-        console.print("  [m] Show more models")
+        console.print("  \\[m] Show more models")
 
     choice = Prompt.ask(
         "\nEnter numbers separated by comma, 'a' for all, 's' to search, or 'm' for more",
@@ -910,7 +913,8 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
 
     # Step 3: Test connection (optional)
     if api_key and Confirm.ask("\nTest connection?", default=True):
-        console.print("[dim]Testing connection...[/dim]")
+        test_model = models[0]["id"] if models else "test"
+        console.print(f"[dim]Testing connection with model: [cyan]{test_model}[/cyan]...[/dim]")
 
         # Resolve headers if present
         resolved_headers = {}
@@ -919,7 +923,6 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
                 resolved, _ = expand_env_vars(v)
                 resolved_headers[k] = resolved
 
-        test_model = models[0]["id"] if models else "test"
         success, message = test_provider_connection(
             api_key,
             api_base_url,
@@ -937,8 +940,37 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
     # Step 4: Select save location
     location = _select_location(provider_id=provider_id, target_dir=target_dir)
 
-    # Step 5: Set as default?
-    set_default = Confirm.ask("\nSet as default provider?", default=True)
+    # Step 5: Choose default model for this provider
+    default_model = next((m for m in models if m.get("default")), models[0] if models else None)
+    if len(models) > 1:
+        console.print("\n[bold]Default model for this provider:[/bold]")
+        table = Table(show_header=False, box=None, padding=(0, 2))
+        for i, model in enumerate(models, 1):
+            marker = " [current default]" if model.get("default") else ""
+            table.add_row(f"  [{i}]", f"{model['name']}{marker}", f"[dim]{model['id']}[/dim]")
+        console.print(table)
+
+        choice = Prompt.ask(
+            "Select default model",
+            default="1",
+        )
+        try:
+            index = int(choice) - 1
+            if 0 <= index < len(models):
+                # Clear old default and set new one
+                for m in models:
+                    m["default"] = False
+                models[index]["default"] = True
+                default_model = models[index]
+                console.print(f"[green]Default model: {default_model['name']}[/green]")
+        except ValueError:
+            pass
+
+    default_model_name = default_model["name"] if default_model else "unknown"
+
+    # Step 6: Set as default provider+model for flavia?
+    console.print(f"\n[dim]This will use [cyan]{provider_name}[/cyan] with model [cyan]{default_model_name}[/cyan] when running flavia.[/dim]")
+    set_default = Confirm.ask("Set as default?", default=True)
 
     # Build and save config
     provider_config = _build_provider_config(
@@ -963,8 +995,8 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
             f"[bold green]Provider configured![/bold green]\n\n"
             f"Saved to: [cyan]{saved_path}[/cyan]\n\n"
             f"Provider: [bold]{provider_name}[/bold]\n"
-            f"Models: {len(models)}\n"
-            f"Default: {'Yes' if set_default else 'No'}",
+            f"Models: {len(models)} (default: {default_model_name})\n"
+            f"Use by default: {'Yes' if set_default else 'No'}",
             title="Success",
         )
     )
@@ -1059,12 +1091,13 @@ def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
 
         # Menu options
         console.print("\n[bold]Actions:[/bold]")
-        console.print("  [a] Add model")
-        console.print("  [f] Fetch models from provider API")
-        console.print("  [r] Remove model(s)")
-        console.print("  [d] Set default model")
-        console.print("  [s] Save and exit")
-        console.print("  [q] Quit without saving")
+        console.print("  \\[a] Add model")
+        console.print("  \\[f] Fetch models from provider API")
+        console.print("  \\[r] Remove model(s)")
+        console.print("  \\[d] Set default model")
+        console.print("  \\[x] Delete this provider")
+        console.print("  \\[s] Save and exit")
+        console.print("  \\[q] Quit without saving")
 
         choice = Prompt.ask("\nChoice", default="s").lower()
 
@@ -1132,6 +1165,14 @@ def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
                     console.print(f"[green]Default set to: {provider.models[index].name}[/green]")
             except ValueError:
                 console.print("[red]Invalid number.[/red]")
+
+        elif choice == "x":
+            # Delete provider
+            if Confirm.ask(
+                f"[red]Delete provider '{provider.name}' completely?[/red]",
+                default=False,
+            ):
+                return _delete_provider(settings, provider_id)
 
         elif choice == "s":
             # Save changes
@@ -1202,8 +1243,8 @@ def _fetch_models_for_provider(provider) -> list[dict]:
     for i, model in enumerate(displayed, 1):
         table.add_row(f"  [{i}]", f"{model['name']}", f"[dim]{model['id']}[/dim]")
     console.print(table)
-    console.print("  [a] All displayed")
-    console.print("  [s] Search")
+    console.print("  \\[a] All displayed")
+    console.print("  \\[s] Search")
 
     choice = Prompt.ask("Select models (numbers/a/s)", default="a").lower()
 
@@ -1270,6 +1311,53 @@ def _build_api_key_reference(provider_id: str, provider, raw_provider: Optional[
         return f"${{{known['api_key_env']}}}"
 
     return f"${{{_guess_api_key_env_var(provider_id)}}}"
+
+
+def _delete_provider(settings, provider_id: str) -> bool:
+    """Delete a provider from configuration."""
+    _ = settings
+    location = _select_location(
+        provider_id=provider_id,
+        title=f"Where should provider '{provider_id}' be deleted from?",
+    )
+    providers_file = _providers_file_for_location(location)
+
+    if not providers_file.exists():
+        console.print(f"[red]Config file not found: {providers_file}[/red]")
+        return False
+
+    console.print(f"[dim]Target file: {providers_file}[/dim]")
+    if not Confirm.ask(f"Delete provider '{provider_id}' from this file?", default=False):
+        console.print("[yellow]Delete cancelled.[/yellow]")
+        return False
+
+    # Load existing config
+    existing_data = _load_yaml_data(providers_file)
+    providers = existing_data.get("providers", {})
+
+    if provider_id not in providers:
+        console.print(f"[yellow]Provider '{provider_id}' not found in {providers_file}[/yellow]")
+        return False
+
+    # Remove provider
+    del providers[provider_id]
+
+    # Clear default if it was this provider
+    if existing_data.get("default_provider") == provider_id:
+        if providers:
+            # Set first remaining provider as default
+            new_default = next(iter(providers.keys()))
+            existing_data["default_provider"] = new_default
+            console.print(f"[dim]New default provider: {new_default}[/dim]")
+        else:
+            del existing_data["default_provider"]
+
+    # Write back
+    with open(providers_file, "w", encoding="utf-8") as f:
+        yaml.safe_dump(existing_data, f, sort_keys=False, allow_unicode=True)
+
+    console.print(f"[green]Provider '{provider_id}' deleted from {providers_file}[/green]")
+    return True
 
 
 def _save_provider_changes(settings, provider_id: str, provider) -> bool:
