@@ -1,10 +1,12 @@
 """Interactive CLI interface for flavIA."""
 
+import json
 import logging
 import random
 import sys
 import threading
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from rich.console import Console
@@ -15,6 +17,11 @@ from flavia.agent import RecursiveAgent, AgentProfile
 
 
 console = Console()
+
+try:
+    import readline as _readline
+except Exception:  # pragma: no cover - platform-dependent
+    _readline = None
 
 LOADING_DOTS = (".", "..", "...", "..")
 LOADING_MESSAGES = (
@@ -27,10 +34,92 @@ LOADING_MESSAGES = (
 )
 
 
-def _build_loading_line(message: str, step: int) -> str:
+def _build_loading_line(message: str, step: int, model_ref: str = "") -> str:
     """Build one loading frame line."""
     dots = LOADING_DOTS[step % len(LOADING_DOTS)]
-    return f"Agent: {message} {dots}"
+    prefix = f"Agent [{model_ref}]" if model_ref else "Agent"
+    return f"{prefix}: {message} {dots}"
+
+
+def _history_paths(base_dir: Path) -> tuple[Path, Path]:
+    """Build per-project prompt history and chat log paths."""
+    project_dir = base_dir / ".flavia"
+    project_dir.mkdir(parents=True, exist_ok=True)
+    return project_dir / ".prompt_history", project_dir / "chat_history.jsonl"
+
+
+def _configure_prompt_history(history_file: Path) -> bool:
+    """Configure readline prompt history for up/down navigation."""
+    if _readline is None:
+        return False
+    if not hasattr(sys.stdin, "isatty") or not sys.stdin.isatty():
+        return False
+
+    try:
+        if hasattr(_readline, "clear_history"):
+            _readline.clear_history()
+        if hasattr(_readline, "set_history_length"):
+            _readline.set_history_length(1000)
+        if hasattr(_readline, "set_auto_history"):
+            _readline.set_auto_history(False)
+        if history_file.exists():
+            _readline.read_history_file(str(history_file))
+        return True
+    except Exception:
+        return False
+
+
+def _append_prompt_history(user_input: str, history_file: Path, history_enabled: bool) -> None:
+    """Persist a user prompt in project history (for up/down reuse)."""
+    if not history_enabled or _readline is None:
+        return
+
+    text = user_input.strip()
+    if not text:
+        return
+
+    try:
+        current_len = _readline.get_current_history_length()
+        if current_len > 0:
+            last_item = _readline.get_history_item(current_len)
+            if last_item == text:
+                return
+
+        _readline.add_history(text)
+        _readline.write_history_file(str(history_file))
+    except Exception:
+        pass
+
+
+def _append_chat_log(chat_log_file: Path, role: str, content: str, model_ref: str = "") -> None:
+    """Append chat message to project-local jsonl history."""
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "role": role,
+        "content": content,
+    }
+    if model_ref:
+        entry["model"] = model_ref
+
+    try:
+        with open(chat_log_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def _get_agent_model_ref(agent: RecursiveAgent) -> str:
+    """Build visible model reference used by the current replying agent."""
+    provider = getattr(agent, "provider", None)
+    model_id = str(getattr(agent, "model_id", "unknown"))
+    if provider is not None and getattr(provider, "id", None):
+        return f"{provider.id}:{model_id}"
+    return model_id
+
+
+def _build_agent_prefix(agent: RecursiveAgent) -> str:
+    """Build response prefix with active model reference."""
+    return f"Agent [{_get_agent_model_ref(agent)}]:"
 
 
 def _choose_loading_message(current: str = "") -> str:
@@ -95,14 +184,14 @@ def _suppress_terminal_input() -> None:
         termios.tcsetattr(fd, termios.TCSANOW, old_settings)
 
 
-def _run_loading_animation(stop_event: threading.Event) -> None:
+def _run_loading_animation(stop_event: threading.Event, model_ref: str) -> None:
     """Render loading frames until the stop event is set."""
     message = _choose_loading_message()
     step = 0
     next_message_step = random.randint(14, 24)
 
     while not stop_event.is_set():
-        line = _build_loading_line(message, step)
+        line = _build_loading_line(message, step, model_ref=model_ref)
         output = console.file
         output.write("\r\033[2K" + line)
         output.flush()
@@ -122,9 +211,10 @@ def _run_agent_with_feedback(agent: RecursiveAgent, user_input: str) -> str:
         return agent.run(user_input)
 
     stop_event = threading.Event()
+    model_ref = _get_agent_model_ref(agent)
     animation_thread = threading.Thread(
         target=_run_loading_animation,
-        args=(stop_event,),
+        args=(stop_event, model_ref),
         daemon=True,
     )
     animation_thread.start()
@@ -178,6 +268,14 @@ __ _                Welcome to
 """
     console.print(banner)
     console.print("\nType [bold]/help[/bold] for commands\n")
+    console.print("[dim]Tip: use Up/Down arrows to browse previous prompts in this project.[/dim]\n")
+
+
+def _print_active_model_hint(agent: RecursiveAgent) -> None:
+    """Print current active model used by main replies."""
+    console.print(
+        f"[dim]Active model: [cyan]{_get_agent_model_ref(agent)}[/cyan][/dim]\n"
+    )
 
 
 def print_help() -> None:
@@ -210,7 +308,11 @@ def run_cli(settings: Settings) -> None:
 
     print_welcome(settings)
 
+    history_file, chat_log_file = _history_paths(settings.base_dir)
+    history_enabled = _configure_prompt_history(history_file)
+
     agent = create_agent_from_settings(settings)
+    _print_active_model_hint(agent)
 
     while True:
         try:
@@ -236,9 +338,12 @@ def run_cli(settings: Settings) -> None:
                     new_settings = load_settings()
                     new_settings.verbose = settings.verbose
                     settings = new_settings
+                    history_file, chat_log_file = _history_paths(settings.base_dir)
+                    history_enabled = _configure_prompt_history(history_file)
 
                     agent = create_agent_from_settings(settings)
                     console.print("[yellow]Conversation reset and config reloaded.[/yellow]")
+                    _print_active_model_hint(agent)
                     continue
 
                 elif command == "/setup":
@@ -293,12 +398,15 @@ def run_cli(settings: Settings) -> None:
 
                 elif command == "/config":
                     paths = settings.config_paths
+                    prompt_history_file, chat_log_file = _history_paths(settings.base_dir)
                     console.print("\n[bold]Configuration:[/bold]")
                     console.print(f"  Local:   {paths.local_dir or '(none)'}")
                     console.print(f"  User:    {paths.user_dir or '(none)'}")
                     console.print(f"  .env:    {paths.env_file or '(none)'}")
                     console.print(f"  models:  {paths.models_file or '(none)'}")
                     console.print(f"  agents:  {paths.agents_file or '(none)'}")
+                    console.print(f"  prompts: {prompt_history_file}")
+                    console.print(f"  chatlog: {chat_log_file}")
                     console.print()
                     continue
 
@@ -307,9 +415,13 @@ def run_cli(settings: Settings) -> None:
                     continue
 
             try:
+                active_model = _get_agent_model_ref(agent)
+                _append_prompt_history(user_input, history_file, history_enabled)
+                _append_chat_log(chat_log_file, "user", user_input, model_ref=active_model)
                 response = _run_agent_with_feedback(agent, user_input)
-                console.print("[bold blue]Agent:[/bold blue] ", end="")
+                console.print(f"[bold blue]{_build_agent_prefix(agent)}[/bold blue] ", end="")
                 console.print(Markdown(response))
+                _append_chat_log(chat_log_file, "assistant", response, model_ref=active_model)
             except KeyboardInterrupt:
                 console.print("\n[yellow]Interrupted[/yellow]")
             except Exception as e:
