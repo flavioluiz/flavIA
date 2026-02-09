@@ -1,6 +1,10 @@
 """Interactive CLI interface for flavIA."""
 
 import logging
+import random
+import sys
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 from rich.console import Console
@@ -11,6 +15,127 @@ from flavia.agent import RecursiveAgent, AgentProfile
 
 
 console = Console()
+
+LOADING_DOTS = (".", "..", "...", "..")
+LOADING_MESSAGES = (
+    "Skimming conference proceedings",
+    "Checking references in the lab notebook",
+    "Reviewing lecture notes with coffee",
+    "Validating hypotheses on the whiteboard",
+    "Comparing citations with suspicious rigor",
+    "Preparing arguments for the committee",
+)
+
+
+def _build_loading_line(message: str, step: int) -> str:
+    """Build one loading frame line."""
+    dots = LOADING_DOTS[step % len(LOADING_DOTS)]
+    return f"Agent: {message} {dots}"
+
+
+def _choose_loading_message(current: str = "") -> str:
+    """Pick a loading message, avoiding immediate repetition when possible."""
+    if len(LOADING_MESSAGES) <= 1:
+        return LOADING_MESSAGES[0] if LOADING_MESSAGES else "Processando"
+
+    candidates = [msg for msg in LOADING_MESSAGES if msg != current]
+    return random.choice(candidates) if candidates else LOADING_MESSAGES[0]
+
+
+def _clear_terminal_line() -> None:
+    """Clear current terminal line."""
+    output = console.file
+    output.write("\r\033[2K\r")
+    output.flush()
+
+
+def _supports_wait_feedback() -> bool:
+    """Return whether runtime supports interactive wait feedback."""
+    in_stream = sys.stdin
+    out_stream = getattr(console, "file", None)
+    return bool(
+        in_stream
+        and out_stream
+        and hasattr(in_stream, "isatty")
+        and hasattr(out_stream, "isatty")
+        and in_stream.isatty()
+        and out_stream.isatty()
+    )
+
+
+@contextmanager
+def _suppress_terminal_input() -> None:
+    """Hide and discard user input while waiting for model response."""
+    if not _supports_wait_feedback():
+        yield
+        return
+
+    try:
+        import termios
+    except Exception:
+        # Non-POSIX fallback: keep normal input behavior.
+        yield
+        return
+
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    new_settings = termios.tcgetattr(fd)
+
+    # Disable echo and canonical mode while preserving signals (Ctrl-C still works).
+    new_settings[3] &= ~(termios.ECHO | termios.ICANON)
+    new_settings[6][termios.VMIN] = 0
+    new_settings[6][termios.VTIME] = 0
+    termios.tcsetattr(fd, termios.TCSANOW, new_settings)
+
+    try:
+        yield
+    finally:
+        # Drop buffered keystrokes typed while waiting.
+        termios.tcflush(fd, termios.TCIFLUSH)
+        termios.tcsetattr(fd, termios.TCSANOW, old_settings)
+
+
+def _run_loading_animation(stop_event: threading.Event) -> None:
+    """Render loading frames until the stop event is set."""
+    message = _choose_loading_message()
+    step = 0
+    next_message_step = random.randint(14, 24)
+
+    while not stop_event.is_set():
+        line = _build_loading_line(message, step)
+        output = console.file
+        output.write("\r\033[2K" + line)
+        output.flush()
+
+        step += 1
+        if step % next_message_step == 0:
+            message = _choose_loading_message(message)
+            next_message_step = random.randint(14, 24)
+
+        if stop_event.wait(0.35):
+            break
+
+
+def _run_agent_with_feedback(agent: RecursiveAgent, user_input: str) -> str:
+    """Run agent with visual processing feedback."""
+    if not _supports_wait_feedback():
+        return agent.run(user_input)
+
+    stop_event = threading.Event()
+    animation_thread = threading.Thread(
+        target=_run_loading_animation,
+        args=(stop_event,),
+        daemon=True,
+    )
+    animation_thread.start()
+
+    try:
+        with _suppress_terminal_input():
+            return agent.run(user_input)
+    finally:
+        stop_event.set()
+        animation_thread.join(timeout=1.0)
+        _clear_terminal_line()
 
 
 def create_agent_from_settings(settings: Settings) -> RecursiveAgent:
@@ -181,10 +306,9 @@ def run_cli(settings: Settings) -> None:
                     console.print(f"[red]Unknown command: {command}[/red]")
                     continue
 
-            console.print("[bold blue]Agent:[/bold blue] ", end="")
-
             try:
-                response = agent.run(user_input)
+                response = _run_agent_with_feedback(agent, user_input)
+                console.print("[bold blue]Agent:[/bold blue] ", end="")
                 console.print(Markdown(response))
             except KeyboardInterrupt:
                 console.print("\n[yellow]Interrupted[/yellow]")
