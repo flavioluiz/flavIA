@@ -844,13 +844,30 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
             default="https://api.example.com/v1",
         )
         api_key, api_key_config = _get_api_key(provider_name, _guess_api_key_env_var(provider_id))
-
-        # Custom model
-        model_id = Prompt.ask("Model ID", default="model-name")
-        model_name = Prompt.ask("Model display name", default=model_id)
-
-        models = [{"id": model_id, "name": model_name, "default": True}]
         headers = None
+
+        # Model configuration
+        console.print("\n[bold]Model configuration[/bold]")
+        console.print("  \\[1] Fetch available models from provider")
+        console.print("  \\[2] Enter model name manually")
+
+        model_choice = Prompt.ask("Choice", default="1")
+
+        if model_choice == "1" and api_key:
+            # Try to fetch models from the provider
+            fetched = _fetch_and_select_models(api_key, api_base_url, headers, [])
+            if fetched:
+                models = fetched
+            else:
+                console.print("[yellow]Could not fetch models. Please enter manually.[/yellow]")
+                model_id = Prompt.ask("Model ID", default="model-name")
+                model_name = Prompt.ask("Model display name", default=model_id)
+                models = [{"id": model_id, "name": model_name, "default": True}]
+        else:
+            # Manual entry
+            model_id = Prompt.ask("Model ID", default="model-name")
+            model_name = Prompt.ask("Model display name", default=model_id)
+            models = [{"id": model_id, "name": model_name, "default": True}]
 
     else:
         provider_id = selected_provider_id
