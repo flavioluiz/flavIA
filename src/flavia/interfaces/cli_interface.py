@@ -390,8 +390,7 @@ def print_help() -> None:
 **Commands:**
 - `/help` - Show this message
 - `/reset` - Reset conversation
-- `/setup` - Configure agents for this project
-- `/agents` - Configure model per agent/subagent
+- `/agent_setup` - Configure agents (models or full reconfiguration)
 - `/agent` - List available agents
 - `/agent <name>` - Switch to agent (resets conversation)
 - `/catalog` - Browse content catalog
@@ -404,7 +403,7 @@ def print_help() -> None:
 **Tips:**
 - Run `flavia --init` to create initial config
 - Run `flavia --setup-provider` to configure providers
-- Use `/setup` to reconfigure agents
+- Use `/agent_setup` to reconfigure agents
 
 **CLI flags:**
 - `--no-subagents` - Disable sub-agent spawning
@@ -465,20 +464,12 @@ def run_cli(settings: Settings) -> None:
                     _print_active_model_hint(agent, settings)
                     continue
 
-                elif command == "/setup":
-                    from flavia.setup_wizard import run_setup_command_in_cli
+                elif command == "/agent_setup":
+                    from flavia.setup_wizard import run_agent_setup_command
 
-                    success = run_setup_command_in_cli(settings, settings.base_dir)
+                    success = run_agent_setup_command(settings, settings.base_dir)
                     if success:
                         console.print("[dim]Use /reset to load new configuration.[/dim]")
-                    continue
-
-                elif command == "/agents":
-                    from flavia.setup import manage_agent_models
-
-                    success = manage_agent_models(settings, settings.base_dir)
-                    if success:
-                        console.print("[dim]Use /reset to reload updated agent models.[/dim]")
                     continue
 
                 elif command == "/providers":
