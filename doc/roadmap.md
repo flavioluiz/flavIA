@@ -735,6 +735,127 @@ services:
 
 ---
 
+## Area 8: Context Window Management & Compaction
+
+The agent system currently has no awareness of context window limits. Messages accumulate indefinitely in `self.messages` (the conversation history list in `BaseAgent`), and the `response.usage` token counts returned by the OpenAI-compatible API are discarded. The `max_tokens` field already exists in `ModelConfig` (per-provider, e.g. 128000 for Kimi-K2.5, 200000 for Claude) but is never used at runtime.
+
+This area introduces token usage tracking, context window monitoring, and a compaction mechanism that summarizes the conversation history when the context window approaches its limit.
+
+### Task 8.1 -- Token Usage Tracking & Display
+
+**Difficulty**: Easy | **Dependencies**: None
+
+Capture the `response.usage` object returned by the OpenAI-compatible API after each LLM call, and expose the model's `max_tokens` to the agent so it can compute context utilization.
+
+**Changes to `_call_llm()` in `agent/base.py`**:
+- Currently returns only `response.choices[0].message`, discarding the rest. Change to also capture `response.usage` (which contains `prompt_tokens`, `completion_tokens`, `total_tokens`).
+- Store cumulative token usage in new instance attributes on `BaseAgent`:
+  - `self.last_prompt_tokens: int` -- prompt tokens from the most recent call
+  - `self.last_completion_tokens: int` -- completion tokens from the most recent call
+  - `self.total_prompt_tokens: int` -- cumulative prompt tokens across all calls in the session
+  - `self.total_completion_tokens: int` -- cumulative completion tokens
+- Expose `self.max_context_tokens: int` -- loaded from the resolved `ModelConfig.max_tokens` at agent initialization.
+
+**Changes to `RecursiveAgent.run()` in `agent/recursive.py`**:
+- After each `_call_llm()` call, update the token counters.
+- Compute context utilization: `utilization = self.last_prompt_tokens / self.max_context_tokens`.
+- Return or expose the utilization alongside the response text (e.g., as a property or as part of a structured return object).
+
+**Display in CLI (`interfaces/cli_interface.py`)**:
+- After each agent response, show a compact token usage line, e.g.:
+  `[tokens: 12,450 / 128,000 (9.7%) | response: 850 tokens]`
+- Use color coding: green (<70%), yellow (70-89%), red (≥90%).
+
+**Display in Telegram (`interfaces/telegram_interface.py`)**:
+- Append a token usage footer to each response message, e.g.:
+  `📊 Context: 12,450/128,000 (9.7%)`
+
+**Key files to modify**:
+- `agent/base.py` -- capture `response.usage`, add token counter attributes, expose `max_context_tokens`
+- `agent/recursive.py` -- update counters after each LLM call, expose utilization
+- `interfaces/cli_interface.py` -- display token usage after each response
+- `interfaces/telegram_interface.py` -- append token usage to responses
+
+**New dependencies**: None.
+
+### Task 8.2 -- Context Compaction with Confirmation
+
+**Difficulty**: Medium | **Dependencies**: Task 8.1
+
+When context utilization reaches a configurable threshold, warn the user and offer to compact the conversation. Compaction generates a summary of the conversation history via a dedicated LLM call, then resets the chat with the summary injected as initial context.
+
+**Threshold configuration**:
+- Add a `compact_threshold` field to the agent configuration (in `agents.yaml`) with a default of `0.9` (90%):
+  ```yaml
+  main:
+    compact_threshold: 0.9  # trigger compaction warning at 90% context usage
+  ```
+- The `AgentProfile` dataclass in `agent/profile.py` gains a `compact_threshold: float = 0.9` field.
+- The threshold can also be set globally in provider-level or settings-level config.
+
+**Warning and confirmation flow**:
+- After each `_call_llm()` call in `RecursiveAgent.run()`, check if `utilization >= compact_threshold`.
+- If triggered, the agent does NOT compact automatically. Instead, it signals the interface layer.
+- The interface (CLI or Telegram) presents a warning and asks for confirmation:
+  - **CLI**: `⚠ Context usage at 92% (117,760/128,000 tokens). Compact conversation? [y/N]`
+  - **Telegram**: Send a message: `⚠ Context usage at 92%. Reply /compact to summarize and continue, or keep chatting.`
+- If the user confirms (or sends `/compact`), trigger compaction. Otherwise, continue normally (the warning will appear again after the next response).
+
+**Compaction mechanism**:
+- Create a `compact_conversation()` method on `BaseAgent` (or `RecursiveAgent`):
+  1. Take the current `self.messages` list (excluding the system prompt).
+  2. Build a compaction prompt that asks the LLM to summarize the entire conversation into a concise but comprehensive summary, preserving: key decisions, important facts, code/document references, and any ongoing task context.
+  3. Make a dedicated `_call_llm()` call with a temporary message list containing the compaction prompt + the conversation history.
+  4. Call `self.reset()` to reinitialize messages to just the system prompt.
+  5. Inject the summary as a special message (e.g., `{"role": "user", "content": "[Conversation summary from compaction]: ..."}` followed by `{"role": "assistant", "content": "Understood, I have the context from our previous conversation. How can I continue helping you?"}`).
+  6. Reset token counters.
+
+**Compaction prompt design** (suggested):
+```
+You are summarizing a conversation to preserve context for continuation.
+Summarize the following conversation between a user and an AI assistant.
+Your summary must preserve:
+- All key decisions made
+- Important facts, numbers, and references mentioned
+- Any ongoing tasks or open questions
+- File paths, code snippets, or document references discussed
+- The user's goals and preferences expressed
+
+Be concise but comprehensive. The summary will be used to continue the conversation
+with full context. Output only the summary, no preamble.
+```
+
+**Key files to modify**:
+- `agent/base.py` or `agent/recursive.py` -- add `compact_conversation()` method
+- `agent/profile.py` -- add `compact_threshold` field to `AgentProfile`
+- `interfaces/cli_interface.py` -- handle compaction warning, prompt for confirmation
+- `interfaces/telegram_interface.py` -- handle compaction warning, respond to confirmation
+
+**New dependencies**: None.
+
+### Task 8.3 -- Manual /compact Slash Command
+
+**Difficulty**: Easy | **Dependencies**: Task 8.2
+
+Add a `/compact` slash command available in both CLI and Telegram that allows the user to manually trigger conversation compaction at any time, regardless of context utilization level.
+
+**CLI implementation** (`interfaces/cli_interface.py`):
+- Add a `/compact` case to the `if/elif` slash command chain in `run_cli()`.
+- Show current token usage, then ask for confirmation: `Context: 45,000/128,000 (35%). Compact conversation? [y/N]`
+- If confirmed, call `agent.compact_conversation()` and display the generated summary.
+- After compaction, show the new token usage (which should be much lower).
+
+**Telegram implementation** (`interfaces/telegram_interface.py`):
+- Register a new `CommandHandler("compact", self._compact_command)`.
+- The `_compact_command` handler calls `agent.compact_conversation()` on the user's agent.
+- Reply with a confirmation message including the before/after token usage.
+
+**Key files to modify**:
+- `interfaces/cli_interface.py` -- add `/compact` to command dispatch and `print_help()`
+- `interfaces/telegram_interface.py` -- add `_compact_command` handler and register it
+
+---
+
 ## Dependency Graph
 
 ```
@@ -776,6 +897,10 @@ Task 6.2 (Script Execution) ── depends on Task 5.1
 Area 7 -- External Services:
 Task 7.1 (Email IMAP/SMTP) ── (independent, no dependencies)
 Task 7.2 (Google Calendar) ── (independent, no dependencies)
+
+Area 8 -- Context Window Management:
+Task 8.1 (Token Usage Tracking) ── Task 8.2 (Compaction with Confirmation)
+                                              └── Task 8.3 (/compact Command)
 ```
 
 ## Suggested Implementation Order
@@ -789,26 +914,29 @@ Tasks ordered by difficulty (easy first) and dependency readiness. Each task can
 | 3 | **4.3** Runtime model switching in CLI | Easy | CLI |
 | 4 | **4.7** Unified slash command help system | Easy | CLI |
 | 5 | **1.3** Word/Office document converter | Easy | File Processing |
-| 6 | **5.1** Write/Edit file tools | Medium | File Modification |
-| 7 | **1.1** Audio/Video transcription converter | Medium | File Processing |
-| 8 | **1.2** Image description converter | Medium | File Processing |
-| 9 | **4.4** In-session provider & model management | Medium | CLI |
-| 10 | **4.5** Standard default agent | Medium | CLI |
-| 11 | **2.1** Structured agent profiles | Medium | Agents |
-| 12 | **3.1** YAML-based bot configuration | Medium | Messaging |
-| 13 | **6.1** LaTeX compilation tool | Medium | Academic Workflow |
-| 14 | **4.6** Global agent definitions | Medium | CLI |
-| 15 | **2.2** CLI agent management commands | Medium | Agents |
-| 16 | **3.2** Per-conversation agent binding | Medium | Messaging |
-| 17 | **3.3** Multi-bot support | Medium | Messaging |
-| 18 | **1.5** Online source converters (YouTube/Web) | Medium | File Processing |
-| 19 | **3.6** Web API interface | Medium | Messaging |
-| 20 | **1.4** OCR + LaTeX equation support | Hard | File Processing |
-| 21 | **3.4** Abstract messaging interface | Hard | Messaging |
-| 22 | **2.3** Meta-agent for agent generation | Hard | Agents |
-| 23 | **6.2** Sandboxed script execution (Python/MATLAB) | Hard | Academic Workflow |
-| 24 | **7.1** Email integration (IMAP/SMTP) | Hard | External Services |
-| 25 | **7.2** Google Calendar integration | Hard | External Services |
-| 26 | **3.5** WhatsApp integration | Hard | Messaging |
+| 6 | **8.1** Token usage tracking & display | Easy | Context Management |
+| 7 | **8.3** Manual /compact slash command | Easy | Context Management |
+| 8 | **5.1** Write/Edit file tools | Medium | File Modification |
+| 9 | **1.1** Audio/Video transcription converter | Medium | File Processing |
+| 10 | **1.2** Image description converter | Medium | File Processing |
+| 11 | **4.4** In-session provider & model management | Medium | CLI |
+| 12 | **4.5** Standard default agent | Medium | CLI |
+| 13 | **2.1** Structured agent profiles | Medium | Agents |
+| 14 | **8.2** Context compaction with confirmation | Medium | Context Management |
+| 15 | **3.1** YAML-based bot configuration | Medium | Messaging |
+| 16 | **6.1** LaTeX compilation tool | Medium | Academic Workflow |
+| 17 | **4.6** Global agent definitions | Medium | CLI |
+| 18 | **2.2** CLI agent management commands | Medium | Agents |
+| 19 | **3.2** Per-conversation agent binding | Medium | Messaging |
+| 20 | **3.3** Multi-bot support | Medium | Messaging |
+| 21 | **1.5** Online source converters (YouTube/Web) | Medium | File Processing |
+| 22 | **3.6** Web API interface | Medium | Messaging |
+| 23 | **1.4** OCR + LaTeX equation support | Hard | File Processing |
+| 24 | **3.4** Abstract messaging interface | Hard | Messaging |
+| 25 | **2.3** Meta-agent for agent generation | Hard | Agents |
+| 26 | **6.2** Sandboxed script execution (Python/MATLAB) | Hard | Academic Workflow |
+| 27 | **7.1** Email integration (IMAP/SMTP) | Hard | External Services |
+| 28 | **7.2** Google Calendar integration | Hard | External Services |
+| 29 | **3.5** WhatsApp integration | Hard | Messaging |
 
 This order is a suggestion. Tasks can be implemented in any order that respects the dependency graph above.
