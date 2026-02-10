@@ -7,9 +7,12 @@ import yaml
 from flavia.config.settings import Settings
 from flavia.setup_wizard import (
     create_setup_agent,
+    _approve_subagents,
     _build_content_catalog,
+    _run_full_reconfiguration,
     _run_ai_setup,
     _run_basic_setup,
+    run_agent_setup_command,
     run_setup_wizard,
 )
 
@@ -494,3 +497,233 @@ def test_run_ai_setup_preserves_portuguese_accents_in_agents_yaml(monkeypatch, t
     assert "Você é um especialista em comparação acadêmica" in content
     assert "Análise de pós-graduação acadêmica e profissional" in content
     assert "Voc\\xEA" not in content
+
+
+def test_run_agent_setup_command_quick_mode_delegates_to_model_manager(monkeypatch, tmp_path):
+    settings = Settings(default_model="openai:gpt-4o")
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr("flavia.setup_wizard.safe_prompt", lambda *args, **kwargs: "1")
+
+    def _fake_manage_agent_models(_settings, _base_dir):
+        captured["settings"] = _settings
+        captured["base_dir"] = _base_dir
+        return True
+
+    monkeypatch.setattr("flavia.setup.manage_agent_models", _fake_manage_agent_models)
+
+    assert run_agent_setup_command(settings, tmp_path) is True
+    assert captured["settings"] is settings
+    assert captured["base_dir"] == tmp_path
+
+
+def test_run_agent_setup_command_full_mode_delegates_to_full_reconfiguration(monkeypatch, tmp_path):
+    settings = Settings(default_model="openai:gpt-4o")
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr("flavia.setup_wizard.safe_prompt", lambda *args, **kwargs: "2")
+
+    def _fake_run_full(_settings, _base_dir):
+        captured["settings"] = _settings
+        captured["base_dir"] = _base_dir
+        return True
+
+    monkeypatch.setattr("flavia.setup_wizard._run_full_reconfiguration", _fake_run_full)
+
+    assert run_agent_setup_command(settings, tmp_path) is True
+    assert captured["settings"] is settings
+    assert captured["base_dir"] == tmp_path
+
+
+def test_run_agent_setup_command_returns_false_on_invalid_choice(monkeypatch, tmp_path):
+    settings = Settings(default_model="openai:gpt-4o")
+    monkeypatch.setattr("flavia.setup_wizard.safe_prompt", lambda *args, **kwargs: "x")
+
+    assert run_agent_setup_command(settings, tmp_path) is False
+
+
+def test_run_full_reconfiguration_uses_relative_pdf_paths_from_subfolders(monkeypatch, tmp_path):
+    captured: dict[str, object] = {}
+    settings = Settings(default_model="openai:gpt-4o")
+    pdf_path = tmp_path / "papers" / "nested.pdf"
+    pdf_path.parent.mkdir(parents=True)
+    pdf_path.write_text("dummy", encoding="utf-8")
+
+    confirm_answers = iter(
+        [
+            False,  # use custom model
+            True,  # convert PDFs
+            False,  # build catalog
+            False,  # include subagents
+            False,  # add guidance
+            True,  # accept configuration
+        ]
+    )
+
+    monkeypatch.setattr("flavia.setup_wizard.safe_confirm", lambda *args, **kwargs: next(confirm_answers))
+    monkeypatch.setattr("flavia.setup_wizard._show_agents_preview", lambda *args, **kwargs: None)
+
+    class FakeAgent:
+        def run(self, task):
+            captured["task"] = task
+            config_dir = tmp_path / ".flavia"
+            config_dir.mkdir(exist_ok=True)
+            (config_dir / "agents.yaml").write_text(
+                "main:\n  context: test\n  tools:\n    - read_file\n",
+                encoding="utf-8",
+            )
+            return "done"
+
+    def _fake_create_setup_agent(
+        _base_dir,
+        include_pdf_tool=False,
+        pdf_files=None,
+        selected_model=None,
+        model_override=None,
+    ):
+        captured["include_pdf_tool"] = include_pdf_tool
+        captured["pdf_files"] = pdf_files
+        captured["selected_model"] = selected_model
+        captured["model_override"] = model_override
+        return FakeAgent(), None
+
+    monkeypatch.setattr("flavia.setup_wizard.create_setup_agent", _fake_create_setup_agent)
+
+    assert _run_full_reconfiguration(settings, tmp_path) is True
+    assert captured["include_pdf_tool"] is True
+    assert captured["pdf_files"] == ["papers/nested.pdf"]
+    assert captured["selected_model"] is None
+    assert captured["model_override"] is None
+
+
+def test_run_full_reconfiguration_skips_pdf_prompt_when_nested_converted_exists(
+    monkeypatch, tmp_path
+):
+    asked: list[str] = []
+    captured: dict[str, object] = {}
+    settings = Settings(default_model="openai:gpt-4o")
+
+    pdf_path = tmp_path / "papers" / "nested.pdf"
+    pdf_path.parent.mkdir(parents=True)
+    pdf_path.write_text("dummy", encoding="utf-8")
+
+    converted_md = tmp_path / ".converted" / "papers" / "nested.md"
+    converted_md.parent.mkdir(parents=True)
+    converted_md.write_text("# nested", encoding="utf-8")
+
+    def _fake_confirm(prompt, *args, **kwargs):
+        asked.append(prompt)
+        responses = {
+            "Use a specific model for setup (instead of default)?": False,
+            "Build/refresh content catalog?": False,
+            "Include specialized subagents?": False,
+            "Add guidance?": False,
+            "\nAccept this configuration?": True,
+        }
+        return responses.get(prompt, False)
+
+    monkeypatch.setattr("flavia.setup_wizard.safe_confirm", _fake_confirm)
+    monkeypatch.setattr("flavia.setup_wizard._show_agents_preview", lambda *args, **kwargs: None)
+
+    class FakeAgent:
+        def run(self, task):
+            _ = task
+            config_dir = tmp_path / ".flavia"
+            config_dir.mkdir(exist_ok=True)
+            (config_dir / "agents.yaml").write_text(
+                "main:\n  context: test\n  tools:\n    - read_file\n",
+                encoding="utf-8",
+            )
+            return "done"
+
+    def _fake_create_setup_agent(
+        _base_dir,
+        include_pdf_tool=False,
+        pdf_files=None,
+        selected_model=None,
+        model_override=None,
+    ):
+        captured["include_pdf_tool"] = include_pdf_tool
+        captured["pdf_files"] = pdf_files
+        captured["selected_model"] = selected_model
+        captured["model_override"] = model_override
+        return FakeAgent(), None
+
+    monkeypatch.setattr("flavia.setup_wizard.create_setup_agent", _fake_create_setup_agent)
+
+    assert _run_full_reconfiguration(settings, tmp_path) is True
+    assert captured["include_pdf_tool"] is False
+    assert captured["pdf_files"] is None
+    assert "Convert PDFs to text first?" not in asked
+
+
+def test_run_full_reconfiguration_aborts_when_subagent_approval_cannot_be_applied(
+    monkeypatch, tmp_path
+):
+    settings = Settings(default_model="openai:gpt-4o")
+    confirm_answers = iter(
+        [
+            False,  # use custom model
+            False,  # build catalog
+            True,  # include subagents
+            False,  # add guidance
+        ]
+    )
+
+    monkeypatch.setattr("flavia.setup_wizard.safe_confirm", lambda *args, **kwargs: next(confirm_answers))
+    monkeypatch.setattr("flavia.setup_wizard._show_agents_preview", lambda *args, **kwargs: None)
+    monkeypatch.setattr("flavia.setup_wizard._approve_subagents", lambda *_args, **_kwargs: ["summarizer"])
+    monkeypatch.setattr(
+        "flavia.setup_wizard._update_config_with_approved_subagents",
+        lambda *_args, **_kwargs: False,
+    )
+
+    class FakeAgent:
+        def run(self, task):
+            _ = task
+            config_dir = tmp_path / ".flavia"
+            config_dir.mkdir(exist_ok=True)
+            (config_dir / "agents.yaml").write_text(
+                (
+                    "main:\n"
+                    "  context: test\n"
+                    "  tools:\n"
+                    "    - read_file\n"
+                    "  subagents:\n"
+                    "    summarizer:\n"
+                    "      context: summarize\n"
+                    "      tools:\n"
+                    "        - read_file\n"
+                ),
+                encoding="utf-8",
+            )
+            return "done"
+
+    monkeypatch.setattr(
+        "flavia.setup_wizard.create_setup_agent",
+        lambda *args, **kwargs: (FakeAgent(), None),
+    )
+
+    assert _run_full_reconfiguration(settings, tmp_path) is False
+
+
+def test_approve_subagents_handles_non_string_tools(monkeypatch, tmp_path):
+    agents_file = tmp_path / "agents.yaml"
+    agents_file.write_text(
+        (
+            "main:\n"
+            "  context: test\n"
+            "  subagents:\n"
+            "    reviewer:\n"
+            "      context: review\n"
+            "      tools:\n"
+            "        - read_file\n"
+            "        - 123\n"
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("flavia.setup_wizard.safe_confirm", lambda *args, **kwargs: False)
+
+    approved = _approve_subagents(agents_file)
+    assert approved == []

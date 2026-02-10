@@ -166,7 +166,7 @@ def manage_agent_models(settings, base_dir: Optional[Path] = None) -> bool:
     config = _load_agents_config(agents_file)
     if not config:
         console.print(f"[red]Could not load agent config from {agents_file}.[/red]")
-        console.print("[yellow]Run 'flavia --init' or '/setup' first.[/yellow]")
+        console.print("[yellow]Run 'flavia --init' or '/agent_setup' first.[/yellow]")
         return False
 
     model_options = _collect_model_options(settings)

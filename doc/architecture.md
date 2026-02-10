@@ -166,7 +166,7 @@ Interactive interface based on Rich:
 - Command history via readline
 - Loading animations during LLM calls
 - Conversation logging
-- Slash commands (`/help`, `/reset`, `/setup`, `/agents`, etc.)
+- Slash commands (`/help`, `/reset`, `/agent_setup`, `/agent`, etc.)
 
 ### Telegram
 

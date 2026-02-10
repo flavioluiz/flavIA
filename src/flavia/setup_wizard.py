@@ -1324,8 +1324,9 @@ def _approve_subagents(agents_file: Path) -> Optional[list[str]]:
         console.print(f"  Purpose: {context}")
 
         tools = sub_config.get("tools", [])
-        if tools:
-            console.print(f"  Tools: [dim]{', '.join(tools)}[/dim]")
+        if isinstance(tools, (list, tuple)) and tools:
+            tool_labels = ", ".join(str(tool) for tool in tools)
+            console.print(f"  Tools: [dim]{tool_labels}[/dim]")
 
         model = sub_config.get("model")
         if model:
@@ -1555,7 +1556,10 @@ def _run_full_reconfiguration(settings, base_dir: Path) -> bool:
             console.print("\n[bold]Subagent Approval[/bold]\n")
             approved_subagents = _approve_subagents(agents_file)
             if approved_subagents is not None:  # None means error
-                _update_config_with_approved_subagents(agents_file, approved_subagents)
+                updated = _update_config_with_approved_subagents(agents_file, approved_subagents)
+                if not updated:
+                    console.print("[red]Failed to apply subagent approvals. Aborting.[/red]")
+                    return False
                 if approved_subagents:
                     console.print(f"[green]Kept {len(approved_subagents)} subagent(s)[/green]")
                 else:
@@ -1592,8 +1596,8 @@ def _run_full_reconfiguration(settings, base_dir: Path) -> bool:
 def run_agent_setup_command(settings, base_dir: Path) -> bool:
     """
     Unified agent setup command with two modes:
-    1. Quick model change (like /agents)
-    2. Full reconfiguration (like /setup + --init features)
+    1. Quick model change (legacy /agents behavior)
+    2. Full reconfiguration (legacy /setup + --init features)
 
     Returns:
         True if successful

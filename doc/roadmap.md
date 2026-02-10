@@ -324,7 +324,7 @@ Add new slash commands for agent CRUD operations (agent switching itself is cove
 |---------|-------------|
 | `/agent-edit <name>` | Interactively edit agent context, tools, and permissions |
 | `/agent-create` | Create a new agent interactively via prompts |
-| `/agent-list` | Show all agents with full details (expanded `/agents`) |
+| `/agent-list` | Show all agents with full details (expanded `/agent`) |
 | `/agent-delete <name>` | Remove an agent from configuration |
 
 All changes persist to `.flavia/agents.yaml`. After modification, the settings and agent profile are reloaded.
@@ -528,7 +528,7 @@ The interactive CLI (`cli_interface.py`) and the CLI flags (`cli.py`) have grown
 - `--setup-provider`, `--manage-provider`, and `--test-provider` are only available as CLI flags -- users must exit the interactive session to use them.
 - No runtime model or agent switching mid-session.
 - No concept of a default "standard" agent or global (user-level) agent definitions.
-- The `/agents` command only manages model assignments; it cannot edit contexts, tools, or create/delete agents.
+- The `/agent_setup` command (Quick mode) only manages model assignments; it cannot edit contexts, tools, or create/delete agents.
 
 ### Task 4.1 -- Consolidate Info Commands ✓ COMPLETED
 
@@ -604,7 +604,7 @@ Expose the provider management wizards (currently only accessible via CLI flags)
 | `/provider-manage [id]` | `--manage-provider` | Manage models for a provider (add, remove, fetch from API) |
 | `/provider-test [id]` | `--test-provider` | Test connection to a provider |
 
-After provider changes, prompt the user to `/reset` to reload the updated configuration (same pattern as `/setup` and `/agents` already use).
+After provider changes, prompt the user to `/reset` to reload the updated configuration (same pattern as `/agent_setup` already uses).
 
 This eliminates the need to exit the interactive session for provider management, making the CLI fully self-sufficient.
 
@@ -689,10 +689,10 @@ Improve the `/help` command from a static text block to a structured, categorize
 
 1. **`/help`** (no args): Show all commands organized by category with one-line descriptions:
    - **Session**: `/reset`, `/quit`
-   - **Agents**: `/agent`, `/agents`
+   - **Agents**: `/agent`, `/agent_setup`
    - **Models & Providers**: `/model`, `/providers`, `/provider-setup`, `/provider-manage`, `/provider-test`
    - **Information**: `/tools`, `/config`, `/catalog`
-   - **Setup**: `/setup`
+   - **Setup**: `/agent_setup`
 
 2. **`/help <command>`**: Show detailed help for a specific command -- description, arguments, examples, and related commands.
 

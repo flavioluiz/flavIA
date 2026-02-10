@@ -14,6 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - `/tools` now shows tools grouped by category with descriptions; `/tools <name>` shows full tool schema
   - `/config` now shows both configuration paths and active settings
   - CLI flags (`--list-providers`, `--list-tools`, `--config`) output clean plain text without ANSI codes when piped
+- **Unified agent setup commands**: Replaced separate `/setup` and `/agents` flows with `/agent_setup`:
+  - **Quick mode**: update models for existing agents/subagents
+  - **Full mode**: complete reconfiguration (model selection, optional conversion/catalog/summaries, optional subagents, revision loop)
+  - Added interactive subagent approval (approve/reject each proposed subagent before saving)
 - **Init wizard flow refactor**: `flavia --init` now builds the content catalog before AI analysis, supports optional LLM summaries during setup, and asks explicitly whether specialized subagents should be included.
 - **Converted PDF directory changed from `converted/` to `.converted/`**: PDF files converted to text are now stored in a hidden directory `.converted/` instead of `converted/`. This prevents converted files from being indexed as separate entries in the content catalog, avoiding duplicates. The catalog now links the original PDF to its converted text version.
 
@@ -43,6 +47,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Removed
 
+- **Legacy slash commands**: Removed `/setup` and `/agents` command handlers in favor of `/agent_setup`.
 - **Legacy `converted/` directory support**: The system no longer checks for or migrates files from the old `converted/` directory. Users should reconvert their PDFs or manually move files to `.converted/` if needed.
 
 ## Migration Guide

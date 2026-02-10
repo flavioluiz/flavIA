@@ -165,7 +165,7 @@ The `{base_dir}` placeholder in the context is replaced with the base directory 
 ### Per-agent model configuration
 
 Inside the CLI:
-- `/agents` allows assigning different models to each agent and sub-agent.
+- `/agent_setup` (Quick mode) allows assigning different models to each agent and sub-agent.
 - `/agent` lists available agents and their effective configuration.
 - `/agent <name>` switches the active agent at runtime (conversation is reset).
 

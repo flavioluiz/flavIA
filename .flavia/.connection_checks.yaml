@@ -1,6 +1,0 @@
-checks:
-  synthetic|https://api.synthetic.new/openai/v1|hf:moonshotai/Kimi-K2.5:
-    tested_at: '2026-02-09T13:46:42.432950+00:00'
-    success: true
-    model: hf:moonshotai/Kimi-K2.5
-    provider: synthetic

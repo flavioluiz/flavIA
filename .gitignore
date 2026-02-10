@@ -4,6 +4,7 @@
 
 # Local config (sensitive)
 .flavia/.env
+.flavia/.connection_checks.yaml
 
 # Python
 __pycache__/
