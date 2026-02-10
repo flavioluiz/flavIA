@@ -1030,39 +1030,9 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
 
 def list_providers(settings) -> None:
     """Print configured providers."""
-    console.print("\n[bold]Configured Providers:[/bold]")
-    console.print("-" * 60)
+    from flavia.display import display_providers
 
-    if not settings.providers.providers:
-        console.print("  No providers configured")
-        console.print("  Run 'flavia --setup-provider' to configure providers")
-        return
-
-    for provider_id, provider in settings.providers.providers.items():
-        default_marker = ""
-        if provider_id == settings.providers.default_provider_id:
-            default_marker = " [DEFAULT]"
-
-        console.print(f"\n  [bold]{provider.name}[/bold] ({provider_id}){default_marker}")
-        console.print(f"    URL: {provider.api_base_url}")
-
-        # Show API key status
-        if provider.api_key:
-            console.print(f"    API Key: [green]Configured[/green]", end="")
-            if provider.api_key_env_var:
-                console.print(f" [dim](from ${provider.api_key_env_var})[/dim]")
-            else:
-                console.print()
-        else:
-            console.print(f"    API Key: [red]Not set[/red]")
-
-        # Show models
-        console.print(f"    Models: {len(provider.models)}")
-        for model in provider.models:
-            default = " (default)" if model.default else ""
-            console.print(f"      - {model.name}: {model.id}{default}")
-
-    console.print()
+    display_providers(settings, console=console, use_rich=True)
 
 
 def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:

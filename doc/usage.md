@@ -47,7 +47,7 @@ flavia -m openai:gpt-4o            # explicit provider:model
 flavia -m openrouter:anthropic/claude-3.5-sonnet
 ```
 
-Numeric indexes follow the combined order shown by `flavia --list-models`.
+Numeric indexes follow the combined order shown by `flavia --list-providers`.
 
 ### Execution options
 
@@ -64,10 +64,9 @@ Numeric indexes follow the combined order shown by `flavia --list-models`.
 
 | Flag | Description |
 |------|-------------|
-| `--list-models` | List available models |
-| `--list-providers` | List configured providers |
-| `--list-tools` | List available tools |
-| `--config` | Show configuration locations and status |
+| `--list-providers` | List configured providers with indexed models |
+| `--list-tools` | List available tools grouped by category |
+| `--config` | Show configuration paths and active settings |
 
 ### Provider management
 
@@ -94,10 +93,10 @@ Inside a chat session, the following commands are available:
 | `/setup` | Reconfigure agents (re-analyze content) |
 | `/agents` | Configure model per agent/sub-agent |
 | `/catalog` | Browse content catalog (overview, search, summaries, online sources) |
-| `/models` | List available models with provider info |
-| `/providers` | List configured providers |
-| `/tools` | List available tools |
-| `/config` | Show configuration paths |
+| `/providers` | List configured providers with indexed models |
+| `/tools` | List available tools by category |
+| `/tools <name>` | Show tool schema and parameters |
+| `/config` | Show configuration paths and active settings |
 | `/quit` | Exit session (aliases: `/exit`, `/q`) |
 
 ## `/catalog` quick workflow

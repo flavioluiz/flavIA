@@ -104,7 +104,7 @@ API keys are referenced with `${ENV_VAR}` syntax, resolved from the active `.env
 ```bash
 flavia -m openai:gpt-4o
 flavia -m openrouter:anthropic/claude-3.5-sonnet
-flavia -m 0     # by index (order from --list-models)
+flavia -m 0     # by index (order from --list-providers)
 ```
 
 ## Agents

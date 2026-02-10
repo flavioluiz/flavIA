@@ -342,10 +342,10 @@ def print_help() -> None:
 - `/agents` - Configure model per agent/subagent
 - `/catalog` - Browse content catalog
 - `/quit` - Exit
-- `/models` - List models (with provider info)
-- `/providers` - List configured providers
-- `/tools` - List tools
-- `/config` - Show config paths
+- `/providers` - List configured providers and models
+- `/tools` - List available tools by category
+- `/tools <name>` - Show tool schema and parameters
+- `/config` - Show config paths and active settings
 
 **Tips:**
 - Run `flavia --init` to create initial config
@@ -427,56 +427,28 @@ def run_cli(settings: Settings) -> None:
                         console.print("[dim]Use /reset to reload updated agent models.[/dim]")
                     continue
 
-                elif command == "/models":
-                    console.print("\n[bold]Available Models:[/bold]")
-                    # Show models from providers if available
-                    if settings.providers.providers:
-                        index = 0
-                        for provider in settings.providers.providers.values():
-                            console.print(f"\n  [dim]{provider.name}:[/dim]")
-                            for model in provider.models:
-                                default = " (default)" if model.default else ""
-                                console.print(
-                                    f"    {index}: {model.name} - "
-                                    f"[cyan]{provider.id}:{model.id}[/cyan]{default}"
-                                )
-                                index += 1
-                    else:
-                        # Fall back to legacy models list
-                        for i, model in enumerate(settings.models):
-                            default = " (default)" if model.default else ""
-                            console.print(f"  {i}: {model.name} - {model.id}{default}")
-                    console.print()
-                    continue
-
                 elif command == "/providers":
-                    from flavia.setup.provider_wizard import list_providers
+                    from flavia.display import display_providers
 
-                    list_providers(settings)
+                    display_providers(settings, console=console, use_rich=True)
                     continue
 
-                elif command == "/tools":
-                    from flavia.tools import list_available_tools
+                elif command == "/tools" or command.startswith("/tools "):
+                    from flavia.display import display_tools, display_tool_schema
 
-                    tools = list_available_tools()
-                    console.print("\n[bold]Available Tools:[/bold]")
-                    for tool in tools:
-                        console.print(f"  - {tool}")
-                    console.print()
+                    # Check if a specific tool was requested
+                    parts = user_input.split(maxsplit=1)
+                    if len(parts) > 1:
+                        tool_name = parts[1].strip()
+                        display_tool_schema(tool_name, console=console, use_rich=True)
+                    else:
+                        display_tools(console=console, use_rich=True)
                     continue
 
                 elif command == "/config":
-                    paths = settings.config_paths
-                    prompt_history_file, chat_log_file = _history_paths(settings.base_dir)
-                    console.print("\n[bold]Configuration:[/bold]")
-                    console.print(f"  Local:   {paths.local_dir or '(none)'}")
-                    console.print(f"  User:    {paths.user_dir or '(none)'}")
-                    console.print(f"  .env:    {paths.env_file or '(none)'}")
-                    console.print(f"  models:  {paths.models_file or '(none)'}")
-                    console.print(f"  agents:  {paths.agents_file or '(none)'}")
-                    console.print(f"  prompts: {prompt_history_file}")
-                    console.print(f"  chatlog: {chat_log_file}")
-                    console.print()
+                    from flavia.display import display_config
+
+                    display_config(settings, console=console, use_rich=True)
                     continue
 
                 elif command == "/catalog":

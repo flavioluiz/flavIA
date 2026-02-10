@@ -6,8 +6,9 @@ Usage:
     flavia                  # Interactive CLI
     flavia --init           # Initialize local config with setup wizard
     flavia --telegram       # Telegram bot mode
-    flavia --list-models    # List available models
+    flavia --list-providers # List configured providers and models
     flavia --list-tools     # List available tools
+    flavia --config         # Show configuration and settings
 """
 
 import argparse
@@ -119,12 +120,6 @@ def parse_args() -> argparse.Namespace:
     )
 
     # Info commands
-    parser.add_argument(
-        "--list-models",
-        action="store_true",
-        help="List available models and exit",
-    )
-
     parser.add_argument(
         "--list-tools",
         action="store_true",
@@ -244,100 +239,23 @@ def show_version() -> None:
 
 def show_config_info(settings: Settings) -> None:
     """Show configuration locations and status."""
-    print("\nConfiguration Locations:")
-    print("-" * 60)
+    from flavia.display import display_config
 
-    local_dir = Path.cwd() / ".flavia"
-    local_env = local_dir / ".env"
-    print(f"\n[Local (current directory)]")
-    print(f"  Directory: {local_dir}")
-    print(f"  Exists: {'Yes' if local_dir.exists() else 'No (run flavia --init)'}")
-    print(f"  .env: {'Found' if local_env.exists() else 'Not found'}")
-
-    user_dir = Path.home() / ".config" / "flavia"
-    print(f"\n[User (~/.config/flavia/)]")
-    print(f"  Directory: {user_dir}")
-    print(f"  Exists: {'Yes' if user_dir.exists() else 'No'}")
-
-    print(f"\n[Active Settings]")
-    print(f"  API Base URL: {settings.api_base_url}")
-    print(f"  Default Model: {settings.default_model}")
-    print(f"  Base Directory: {settings.base_dir}")
-    print(f"  Max Depth: {settings.max_depth}")
-    print(f"  Parallel Workers: {settings.parallel_workers}")
-    print(f"  Subagents Enabled: {settings.subagents_enabled}")
-    print(f"  Active Agent: {settings.active_agent or 'main'}")
-    print(f"  Models Loaded: {len(settings.models)}")
-    print(f"  Agents Config: {'Yes' if settings.agents_config else 'No'}")
-
-
-def list_models(settings: Settings) -> None:
-    """Print available models."""
-    print("\nAvailable Models:")
-    print("-" * 60)
-
-    # Show models from providers if available
-    if settings.providers.providers:
-        index = 0
-        for provider in settings.providers.providers.values():
-            print(f"\n  [{provider.name}]")
-            for model in provider.models:
-                default = " [DEFAULT]" if model.default else ""
-                print(f"    {index}: {model.name}{default}")
-                print(f"       ID: {provider.id}:{model.id}")
-                if model.description:
-                    print(f"       {model.description}")
-                index += 1
-        print()
-        return
-
-    # Fall back to legacy models list
-    if not settings.models:
-        print("  No models configured")
-        print("  Add models to .flavia/models.yaml or ~/.config/flavia/models.yaml")
-        return
-
-    for i, model in enumerate(settings.models):
-        default = " [DEFAULT]" if model.default else ""
-        print(f"  {i}: {model.name}{default}")
-        print(f"     ID: {model.id}")
-        if model.description:
-            print(f"     {model.description}")
-        print()
+    display_config(settings, use_rich=False)
 
 
 def list_tools_info() -> None:
     """Print available tools."""
-    from flavia.tools import get_registry
+    from flavia.display import display_tools
 
-    registry = get_registry()
-    all_tools = registry.get_all()
-
-    print("\nAvailable Tools:")
-    print("-" * 60)
-
-    categories: dict[str, list] = {}
-    for tool in all_tools.values():
-        # Skip setup tools in normal listing
-        if tool.category == "setup":
-            continue
-        cat = tool.category
-        if cat not in categories:
-            categories[cat] = []
-        categories[cat].append(tool)
-
-    for category, tool_list in sorted(categories.items()):
-        print(f"\n[{category.upper()}]")
-        for tool in tool_list:
-            print(f"  {tool.name}")
-            print(f"    {tool.description}")
+    display_tools(use_rich=False)
 
 
 def list_providers(settings: Settings) -> None:
     """Print configured providers."""
-    from flavia.setup.provider_wizard import list_providers as _list_providers
+    from flavia.display import display_providers
 
-    _list_providers(settings)
+    display_providers(settings, use_rich=False)
 
 
 def test_provider_cli(settings: Settings, provider_id: str) -> int:
@@ -699,10 +617,6 @@ def main() -> int:
         return 0
 
     # Info commands
-    if args.list_models:
-        list_models(settings)
-        return 0
-
     if args.list_tools:
         list_tools_info()
         return 0

@@ -11,7 +11,7 @@ Planned features and improvements for flavIA, organized by area. Each task inclu
 This roadmap outlines **37 tasks** across **9 major areas** to extend flavIA from a read-only research assistant into a comprehensive, production-ready AI agent system with multimodal processing, write capabilities, external service integration, web & academic research tools, and multi-platform deployment.
 
 ### Quick Stats
-- **8 Easy tasks** (< 1 day each) — Quick wins for immediate value
+- **8 Easy tasks** (< 1 day each) — Quick wins for immediate value — **1 completed** ✓
 - **20 Medium tasks** (1-2 days each) — Core feature development
 - **9 Hard tasks** (3+ days each) — Complex integrations requiring careful design
 
@@ -56,7 +56,7 @@ Transform Telegram integration into a multi-platform bot framework.
 ### [Area 4: CLI Improvements](#area-4-cli-improvements) (7 tasks)
 Consolidate commands, eliminate redundancies, add runtime switching, and introduce global agents.
 
-- **4.1** Consolidate Info Commands (Easy) — Merge /models + /providers, improve /tools and /config
+- **4.1** ~~Consolidate Info Commands (Easy)~~ — **DONE** ✓ Merged /models into /providers, /tools shows categories + schema, /config shows active settings
 - **4.2** Runtime Agent Switching (Easy) — /agent command to switch agents mid-session
 - **4.3** Runtime Model Switching (Easy) — /model command to change models without restart
 - **4.4** In-Session Provider Management (Medium) — /provider-setup, /provider-test from within CLI
@@ -530,23 +530,35 @@ The interactive CLI (`cli_interface.py`) and the CLI flags (`cli.py`) have grown
 - No concept of a default "standard" agent or global (user-level) agent definitions.
 - The `/agents` command only manages model assignments; it cannot edit contexts, tools, or create/delete agents.
 
-### Task 4.1 -- Consolidate Info Commands
+### Task 4.1 -- Consolidate Info Commands ✓ COMPLETED
 
-**Difficulty**: Easy | **Dependencies**: None
+**Difficulty**: Easy | **Dependencies**: None | **Status**: DONE
 
-Merge and rationalize the overlapping information commands:
+~~Merge and rationalize the overlapping information commands:~~
 
-1. **Merge `/models` and `/providers` into `/providers`**: The `/providers` command already shows models per provider. Remove the standalone `/models` command (or make it an alias). The consolidated `/providers` command shows: provider name, ID, default marker, API key status, URL, and the model list with defaults.
+**Implementation summary**:
 
-2. **Improve `/tools` detail level**: Make `/tools` match the detail of `--list-tools` -- show descriptions and group by category. Add `/tools <name>` to show the full schema of a specific tool.
+1. **Created `src/flavia/display.py`** — New shared module with 4 display functions:
+   - `display_providers()` — Shows providers with globally indexed models
+   - `display_tools()` — Shows tools grouped by category with descriptions
+   - `display_tool_schema()` — Shows full schema for a specific tool
+   - `display_config()` — Shows config paths and active settings
 
-3. **Improve `/config` completeness**: Make `/config` show the same information as `--config` (active settings, model, agent, subagents status) in addition to file paths. This becomes the single "show me my current state" command.
+2. **Removed `/models` and `--list-models`** — Redundant with `/providers`
 
-4. **Deprecate redundant CLI flags**: Once the slash commands are feature-complete, `--list-models`, `--list-providers`, and `--list-tools` become thin wrappers that print the same output and exit. The implementations should share code to avoid divergence.
+3. **Updated commands to use shared module**:
+   - `/providers` and `--list-providers` — Providers with indexed models
+   - `/tools` and `--list-tools` — Categorized tools with descriptions
+   - `/tools <name>` — Full tool schema (parameters, types, defaults)
+   - `/config` and `--config` — Paths + active settings
 
-**Key files to modify**:
-- `interfaces/cli_interface.py` -- update `/providers`, `/tools`, `/config` handlers; remove or alias `/models`
-- `cli.py` -- refactor `list_models()`, `list_tools_info()`, `list_providers()` to share logic with slash commands
+4. **Plain text output for piping** — CLI flags detect non-TTY and strip ANSI codes
+
+**Files modified**:
+- `src/flavia/display.py` (new)
+- `src/flavia/cli.py`
+- `src/flavia/interfaces/cli_interface.py`
+- `src/flavia/setup/provider_wizard.py`
 
 ### Task 4.2 -- Runtime Agent Switching in CLI
 
@@ -1627,7 +1639,7 @@ Tasks ordered by difficulty (easy first) and dependency readiness. Each task can
 
 | Order | Task | Difficulty | Area |
 |-------|------|------------|------|
-| 1 | **4.1** Consolidate info commands | Easy | CLI |
+| 1 | ~~**4.1** Consolidate info commands~~ | ~~Easy~~ | ~~CLI~~ | ✓ DONE |
 | 2 | **4.2** Runtime agent switching in CLI | Easy | CLI |
 | 3 | **4.3** Runtime model switching in CLI | Easy | CLI |
 | 4 | **4.7** Unified slash command help system | Easy | CLI |
