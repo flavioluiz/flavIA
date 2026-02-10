@@ -326,6 +326,29 @@ def _get_available_agents(settings: Settings) -> dict[str, dict]:
     return agents
 
 
+def _resolve_agent_model_ref(
+    settings: Settings,
+    agent_name: str,
+    available_agents: Optional[dict[str, dict]] = None,
+) -> str | int:
+    """Resolve the model reference that would be used by a specific agent."""
+    available = available_agents if available_agents is not None else _get_available_agents(settings)
+    main_config = available.get("main", {})
+    main_model = (
+        main_config.get("model", settings.default_model)
+        if isinstance(main_config, dict)
+        else settings.default_model
+    )
+
+    if agent_name == "main":
+        return main_model
+
+    agent_config = available.get(agent_name, {})
+    if isinstance(agent_config, dict):
+        return agent_config.get("model", main_model)
+    return main_model
+
+
 def print_welcome(settings: Settings) -> None:
     """Print welcome message."""
     banner = r"""
@@ -503,12 +526,39 @@ def run_cli(settings: Settings) -> None:
                         available = _get_available_agents(settings)
                         if agent_name not in available:
                             console.print(f"[red]Agent '{agent_name}' not found.[/red]")
-                            console.print(f"Available: {', '.join(available.keys())}")
+                            console.print(f"Available: {', '.join(available.keys()) or '(none)'}")
+                            continue
+
+                        # Validate provider auth for target agent model before switching
+                        target_model_ref = _resolve_agent_model_ref(settings, agent_name, available)
+                        provider, _ = settings.resolve_model_with_provider(target_model_ref)
+                        if provider is not None and not provider.api_key:
+                            console.print(
+                                f"[red]Cannot switch to '{agent_name}': API key not configured "
+                                f"for provider '{provider.id}'.[/red]"
+                            )
+                            if provider.api_key_env_var:
+                                console.print(
+                                    f"[dim]Set {provider.api_key_env_var}, run /reset, and try "
+                                    f"again.[/dim]"
+                                )
+                            else:
+                                console.print(
+                                    "[dim]Run 'flavia --setup-provider', run /reset, and try "
+                                    "again.[/dim]"
+                                )
                             continue
 
                         # Update settings and create new agent
+                        previous_active_agent = settings.active_agent
                         settings.active_agent = None if agent_name == "main" else agent_name
-                        agent = create_agent_from_settings(settings)
+                        try:
+                            agent = create_agent_from_settings(settings)
+                        except Exception as e:
+                            settings.active_agent = previous_active_agent
+                            console.print(f"[red]Failed to switch to agent '{agent_name}': {e}[/red]")
+                            continue
+
                         console.print(
                             f"[green]Switched to agent '{agent_name}'. Conversation reset.[/green]"
                         )

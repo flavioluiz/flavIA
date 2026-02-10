@@ -83,6 +83,25 @@ def test_read_user_input_uses_plain_prompt_when_history_enabled(monkeypatch):
     assert prompts["plain"] == "You: "
 
 
+def test_read_user_input_plain_prompt_includes_active_agent_prefix(monkeypatch):
+    prompts = {"plain": None}
+
+    def fake_input(prompt):
+        prompts["plain"] = prompt
+        return "hello"
+
+    monkeypatch.setattr(cli_interface, "_readline", object())
+    monkeypatch.setattr("builtins.input", fake_input)
+    monkeypatch.setattr(
+        cli_interface.console,
+        "input",
+        lambda _prompt: (_ for _ in ()).throw(AssertionError("console.input should not be used")),
+    )
+
+    assert cli_interface._read_user_input(history_enabled=True, active_agent="summarizer") == "hello"
+    assert prompts["plain"] == "[summarizer] You: "
+
+
 def test_read_user_input_uses_rich_prompt_when_history_disabled(monkeypatch):
     prompts = {"rich": None}
 
@@ -98,3 +117,22 @@ def test_read_user_input_uses_rich_prompt_when_history_disabled(monkeypatch):
 
     assert cli_interface._read_user_input(history_enabled=False) == "hello"
     assert prompts["rich"] == "[bold green]You:[/bold green] "
+
+
+def test_read_user_input_rich_prompt_includes_active_agent_prefix(monkeypatch):
+    prompts = {"rich": None}
+
+    def fake_console_input(prompt):
+        prompts["rich"] = prompt
+        return "hello"
+
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _prompt: (_ for _ in ()).throw(AssertionError("input should not be used")),
+    )
+    monkeypatch.setattr(cli_interface.console, "input", fake_console_input)
+
+    assert (
+        cli_interface._read_user_input(history_enabled=False, active_agent="summarizer") == "hello"
+    )
+    assert prompts["rich"] == "[dim][summarizer] [/dim][bold green]You:[/bold green] "
