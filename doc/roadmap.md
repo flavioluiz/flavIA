@@ -11,7 +11,7 @@ Planned features and improvements for flavIA, organized by area. Each task inclu
 This roadmap outlines **37 tasks** across **9 major areas** to extend flavIA from a read-only research assistant into a comprehensive, production-ready AI agent system with multimodal processing, write capabilities, external service integration, web & academic research tools, and multi-platform deployment.
 
 ### Quick Stats
-- **8 Easy tasks** (< 1 day each) — Quick wins for immediate value — **1 completed** ✓
+- **8 Easy tasks** (< 1 day each) — Quick wins for immediate value — **2 completed** ✓
 - **20 Medium tasks** (1-2 days each) — Core feature development
 - **9 Hard tasks** (3+ days each) — Complex integrations requiring careful design
 
@@ -57,7 +57,7 @@ Transform Telegram integration into a multi-platform bot framework.
 Consolidate commands, eliminate redundancies, add runtime switching, and introduce global agents.
 
 - **4.1** ~~Consolidate Info Commands (Easy)~~ — **DONE** ✓ Merged /models into /providers, /tools shows categories + schema, /config shows active settings
-- **4.2** Runtime Agent Switching (Easy) — /agent command to switch agents mid-session
+- **4.2** ~~Runtime Agent Switching (Easy)~~ — **DONE** ✓ /agent command to list agents or switch mid-session
 - **4.3** Runtime Model Switching (Easy) — /model command to change models without restart
 - **4.4** In-Session Provider Management (Medium) — /provider-setup, /provider-test from within CLI
 - **4.5** Standard Default Agent (Medium) — Built-in fallback agent always available
@@ -560,24 +560,19 @@ The interactive CLI (`cli_interface.py`) and the CLI flags (`cli.py`) have grown
 - `src/flavia/interfaces/cli_interface.py`
 - `src/flavia/setup/provider_wizard.py`
 
-### Task 4.2 -- Runtime Agent Switching in CLI
+### Task 4.2 -- Runtime Agent Switching in CLI ✓ COMPLETED
 
-**Difficulty**: Easy | **Dependencies**: None
+**Difficulty**: Easy | **Dependencies**: None | **Status**: Done
 
-Currently, the `--agent` CLI flag promotes a subagent as main at startup, but there is no way to switch agents mid-session. The existing `/agents` command only manages model assignments.
+Implemented `/agent` slash command for runtime agent switching:
 
-Add a `/agent <name>` slash command to `cli_interface.py` that:
+- `/agent` (no args) -- Lists all available agents (main + subagents) with model, tools, and context summary. Marks the active agent with `[active]`.
+- `/agent <name>` -- Switches to a different agent, validates the name exists, creates a new agent instance, resets conversation, and updates the prompt to show `[agent_name] You:` for non-main agents.
 
-1. Validates the agent name exists in `agents_config` (including subagents)
-2. Creates a new `RecursiveAgent` with the selected profile
-3. Resets conversation history
-4. Updates the prompt display to show the active agent name
-
-Also add `/agent` (no arguments) to show the current active agent and its configuration summary (name, model, tools, context snippet).
-
-**Key files to modify**:
-- `interfaces/cli_interface.py` -- add `/agent` command handler
-- Optionally update prompt prefix to display active agent name
+**Files modified**:
+- `src/flavia/display.py` -- Added `display_agents()` function
+- `src/flavia/interfaces/cli_interface.py` -- Added `/agent` command handler, `_get_available_agents()` helper, updated `_read_user_input()` for agent prefix, updated `print_help()`
+- `doc/usage.md` -- Documented new commands
 
 ### Task 4.3 -- Runtime Model Switching in CLI
 

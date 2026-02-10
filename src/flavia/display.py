@@ -263,3 +263,86 @@ def display_config(
 
     _print(f"  Agents Config:     {'Yes' if settings.agents_config else 'No'}")
     _print()
+
+
+def display_agents(
+    settings: "Settings",
+    console: Optional["Console"] = None,
+    use_rich: bool = True,
+) -> None:
+    """
+    Display available agents with their configurations.
+
+    Args:
+        settings: Current settings with agent configuration
+        console: Rich console for formatted output (optional)
+        use_rich: Whether to use Rich formatting (False for plain text)
+    """
+    if use_rich and console is None:
+        from rich.console import Console
+
+        console = Console()
+
+    def _print(text: str = "", **kwargs) -> None:
+        if use_rich and console:
+            console.print(text, **kwargs)
+        else:
+            print(_strip_rich_markup(text))
+
+    _print("\n[bold]Available Agents:[/bold]")
+    _print("-" * 60)
+
+    # Check if agents config exists
+    if "main" not in settings.agents_config:
+        _print("  No agent configuration. Default agent in use.")
+        _print()
+        return
+
+    main_config = settings.agents_config["main"]
+    current_agent = settings.active_agent or "main"
+
+    # Helper to format agent info
+    def _format_agent(name: str, config: dict, is_main: bool = False) -> None:
+        active_marker = " [green][active][/green]" if name == current_agent else ""
+        _print(f"\n  [bold]{name}[/bold]{active_marker}")
+
+        # Model info
+        model = config.get("model")
+        if model:
+            _print(f"    Model: [cyan]{model}[/cyan]")
+        elif not is_main:
+            main_model = main_config.get("model", "default")
+            _print(f"    Model: [cyan]{main_model}[/cyan] [dim](inherited)[/dim]")
+        else:
+            _print(f"    Model: [dim]default[/dim]")
+
+        # Tools info
+        tools = config.get("tools", [])
+        if tools:
+            tool_count = len(tools)
+            preview = ", ".join(tools[:3])
+            if tool_count > 3:
+                preview += ", ..."
+            _print(f"    Tools: {tool_count} ({preview})")
+        else:
+            _print(f"    Tools: [dim]none[/dim]")
+
+        # Context info (truncated)
+        context = config.get("context", "")
+        if context:
+            truncated = context[:80].replace("\n", " ")
+            if len(context) > 80:
+                truncated += "..."
+            _print(f"    Context: {truncated}")
+
+    # Display main agent
+    _format_agent("main", main_config, is_main=True)
+
+    # Display subagents
+    subagents = main_config.get("subagents", {})
+    if isinstance(subagents, dict):
+        for name, config in subagents.items():
+            if isinstance(config, dict):
+                _format_agent(name, config, is_main=False)
+
+    _print()

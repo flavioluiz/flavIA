@@ -91,12 +91,19 @@ def _append_prompt_history(user_input: str, history_file: Path, history_enabled:
         pass
 
 
-def _read_user_input(history_enabled: bool) -> str:
-    """Read user prompt while keeping readline redraw behavior stable."""
+def _read_user_input(history_enabled: bool, active_agent: Optional[str] = None) -> str:
+    """Read user prompt with optional active agent prefix."""
+    # Show agent prefix only for non-main agents
+    has_prefix = active_agent and active_agent != "main"
+
     if history_enabled and _readline is not None:
         # Keep a plain prompt with readline; styled ANSI prompts can break redraw
         # when deleting characters or navigating history with arrows.
-        return input("You: ")
+        prefix = f"[{active_agent}] " if has_prefix else ""
+        return input(f"{prefix}You: ")
+
+    if has_prefix:
+        return console.input(f"[dim][{active_agent}] [/dim][bold green]You:[/bold green] ")
     return console.input("[bold green]You:[/bold green] ")
 
 
@@ -297,6 +304,28 @@ def create_agent_from_settings(settings: Settings) -> RecursiveAgent:
     return RecursiveAgent(settings=settings, profile=profile)
 
 
+def _get_available_agents(settings: Settings) -> dict[str, dict]:
+    """Get all available agents from settings.
+
+    Returns dict mapping agent name to its config.
+    Always includes 'main' if agents_config exists.
+    """
+    agents = {}
+    if "main" not in settings.agents_config:
+        return agents
+
+    main_config = settings.agents_config["main"]
+    agents["main"] = main_config
+
+    subagents = main_config.get("subagents", {})
+    if isinstance(subagents, dict):
+        for name, config in subagents.items():
+            if isinstance(config, dict):
+                agents[name] = config
+
+    return agents
+
+
 def print_welcome(settings: Settings) -> None:
     """Print welcome message."""
     banner = r"""
@@ -340,6 +369,8 @@ def print_help() -> None:
 - `/reset` - Reset conversation
 - `/setup` - Configure agents for this project
 - `/agents` - Configure model per agent/subagent
+- `/agent` - List available agents
+- `/agent <name>` - Switch to agent (resets conversation)
 - `/catalog` - Browse content catalog
 - `/quit` - Exit
 - `/providers` - List configured providers and models
@@ -377,7 +408,7 @@ def run_cli(settings: Settings) -> None:
 
     while True:
         try:
-            user_input = _read_user_input(history_enabled).strip()
+            user_input = _read_user_input(history_enabled, settings.active_agent).strip()
 
             if not user_input:
                 continue
@@ -455,6 +486,38 @@ def run_cli(settings: Settings) -> None:
                     from flavia.interfaces.catalog_command import run_catalog_command
 
                     run_catalog_command(settings)
+                    continue
+
+                elif command == "/agent" or command.startswith("/agent "):
+                    parts = user_input.split(maxsplit=1)
+                    if len(parts) > 1:
+                        # Switch to specified agent
+                        agent_name = parts[1].strip()
+                        current = settings.active_agent or "main"
+
+                        if agent_name == current:
+                            console.print(f"[yellow]Already using agent '{agent_name}'.[/yellow]")
+                            continue
+
+                        # Validate agent exists
+                        available = _get_available_agents(settings)
+                        if agent_name not in available:
+                            console.print(f"[red]Agent '{agent_name}' not found.[/red]")
+                            console.print(f"Available: {', '.join(available.keys())}")
+                            continue
+
+                        # Update settings and create new agent
+                        settings.active_agent = None if agent_name == "main" else agent_name
+                        agent = create_agent_from_settings(settings)
+                        console.print(
+                            f"[green]Switched to agent '{agent_name}'. Conversation reset.[/green]"
+                        )
+                        _print_active_model_hint(agent, settings)
+                    else:
+                        # List available agents
+                        from flavia.display import display_agents
+
+                        display_agents(settings, console=console, use_rich=True)
                     continue
 
                 else:
