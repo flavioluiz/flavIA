@@ -6,12 +6,18 @@ and slash commands, with support for Rich formatting (interactive) and
 plain text output (piping/CLI).
 """
 
-from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from rich.console import Console
     from flavia.config import Settings
+
+
+def _strip_rich_markup(text: str) -> str:
+    """Strip only Rich markup tags used by this module."""
+    import re
+
+    return re.sub(r"\[/?(?:bold|cyan|red|green|dim)\]", "", text)
 
 
 def display_providers(
@@ -35,10 +41,7 @@ def display_providers(
         if use_rich and console:
             console.print(text, **kwargs)
         else:
-            # Strip Rich markup for plain text
-            import re
-            clean = re.sub(r'\[/?[^\]]+\]', '', text)
-            print(clean)
+            print(_strip_rich_markup(text))
 
     _print("\n[bold]Configured Providers:[/bold]")
     _print("-" * 60)
@@ -108,9 +111,7 @@ def display_tools(
         if use_rich and console:
             console.print(text, **kwargs)
         else:
-            import re
-            clean = re.sub(r'\[/?[^\]]+\]', '', text)
-            print(clean)
+            print(_strip_rich_markup(text))
 
     registry = get_registry()
     all_tools = registry.get_all()
@@ -163,9 +164,7 @@ def display_tool_schema(
         if use_rich and console:
             console.print(text, **kwargs)
         else:
-            import re
-            clean = re.sub(r'\[/?[^\]]+\]', '', text)
-            print(clean)
+            print(_strip_rich_markup(text))
 
     registry = get_registry()
     tool = registry.get(tool_name)
@@ -224,15 +223,12 @@ def display_config(
         if use_rich and console:
             console.print(text, **kwargs)
         else:
-            import re
-            clean = re.sub(r'\[/?[^\]]+\]', '', text)
-            print(clean)
-
-    # Get history paths
-    from flavia.interfaces.cli_interface import _history_paths
+            print(_strip_rich_markup(text))
 
     paths = settings.config_paths
-    prompt_history_file, chat_log_file = _history_paths(settings.base_dir)
+    project_dir = settings.base_dir / ".flavia"
+    prompt_history_file = project_dir / ".prompt_history"
+    chat_log_file = project_dir / "chat_history.jsonl"
 
     # Section 1: Configuration paths
     _print("\n[bold]Configuration Paths:[/bold]")
