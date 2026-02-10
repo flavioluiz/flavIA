@@ -4,6 +4,165 @@ Planned features and improvements for flavIA, organized by area. Each task inclu
 
 **Difficulty scale**: Easy (a few hours) | Medium (1-2 days) | Hard (3+ days)
 
+---
+
+## 📋 Executive Summary
+
+This roadmap outlines **29 tasks** across **8 major areas** to extend flavIA from a read-only research assistant into a comprehensive, production-ready AI agent system with multimodal processing, write capabilities, external service integration, and multi-platform deployment.
+
+### Quick Stats
+- **7 Easy tasks** (< 1 day each) — Quick wins for immediate value
+- **15 Medium tasks** (1-2 days each) — Core feature development
+- **7 Hard tasks** (3+ days each) — Complex integrations requiring careful design
+
+### Strategic Priorities
+1. **Immediate value** (Tasks 4.1-4.7, 8.1): Improve CLI UX and add token tracking
+2. **Core capabilities** (Tasks 5.1, 1.1-1.3): Enable file writing and expand content processing
+3. **Academic workflows** (Tasks 6.1-6.2): LaTeX compilation and script execution
+4. **Production readiness** (Tasks 3.1-3.6, 8.2-8.3): Multi-platform bots and context management
+5. **Advanced features** (Tasks 7.1-7.2, 2.3): External services and meta-agents
+
+---
+
+## 📖 Table of Contents
+
+### [Area 1: Multimodal File Processing](#area-1-multimodal-file-processing) (5 tasks)
+Expand content processing beyond PDF/text to audio, video, images, Office docs, and online sources.
+
+- **1.1** Audio/Video Transcription (Medium) — Whisper API transcription
+- **1.2** Image Description (Medium) — GPT-4o vision for images
+- **1.3** Word/Office Documents (Easy) — python-docx, openpyxl, python-pptx
+- **1.4** OCR + LaTeX Equations (Hard) — Handwritten docs, scanned PDFs, equation OCR
+- **1.5** YouTube/Web Converters (Medium) — yt-dlp, trafilatura
+
+### [Area 2: Agent System Improvements](#area-2-agent-system-improvements) (3 tasks)
+Redesign agent configuration for richer, more maintainable agent definitions.
+
+- **2.1** Structured Agent Profiles (Medium) — Replace free-form context with role/expertise/personality fields
+- **2.2** CLI Agent Management (Medium) — /agent-create, /agent-edit, /agent-delete commands
+- **2.3** Meta-Agent Generation (Hard) — AI-powered agent architect for automatic config generation
+
+### [Area 3: Messaging Platform Framework](#area-3-messaging-platform-framework) (6 tasks)
+Transform Telegram integration into a multi-platform bot framework.
+
+- **3.1** YAML Bot Configuration (Medium) — Replace env vars with `.flavia/bots.yaml`
+- **3.2** Per-Conversation Agents (Medium) — Each user can switch agents mid-chat
+- **3.3** Multi-Bot Support (Medium) — Run multiple bot instances concurrently
+- **3.4** Abstract Messaging Interface (Hard) — BaseMessagingBot ABC for platform independence
+- **3.5** WhatsApp Integration (Hard) — WhatsApp Business API or third-party bridge
+- **3.6** Web API Interface (Medium) — HTTP/WebSocket API for custom frontends
+
+### [Area 4: CLI Improvements](#area-4-cli-improvements) (7 tasks)
+Consolidate commands, eliminate redundancies, add runtime switching, and introduce global agents.
+
+- **4.1** Consolidate Info Commands (Easy) — Merge /models + /providers, improve /tools and /config
+- **4.2** Runtime Agent Switching (Easy) — /agent command to switch agents mid-session
+- **4.3** Runtime Model Switching (Easy) — /model command to change models without restart
+- **4.4** In-Session Provider Management (Medium) — /provider-setup, /provider-test from within CLI
+- **4.5** Standard Default Agent (Medium) — Built-in fallback agent always available
+- **4.6** Global Agent Definitions (Medium) — User-level agents in ~/.config/flavia/agents.yaml
+- **4.7** Unified Help System (Easy) — Structured /help with categories and command registry
+
+### [Area 5: File Modification Tools](#area-5-file-modification-tools) (1 task)
+Enable write capabilities using the existing permission infrastructure.
+
+- **5.1** Write/Edit File Tools (Medium) — write_file, edit_file, insert_text, append_file with permission checks
+
+### [Area 6: Academic Workflow Tools](#area-6-academic-workflow-tools) (2 tasks)
+Bridge the gap between text generation and actual research output.
+
+- **6.1** LaTeX Compilation (Medium) — Compile .tex to PDF with pdflatex/latexmk
+- **6.2** Sandboxed Script Execution (Hard) — Run Python/MATLAB scripts with user confirmation + AST-based safety
+
+### [Area 7: External Service Integration](#area-7-external-service-integration) (2 tasks)
+Connect to email and calendar services with read-autonomous, write-confirmed pattern.
+
+- **7.1** Email Integration (Hard) — IMAP/SMTP for Gmail with read/search/send tools
+- **7.2** Google Calendar (Hard) — OAuth2 integration for event management
+
+### [Area 8: Context Window Management & Compaction](#area-8-context-window-management--compaction) (3 tasks)
+Track token usage and automatically summarize conversations approaching context limits.
+
+- **8.1** Token Usage Tracking (Easy) — Capture response.usage, display utilization in CLI/Telegram
+- **8.2** Compaction with Confirmation (Medium) — Auto-summarize at threshold with user approval
+- **8.3** Manual /compact Command (Easy) — On-demand conversation summarization
+
+---
+
+## 🎯 Implementation Roadmap Overview
+
+### Phase 1: Foundation & Quick Wins (Tasks 4.1-4.7, 8.1, 1.3)
+**Timeline**: 1-2 weeks | **Effort**: 7 Easy + 1 Medium = ~5-7 days
+
+Improve CLI usability, add token tracking, and expand file processing to Office docs. All tasks are independent and can be implemented in parallel.
+
+**Deliverables**:
+- Unified, consistent CLI commands with better help
+- Real-time token usage visibility in CLI and Telegram
+- Support for .docx, .xlsx, .pptx files
+
+### Phase 2: Core Write Capabilities (Tasks 5.1, 6.1)
+**Timeline**: 1 week | **Effort**: 2 Medium = ~3-4 days
+
+Enable file modification and LaTeX compilation for productive academic workflows.
+
+**Deliverables**:
+- Agent can create, edit, and modify files (with permissions)
+- Compile LaTeX documents directly from chat
+
+### Phase 3: Multimodal Expansion (Tasks 1.1-1.2, 1.5)
+**Timeline**: 2 weeks | **Effort**: 3 Medium = ~4-6 days
+
+Add audio/video transcription, image understanding, and online source processing.
+
+**Deliverables**:
+- Transcribe audio/video files via Whisper
+- Describe images via GPT-4o vision
+- Process YouTube videos and web pages
+
+### Phase 4: Production Messaging (Tasks 3.1-3.3, 8.2-8.3)
+**Timeline**: 2 weeks | **Effort**: 3 Medium = ~4-6 days
+
+Professionalize the bot infrastructure with YAML config, multi-bot support, and context management.
+
+**Deliverables**:
+- Multiple Telegram bots from one installation
+- Per-user agent binding
+- Automatic context compaction when approaching limits
+
+### Phase 5: Advanced Features (Tasks 2.1-2.2, 4.6, 6.2)
+**Timeline**: 2-3 weeks | **Effort**: 4 Medium + 1 Hard = ~7-10 days
+
+Structured agent profiles, global agents, and sandboxed script execution.
+
+**Deliverables**:
+- Richer agent configuration system
+- User-level agents available across all projects
+- Safe execution of Python/MATLAB scripts
+
+### Phase 6: Platform Expansion (Tasks 3.4, 3.6, 1.4)
+**Timeline**: 2-3 weeks | **Effort**: 2 Hard + 1 Medium = ~7-10 days
+
+Abstract bot interface, Web API, and advanced OCR.
+
+**Deliverables**:
+- HTTP/WebSocket API for custom integrations
+- Platform-independent bot architecture
+- OCR for handwritten notes and equations
+
+### Phase 7: External Services (Tasks 7.1-7.2, 2.3, 3.5)
+**Timeline**: 3-4 weeks | **Effort**: 4 Hard = ~12-16 days
+
+Email, calendar, WhatsApp, and meta-agent generation.
+
+**Deliverables**:
+- Send/receive emails from chat
+- Manage Google Calendar events
+- WhatsApp bot (if desired)
+- AI-powered agent configuration generation
+
+---
+
 ## Area 1: Multimodal File Processing
 
 The content system (`content/converters/`) has a clean `BaseConverter` / `ConverterRegistry` architecture. It currently supports PDF (via pdfplumber) and text passthrough. The `FileScanner` already classifies files into types (image, audio, video, binary\_document) but does nothing with non-text/non-PDF files. Online converters (YouTube, webpage) are placeholders.
