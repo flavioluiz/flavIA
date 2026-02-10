@@ -122,13 +122,12 @@ The `build_system_prompt()` function in `context.py` would compose a richer, mor
 
 ### Task 2.2 -- CLI Agent Management Commands
 
-**Difficulty**: Medium | **Dependencies**: Task 2.1 (benefits from structured profiles)
+**Difficulty**: Medium | **Dependencies**: Task 2.1 (benefits from structured profiles), Task 4.2 (agent switching)
 
-Add new slash commands and CLI flags for agent management:
+Add new slash commands for agent CRUD operations (agent switching itself is covered by Task 4.2):
 
 | Command | Description |
 |---------|-------------|
-| `/agent <name>` | Switch active agent mid-conversation (see also Task 4.1) |
 | `/agent-edit <name>` | Interactively edit agent context, tools, and permissions |
 | `/agent-create` | Create a new agent interactively via prompts |
 | `/agent-list` | Show all agents with full details (expanded `/agents`) |
@@ -322,9 +321,40 @@ This enables custom web frontends, mobile apps, or integration with other servic
 
 ---
 
-## Area 4: CLI Agent Switching
+## Area 4: CLI Improvements
 
-### Task 4.1 -- Runtime Agent Switching in CLI
+The interactive CLI (`cli_interface.py`) and the CLI flags (`cli.py`) have grown organically and now contain several redundancies, inconsistencies, and gaps. This area covers consolidating existing commands, adding runtime switching capabilities, and introducing features that make the CLI a fully self-contained interface for managing flavIA without needing to restart.
+
+**Current problems identified**:
+
+- `/models` and `/providers` show nearly identical information (models grouped by provider) with different formatting. Neither allows any action.
+- `--list-models`, `--list-providers`, `--list-tools` duplicate the slash commands at the flag level with slightly different output detail.
+- `/tools` shows only tool names; `--list-tools` shows names, descriptions, and categories. Inconsistent depth.
+- `/config` (slash) shows only file paths; `--config` (flag) shows paths plus active settings. Same name, different content.
+- `--setup-provider`, `--manage-provider`, and `--test-provider` are only available as CLI flags -- users must exit the interactive session to use them.
+- No runtime model or agent switching mid-session.
+- No concept of a default "standard" agent or global (user-level) agent definitions.
+- The `/agents` command only manages model assignments; it cannot edit contexts, tools, or create/delete agents.
+
+### Task 4.1 -- Consolidate Info Commands
+
+**Difficulty**: Easy | **Dependencies**: None
+
+Merge and rationalize the overlapping information commands:
+
+1. **Merge `/models` and `/providers` into `/providers`**: The `/providers` command already shows models per provider. Remove the standalone `/models` command (or make it an alias). The consolidated `/providers` command shows: provider name, ID, default marker, API key status, URL, and the model list with defaults.
+
+2. **Improve `/tools` detail level**: Make `/tools` match the detail of `--list-tools` -- show descriptions and group by category. Add `/tools <name>` to show the full schema of a specific tool.
+
+3. **Improve `/config` completeness**: Make `/config` show the same information as `--config` (active settings, model, agent, subagents status) in addition to file paths. This becomes the single "show me my current state" command.
+
+4. **Deprecate redundant CLI flags**: Once the slash commands are feature-complete, `--list-models`, `--list-providers`, and `--list-tools` become thin wrappers that print the same output and exit. The implementations should share code to avoid divergence.
+
+**Key files to modify**:
+- `interfaces/cli_interface.py` -- update `/providers`, `/tools`, `/config` handlers; remove or alias `/models`
+- `cli.py` -- refactor `list_models()`, `list_tools_info()`, `list_providers()` to share logic with slash commands
+
+### Task 4.2 -- Runtime Agent Switching in CLI
 
 **Difficulty**: Easy | **Dependencies**: None
 
@@ -337,11 +367,138 @@ Add a `/agent <name>` slash command to `cli_interface.py` that:
 3. Resets conversation history
 4. Updates the prompt display to show the active agent name
 
-Also add `/agent` (no arguments) to show the current active agent and its configuration summary.
+Also add `/agent` (no arguments) to show the current active agent and its configuration summary (name, model, tools, context snippet).
 
 **Key files to modify**:
 - `interfaces/cli_interface.py` -- add `/agent` command handler
 - Optionally update prompt prefix to display active agent name
+
+### Task 4.3 -- Runtime Model Switching in CLI
+
+**Difficulty**: Easy | **Dependencies**: None
+
+Add a `/model` slash command that allows changing the active model mid-session without restarting:
+
+| Invocation | Behavior |
+|------------|----------|
+| `/model` | Show current active model (provider:model_id) |
+| `/model <ref>` | Switch to a different model. Accepts index number, model ID, or `provider:model_id` format. Recreates the agent with the new model, resets conversation. |
+| `/model list` | Alias for `/providers` (quick access) |
+
+This replaces the current workflow of exiting, running `flavia -m <model>`, and losing context. The model change updates `settings.default_model` for the session (not persisted to disk unless explicitly saved).
+
+**Key files to modify**:
+- `interfaces/cli_interface.py` -- add `/model` command handler
+- `interfaces/cli_interface.py` -- update `create_agent_from_settings()` to accept model override
+
+### Task 4.4 -- In-Session Provider & Model Management
+
+**Difficulty**: Medium | **Dependencies**: Task 4.1
+
+Expose the provider management wizards (currently only accessible via CLI flags) as interactive slash commands within the CLI session:
+
+| Command | Equivalent flag | Description |
+|---------|----------------|-------------|
+| `/provider-setup` | `--setup-provider` | Run the interactive provider configuration wizard |
+| `/provider-manage [id]` | `--manage-provider` | Manage models for a provider (add, remove, fetch from API) |
+| `/provider-test [id]` | `--test-provider` | Test connection to a provider |
+
+After provider changes, prompt the user to `/reset` to reload the updated configuration (same pattern as `/setup` and `/agents` already use).
+
+This eliminates the need to exit the interactive session for provider management, making the CLI fully self-sufficient.
+
+**Key files to modify**:
+- `interfaces/cli_interface.py` -- add slash command handlers that call existing wizard functions
+- `setup/provider_wizard.py` -- no changes needed (functions are already importable)
+
+### Task 4.5 -- Standard Default Agent
+
+**Difficulty**: Medium | **Dependencies**: None
+
+Define a built-in "standard" agent that is always available, regardless of whether the project has an `agents.yaml` file. This agent:
+
+- Uses the project's default model (from `providers.yaml` or environment)
+- Has a general-purpose system prompt suitable for academic research and writing assistance
+- Is registered as `"standard"` in the agent list and can be switched to via `/agent standard`
+- Serves as the fallback when no `agents.yaml` exists (replacing the current minimal hardcoded fallback in `create_agent_from_settings()`)
+- Cannot be deleted or overridden by project config (always present alongside project-defined agents)
+
+The standard agent should have a reasonable default tool set (file reading, search, directory listing) and a well-crafted academic-assistant system prompt.
+
+**Key files to modify**:
+- `interfaces/cli_interface.py` -- update `create_agent_from_settings()` to always register the standard agent
+- `agent/profile.py` -- add a `standard_profile()` class method or standalone function
+- Consider a `defaults/standard_agent.yaml` file for the default configuration
+
+### Task 4.6 -- Global Agent Definitions
+
+**Difficulty**: Medium | **Dependencies**: Task 2.1 (structured profiles), Task 4.2 (agent switching)
+
+Support user-level agent definitions in `~/.config/flavia/agents.yaml` that are available across all projects. These complement project-local agents in `.flavia/agents.yaml`.
+
+Resolution order (later overrides earlier for same-name agents):
+1. Built-in standard agent (Task 4.5)
+2. User-level agents (`~/.config/flavia/agents.yaml`)
+3. Project-level agents (`.flavia/agents.yaml`)
+
+Example global agents:
+
+```yaml
+# ~/.config/flavia/agents.yaml
+beamer-specialist:
+  name: "Beamer Presentation Expert"
+  role: "LaTeX Beamer academic presentation specialist"
+  context: |
+    You specialize in creating and improving LaTeX Beamer presentations
+    for academic conferences. You follow best practices for slide design:
+    minimal text, clear figures, consistent themes, proper use of
+    columns, blocks, and overlays.
+  tools: [read_file, list_files, search_files]
+
+paper-reviewer:
+  name: "Academic Paper Reviewer"
+  role: "critical reviewer of academic papers"
+  context: |
+    You review academic papers with the rigor of a top-tier venue
+    reviewer. You evaluate: novelty, methodology, experimental design,
+    writing clarity, and proper citation of related work.
+  tools: [read_file, search_files]
+
+code-analyst:
+  name: "Code Analysis Expert"
+  context: |
+    You specialize in code review, refactoring suggestions, and
+    identifying potential bugs, performance issues, and security
+    concerns in source code.
+  tools: [read_file, list_files, search_files, get_file_info]
+```
+
+The `/agent` command (Task 4.2) lists agents from all three sources with source labels (`[built-in]`, `[global]`, `[project]`).
+
+**Key files to modify**:
+- `config/settings.py` -- load and merge global + local agents configs
+- `config/loader.py` -- discover user-level `agents.yaml`
+- `interfaces/cli_interface.py` -- update agent listing to show sources
+
+### Task 4.7 -- Unified Slash Command Help System
+
+**Difficulty**: Easy | **Dependencies**: None
+
+Improve the `/help` command from a static text block to a structured, categorized system:
+
+1. **`/help`** (no args): Show all commands organized by category with one-line descriptions:
+   - **Session**: `/reset`, `/quit`
+   - **Agents**: `/agent`, `/agents`
+   - **Models & Providers**: `/model`, `/providers`, `/provider-setup`, `/provider-manage`, `/provider-test`
+   - **Information**: `/tools`, `/config`, `/catalog`
+   - **Setup**: `/setup`
+
+2. **`/help <command>`**: Show detailed help for a specific command -- description, arguments, examples, and related commands.
+
+3. Register commands in a lightweight command registry (a dict mapping command names to handler functions and metadata) instead of the current `if/elif` chain in `run_cli()`. This makes it easy to add new commands and auto-generate help text.
+
+**Key files to modify**:
+- `interfaces/cli_interface.py` -- implement command registry, update `/help` handler, refactor `run_cli()` dispatch
 
 ---
 
@@ -590,7 +747,7 @@ Task 1.3 (Word/Office) ───────────┤          │
                                    │          └── Task 1.5 (YouTube/Web)
 
 Area 2 -- Agent System:
-Task 2.1 (Structured Profiles) ──┬── Task 2.2 (CLI Agent Commands)
+Task 2.1 (Structured Profiles) ──┬── Task 2.2 (CLI Agent Commands) ── depends also on Task 4.2
                                  └───────────── Task 2.3 (Meta-Agent)
 
 Area 3 -- Messaging Platforms:
@@ -599,8 +756,14 @@ Task 3.1 (YAML Bot Config) ──┬── Task 3.2 (Per-Conv Agent Binding)
                               └── Task 3.4 (Abstract Interface) ──┬── Task 3.5 (WhatsApp)
                                                                   └── Task 3.6 (Web API)
 
-Area 4 -- CLI:
-Task 4.1 (CLI Agent Switching) ── (independent, no dependencies)
+Area 4 -- CLI Improvements:
+Task 4.1 (Consolidate Info Cmds) ────── Task 4.4 (In-Session Provider Mgmt)
+Task 4.2 (Runtime Agent Switching) ─┐
+Task 4.3 (Runtime Model Switching)  ├── Task 4.6 (Global Agents)
+Task 4.5 (Standard Default Agent)   │     also depends on Task 2.1
+Task 4.7 (Unified Help System)      │
+                                     │
+Task 2.1 (Structured Profiles) ─────┘
 
 Area 5 -- File Modification:
 Task 5.1 (Write/Edit Tools) ──┬── Task 6.1 (LaTeX Compilation)
@@ -621,25 +784,31 @@ Tasks ordered by difficulty (easy first) and dependency readiness. Each task can
 
 | Order | Task | Difficulty | Area |
 |-------|------|------------|------|
-| 1 | **4.1** Runtime agent switching in CLI | Easy | CLI |
-| 2 | **1.3** Word/Office document converter | Easy | File Processing |
-| 3 | **5.1** Write/Edit file tools | Medium | File Modification |
-| 4 | **1.1** Audio/Video transcription converter | Medium | File Processing |
-| 5 | **1.2** Image description converter | Medium | File Processing |
-| 6 | **2.1** Structured agent profiles | Medium | Agents |
-| 7 | **3.1** YAML-based bot configuration | Medium | Messaging |
-| 8 | **6.1** LaTeX compilation tool | Medium | Academic Workflow |
-| 9 | **2.2** CLI agent management commands | Medium | Agents |
-| 10 | **3.2** Per-conversation agent binding | Medium | Messaging |
-| 11 | **3.3** Multi-bot support | Medium | Messaging |
-| 12 | **1.5** Online source converters (YouTube/Web) | Medium | File Processing |
-| 13 | **3.6** Web API interface | Medium | Messaging |
-| 14 | **1.4** OCR + LaTeX equation support | Hard | File Processing |
-| 15 | **3.4** Abstract messaging interface | Hard | Messaging |
-| 16 | **2.3** Meta-agent for agent generation | Hard | Agents |
-| 17 | **6.2** Sandboxed script execution (Python/MATLAB) | Hard | Academic Workflow |
-| 18 | **7.1** Email integration (IMAP/SMTP) | Hard | External Services |
-| 19 | **7.2** Google Calendar integration | Hard | External Services |
-| 20 | **3.5** WhatsApp integration | Hard | Messaging |
+| 1 | **4.1** Consolidate info commands | Easy | CLI |
+| 2 | **4.2** Runtime agent switching in CLI | Easy | CLI |
+| 3 | **4.3** Runtime model switching in CLI | Easy | CLI |
+| 4 | **4.7** Unified slash command help system | Easy | CLI |
+| 5 | **1.3** Word/Office document converter | Easy | File Processing |
+| 6 | **5.1** Write/Edit file tools | Medium | File Modification |
+| 7 | **1.1** Audio/Video transcription converter | Medium | File Processing |
+| 8 | **1.2** Image description converter | Medium | File Processing |
+| 9 | **4.4** In-session provider & model management | Medium | CLI |
+| 10 | **4.5** Standard default agent | Medium | CLI |
+| 11 | **2.1** Structured agent profiles | Medium | Agents |
+| 12 | **3.1** YAML-based bot configuration | Medium | Messaging |
+| 13 | **6.1** LaTeX compilation tool | Medium | Academic Workflow |
+| 14 | **4.6** Global agent definitions | Medium | CLI |
+| 15 | **2.2** CLI agent management commands | Medium | Agents |
+| 16 | **3.2** Per-conversation agent binding | Medium | Messaging |
+| 17 | **3.3** Multi-bot support | Medium | Messaging |
+| 18 | **1.5** Online source converters (YouTube/Web) | Medium | File Processing |
+| 19 | **3.6** Web API interface | Medium | Messaging |
+| 20 | **1.4** OCR + LaTeX equation support | Hard | File Processing |
+| 21 | **3.4** Abstract messaging interface | Hard | Messaging |
+| 22 | **2.3** Meta-agent for agent generation | Hard | Agents |
+| 23 | **6.2** Sandboxed script execution (Python/MATLAB) | Hard | Academic Workflow |
+| 24 | **7.1** Email integration (IMAP/SMTP) | Hard | External Services |
+| 25 | **7.2** Google Calendar integration | Hard | External Services |
+| 26 | **3.5** WhatsApp integration | Hard | Messaging |
 
 This order is a suggestion. Tasks can be implemented in any order that respects the dependency graph above.
