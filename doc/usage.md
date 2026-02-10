@@ -90,8 +90,7 @@ Inside a chat session, the following commands are available:
 |---------|-------------|
 | `/help` | Show help |
 | `/reset` | Reset conversation and reload configuration |
-| `/setup` | Reconfigure agents (re-analyze content) |
-| `/agents` | Configure model per agent/sub-agent |
+| `/agent_setup` | Configure agents (models or full reconfiguration) |
 | `/agent` | List available agents with configurations |
 | `/agent <name>` | Switch to a different agent (resets conversation) |
 | `/catalog` | Browse content catalog (overview, search, summaries, online sources) |
@@ -100,6 +99,55 @@ Inside a chat session, the following commands are available:
 | `/tools <name>` | Show tool schema and parameters |
 | `/config` | Show configuration paths and active settings |
 | `/quit` | Exit session (aliases: `/exit`, `/q`) |
+
+## `/agent_setup` - Configure Agents
+
+Unified command for agent configuration with two modes:
+
+**Mode 1: Quick** - Change models for existing agents
+- Lists all agents (main + subagents)
+- Allows changing the model for each agent
+- No regeneration of agent configurations
+
+**Mode 2: Full** - Complete agent reconfiguration with LLM analysis
+- Model selection for setup analysis
+- Convert PDFs to text (optional)
+- Build/refresh content catalog (optional)
+- Generate file summaries (optional)
+- Choose whether to include specialized subagents
+- Provide optional guidance for the AI
+- LLM analyzes your project and generates agents.yaml
+- Interactive subagent approval (approve/reject each proposed subagent)
+- Iterative refinement with up to 5 revisions
+
+### Workflow example (Full Mode)
+
+Inside a chat session:
+
+```
+You: /agent_setup
+Agent: Choose setup mode:
+  [1] Quick: Change models for existing agents
+  [2] Full: Reconfigure agents completely (with LLM analysis)
+You: 2
+
+[Step 1] Select model for setup analysis (default or custom)
+[Step 2] Convert PDFs to text? (yes/no)
+[Step 3] Build content catalog? (yes/no)
+[Step 4] Generate summaries? (yes/no)
+[Step 5] Include subagents? (yes/no)
+[Step 6] Add guidance for agent creation? (optional)
+[Step 7] Analyzing project...
+[Step 8] Preview generated agents.yaml
+[Step 8b] Subagent approval interface (if enabled):
+         - summarizer? [Y/n] → Yes
+         - explainer? [Y/n] → Yes
+         - quiz_maker? [Y/n] → No
+[Step 9] Accept configuration? (yes/no)
+         If no: provide feedback for revision (up to 5 attempts)
+
+Configuration saved! Use /reset to load.
+```
 
 ## `/catalog` quick workflow
 
