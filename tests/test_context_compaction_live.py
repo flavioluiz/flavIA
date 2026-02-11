@@ -17,6 +17,7 @@ Optional env vars:
 from __future__ import annotations
 
 import os
+from unittest.mock import patch
 
 import pytest
 
@@ -24,6 +25,7 @@ from flavia.agent.profile import AgentProfile
 from flavia.agent.recursive import RecursiveAgent
 from flavia.config.providers import ModelConfig, ProviderConfig, ProviderRegistry
 from flavia.config.settings import Settings
+from flavia.interfaces.commands import CommandContext, dispatch_command
 
 
 DEFAULT_PROVIDER_ID = "synthetic"
@@ -156,3 +158,71 @@ def test_live_compaction_timeout_fallback_with_chunking():
 
     assert summary.strip()
     assert calls["n"] > 1
+
+
+class _CaptureConsole:
+    def __init__(self) -> None:
+        self.printed: list[str] = []
+
+    def print(self, *args, **kwargs) -> None:  # noqa: ANN002,ANN003
+        self.printed.append(" ".join(str(a) for a in args))
+
+
+@pytest.mark.skipif(not _enabled(), reason="Set FLAVIA_LIVE_LLM_TEST=1 to run live LLM tests.")
+def test_live_manual_compact_command_with_large_texts(tmp_path):
+    """Run the `/compact` command path with large conversation payloads."""
+    agent = _build_live_agent()
+
+    large_block = (
+        "Detailed research note with numbered constraints, references, and pending tasks. "
+        "Keep budget=12500, deadline=2026-03-31, decision=approach-B, and files "
+        "docs/spec.md, docs/analysis.md, src/main.py, tests/test_main.py in memory. "
+        "Also preserve risk notes, edge cases, and API contract assumptions. "
+    ) * 40
+
+    for i in range(1, 11):
+        agent.messages.append(
+            {
+                "role": "user",
+                "content": (
+                    f"Large item {i}. "
+                    f"{large_block}"
+                    f"Extra marker: section-{i}, requirement-R{i:02d}."
+                ),
+            }
+        )
+        agent.messages.append(
+            {
+                "role": "assistant",
+                "content": (
+                    f"Captured large item {i} with section-{i} and requirement-R{i:02d}. "
+                    "Will preserve decisions, numbers, paths, and open questions."
+                ),
+            }
+        )
+
+    original_text = agent._serialize_messages_for_compaction(agent.messages[1:])
+    console = _CaptureConsole()
+    ctx = CommandContext(
+        settings=agent.settings,
+        agent=agent,
+        console=console,  # type: ignore[arg-type]
+        history_file=tmp_path / ".prompt_history",
+        chat_log_file=tmp_path / "chat_history.jsonl",
+        history_enabled=False,
+        create_agent=lambda settings, model_override=None: agent,
+    )
+
+    with patch("builtins.input", return_value="y"):
+        result = dispatch_command(ctx, "/compact")
+
+    output = "\n".join(console.printed)
+    assert result is True
+    assert "Conversation compacted." in output
+    assert "Summary:" in output
+    assert "New context:" in output
+    assert len(agent.messages) == 3
+    assert "[Conversation summary from compaction]" in agent.messages[1]["content"]
+    summary = agent.messages[1]["content"].split("]: ", 1)[1]
+    assert summary.strip()
+    assert len(summary) < len(original_text)

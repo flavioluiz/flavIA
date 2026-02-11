@@ -1,5 +1,7 @@
 """Tests for CLI command registry and help system."""
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from flavia.config.providers import ModelConfig, ProviderConfig, ProviderRegistry
@@ -164,6 +166,7 @@ def test_list_commands_returns_primary_names_only():
     assert "/help" in commands
     assert "/model" in commands
     assert "/agent" in commands
+    assert "/compact" in commands
 
 
 # =============================================================================
@@ -361,6 +364,92 @@ def test_dispatch_provider_test_calls_connection_test(monkeypatch):
     assert any("SUCCESS" in line and "ok" in line for line in console.printed)
 
 
+def test_dispatch_compact_cancelled(monkeypatch):
+    """Declining /compact should not trigger compaction."""
+    console = _DummyConsole()
+
+    class _CompactAgent(_DummyAgent):
+        def __init__(self):
+            self.last_prompt_tokens = 45_000
+            self.max_context_tokens = 128_000
+            self.compact_conversation = MagicMock(return_value="summary")
+
+        @property
+        def context_utilization(self):
+            return self.last_prompt_tokens / self.max_context_tokens
+
+    agent = _CompactAgent()
+    ctx = _make_test_context(console=console, agent=agent)
+    monkeypatch.setattr("builtins.input", lambda: "n")
+
+    result = dispatch_command(ctx, "/compact")
+
+    assert result is True
+    agent.compact_conversation.assert_not_called()
+    output = " ".join(console.printed)
+    assert "Context: 45,000/128,000 (35%). Compact conversation?" in output
+    assert "Compaction cancelled." in output
+
+
+def test_dispatch_compact_confirmed_shows_summary_and_new_usage(monkeypatch):
+    """Confirming /compact should show summary and updated token usage."""
+    console = _DummyConsole()
+
+    class _CompactAgent(_DummyAgent):
+        def __init__(self):
+            self.last_prompt_tokens = 45_000
+            self.max_context_tokens = 128_000
+            self.compact_conversation = MagicMock(side_effect=self._compact)
+
+        @property
+        def context_utilization(self):
+            return self.last_prompt_tokens / self.max_context_tokens
+
+        def _compact(self):
+            self.last_prompt_tokens = 3_200
+            return "Compact summary"
+
+    agent = _CompactAgent()
+    ctx = _make_test_context(console=console, agent=agent)
+    monkeypatch.setattr("builtins.input", lambda: "y")
+
+    result = dispatch_command(ctx, "/compact")
+
+    assert result is True
+    agent.compact_conversation.assert_called_once()
+    output = " ".join(console.printed)
+    assert "Conversation compacted." in output
+    assert "Summary:" in output
+    assert "Compact summary" in output
+    assert "New context: 3,200/128,000 (2.5%)" in output
+
+
+def test_dispatch_compact_handles_empty_conversation(monkeypatch):
+    """Compact command should explain when there's nothing to compact."""
+    console = _DummyConsole()
+
+    class _CompactAgent(_DummyAgent):
+        def __init__(self):
+            self.last_prompt_tokens = 0
+            self.max_context_tokens = 128_000
+            self.compact_conversation = MagicMock(return_value="")
+
+        @property
+        def context_utilization(self):
+            return 0.0
+
+    agent = _CompactAgent()
+    ctx = _make_test_context(console=console, agent=agent)
+    monkeypatch.setattr("builtins.input", lambda: "y")
+
+    result = dispatch_command(ctx, "/compact")
+
+    assert result is True
+    agent.compact_conversation.assert_called_once()
+    output = " ".join(console.printed)
+    assert "Nothing to compact (conversation is empty)." in output
+
+
 # =============================================================================
 # Help System Tests
 # =============================================================================
@@ -382,6 +471,7 @@ def test_get_help_listing_includes_commands():
 
     assert "/quit" in help_text
     assert "/reset" in help_text
+    assert "/compact" in help_text
     assert "/help" in help_text
     assert "/model" in help_text
     assert "/agent" in help_text

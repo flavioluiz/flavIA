@@ -33,6 +33,7 @@ When context usage reaches the configured `compact_threshold` (default `0.9`), t
   - `⚠ Context usage at 92%. Reply /compact to summarize and continue, or keep chatting.`
 
 Compaction summarizes the conversation and resets context with the summary injected as starting context.
+You can also force compaction at any time with `/compact`, even below the threshold.
 
 Configuration options:
 - `agents.yaml` per-agent:
@@ -137,6 +138,7 @@ Inside a chat session, the following commands are available:
 | `/help` | Show all commands organized by category |
 | `/help <command>` | Show detailed help for a specific command (usage, examples, related commands) |
 | `/reset` | Reset conversation and reload configuration |
+| `/compact` | Manually compact the current conversation with confirmation |
 | `/agent_setup` | Configure agents (quick model change, revise, or full rebuild) |
 | `/agent` | Open interactive agent selection (fallback: list available agents) |
 | `/agent <name>` | Switch to a different agent (resets conversation) |
@@ -157,10 +159,10 @@ Inside a chat session, the following commands are available:
 
 The unified help system organizes commands into logical categories:
 
-- **Session**: `/quit`, `/reset`
+- **Session**: `/quit`, `/reset`, `/help`, `/compact`
 - **Agents**: `/agent`, `/agent_setup`
 - **Models & Providers**: `/model`, `/providers`, `/provider-setup`, `/provider-manage`, `/provider-test`
-- **Information**: `/tools`, `/config`, `/catalog`, `/help`
+- **Information**: `/tools`, `/config`, `/catalog`
 
 Use `/help` without arguments to see all commands with one-line descriptions grouped by category. Use `/help <command>` for detailed help including usage patterns, examples, and related commands:
 

@@ -102,9 +102,9 @@ with full context. Output only the summary, no preamble.
 
 ---
 
-### Task 8.3 -- Manual /compact Slash Command
+### Task 8.3 -- Manual /compact Slash Command ✅
 
-**Difficulty**: Easy | **Dependencies**: Task 8.2
+**Difficulty**: Easy | **Dependencies**: Task 8.2 | **Status**: Done
 
 Add a `/compact` slash command available in both CLI and Telegram that allows the user to manually trigger conversation compaction at any time, regardless of context utilization level.
 

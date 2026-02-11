@@ -18,6 +18,7 @@ def test_help_text_lists_all_commands():
     assert "/help" in text
     assert "/whoami" in text
     assert "/reset" in text
+    assert "/compact" in text
 
 
 def test_message_preview_truncates_long_text():
