@@ -24,6 +24,15 @@ if TYPE_CHECKING:
 console = Console()
 MAX_SETUP_REVISIONS = 5
 CONVERTED_DIR_NAME = ".converted"
+WRITE_TOOLS = [
+    "write_file",
+    "edit_file",
+    "insert_text",
+    "append_file",
+    "delete_file",
+    "create_directory",
+    "remove_directory",
+]
 
 
 # System prompt for the setup agent
@@ -69,6 +78,10 @@ Available tools:
 - get_catalog_summary: Get a high-level overview of the project content
 - spawn_agent: Create dynamic sub-agents
 - spawn_predefined_agent: Use predefined subagents
+
+When generating agents.yaml, valid runtime write tools are:
+- write_file, edit_file, insert_text, append_file, delete_file, create_directory, remove_directory
+- Only include these when the task explicitly asks for file-modification capability.
 
 ## Final Step:
 
@@ -126,6 +139,10 @@ Use `create_agents_config` to create the configuration with:
 - A descriptive context mentioning the subject area
 - Appropriate tools for research work
 - Helpful specialist subagents
+
+When generating agents.yaml, valid runtime write tools are:
+- write_file, edit_file, insert_text, append_file, delete_file, create_directory, remove_directory
+- Only include these when the task explicitly asks for file-modification capability.
 
 Include a project_description that captures the academic subject.
 """
@@ -752,15 +769,18 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
         config_choice = "2"
 
     if config_choice == "1":
+        main_agent_can_write = _ask_main_agent_write_capability()
         return _run_basic_setup(
             target_dir,
             config_dir,
             selected_model=selected_model,
+            main_agent_can_write=main_agent_can_write,
             preserve_existing_providers=preserve_existing_providers,
             catalog_already_built=catalog is not None,
         )
 
     # Option 2: AI-assisted setup
+    main_agent_can_write = _ask_main_agent_write_capability()
     include_subagents = False
     console.print("\n[bold]Include specialized subagents?[/bold]")
     console.print("  (The AI may suggest subagents like summarizer, explainer, etc.)")
@@ -779,6 +799,7 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
         convert_pdfs=convert_docs,
         pdf_files=pdf_file_refs,
         user_guidance=user_guidance,
+        main_agent_can_write=main_agent_can_write,
         preserve_existing_providers=preserve_existing_providers,
         include_subagents=include_subagents,
         catalog=catalog,
@@ -801,6 +822,17 @@ def _ask_user_guidance(allow_cancel: bool = False) -> str:
     if guidance:
         console.print("[dim]Guidance noted and will be used for agent generation.[/dim]")
     return guidance
+
+
+def _ask_main_agent_write_capability(allow_cancel: bool = False) -> bool:
+    """Ask whether the generated main agent should include write tools."""
+    console.print("\n[bold]Should the main agent be able to modify files?[/bold]")
+    console.print("  (Enables write/edit/delete tools; still constrained by permissions)")
+    return safe_confirm(
+        "Enable file-writing tools for main agent?",
+        default=False,
+        allow_cancel=allow_cancel,
+    )
 
 
 def _offer_provider_setup(config_dir: Path) -> None:
@@ -955,6 +987,7 @@ def _run_basic_setup(
     target_dir: Path,
     config_dir: Path,
     selected_model: Optional[str] = None,
+    main_agent_can_write: bool = False,
     preserve_existing_providers: bool = False,
     catalog_already_built: bool = False,
 ) -> bool:
@@ -975,6 +1008,18 @@ def _run_basic_setup(
             _write_providers_file(config_dir, effective_model)
 
         # Create academic-focused default agents.yaml
+        write_tools_block = ""
+        if main_agent_can_write:
+            write_tools_block = (
+                "    - write_file\n"
+                "    - edit_file\n"
+                "    - insert_text\n"
+                "    - append_file\n"
+                "    - delete_file\n"
+                "    - create_directory\n"
+                "    - remove_directory\n"
+            )
+
         agents_content = f"""\
 # flavIA Agent Configuration
 # Default academic assistant
@@ -999,6 +1044,7 @@ main:
     - query_catalog
     - get_catalog_summary
     - refresh_catalog
+{write_tools_block}\
     - spawn_agent
     - spawn_predefined_agent
 
@@ -1066,6 +1112,7 @@ def _run_ai_setup(
     convert_pdfs: bool = False,
     pdf_files: List[str] = None,
     user_guidance: str = "",
+    main_agent_can_write: bool = False,
     interactive_review: bool = True,
     preserve_existing_providers: bool = False,
     include_subagents: bool = False,
@@ -1099,6 +1146,7 @@ def _run_ai_setup(
             target_dir,
             config_dir,
             selected_model=effective_model,
+            main_agent_can_write=main_agent_can_write,
             catalog_already_built=catalog_already_built,
         )
 
@@ -1133,6 +1181,7 @@ def _run_ai_setup(
                 convert_pdfs=convert_pdfs,
                 selected_model=effective_model,
                 user_guidance=user_guidance,
+                main_agent_can_write=main_agent_can_write,
                 revision_notes=revision_notes,
                 include_subagents=include_subagents,
                 catalog=catalog,
@@ -1150,6 +1199,7 @@ def _run_ai_setup(
                         target_dir,
                         config_dir,
                         selected_model=effective_model,
+                        main_agent_can_write=main_agent_can_write,
                         catalog_already_built=catalog_already_built,
                     )
 
@@ -1158,6 +1208,7 @@ def _run_ai_setup(
                         target_dir,
                         config_dir,
                         selected_model=effective_model,
+                        main_agent_can_write=main_agent_can_write,
                         catalog_already_built=catalog_already_built,
                     )
 
@@ -1175,6 +1226,7 @@ def _run_ai_setup(
                     target_dir,
                     config_dir,
                     selected_model=effective_model,
+                    main_agent_can_write=main_agent_can_write,
                     catalog_already_built=catalog_already_built,
                 )
 
@@ -1196,6 +1248,7 @@ def _run_ai_setup(
                     target_dir,
                     config_dir,
                     selected_model=effective_model,
+                    main_agent_can_write=main_agent_can_write,
                     catalog_already_built=catalog_already_built,
                 )
 
@@ -1211,6 +1264,7 @@ def _run_ai_setup(
                     target_dir,
                     config_dir,
                     selected_model=effective_model,
+                    main_agent_can_write=main_agent_can_write,
                     catalog_already_built=catalog_already_built,
                 )
 
@@ -1225,6 +1279,7 @@ def _run_ai_setup(
             target_dir,
             config_dir,
             selected_model=effective_model,
+            main_agent_can_write=main_agent_can_write,
             catalog_already_built=catalog_already_built,
         )
 
@@ -1238,6 +1293,7 @@ def _run_ai_setup(
             target_dir,
             config_dir,
             selected_model=effective_model,
+            main_agent_can_write=main_agent_can_write,
             catalog_already_built=catalog_already_built,
         )
 
@@ -1246,6 +1302,7 @@ def _build_setup_task(
     convert_pdfs: bool,
     selected_model: str,
     user_guidance: str,
+    main_agent_can_write: bool,
     revision_notes: List[str],
     include_subagents: bool = False,
     catalog: Optional[Any] = None,
@@ -1272,6 +1329,20 @@ def _build_setup_task(
             f"model to '{selected_model}' in agents.yaml."
         ),
     ]
+
+    write_tools_str = ", ".join(WRITE_TOOLS)
+    if main_agent_can_write:
+        parts.append(
+            "The user explicitly wants the main agent to be able to modify files. "
+            "When generating `main.tools`, include ALL write tools: "
+            f"{write_tools_str}. "
+            "Also include `permissions.write` with appropriate writable directories."
+        )
+    else:
+        parts.append(
+            "The user wants a read-only main agent. "
+            f"Do NOT include write tools in `main.tools` ({write_tools_str})."
+        )
 
     # Subagent instructions
     if include_subagents:
@@ -1775,11 +1846,15 @@ def _run_full_reconfiguration_inner(
     )
     subagent_approval_mode = include_subagents  # Flag for approval UI
 
-    # 4. User guidance
-    console.print("\n[bold]Step 4: Project Guidance (Optional)[/bold]")
+    # 4. Main-agent write capability
+    console.print("\n[bold]Step 4: Main Agent File Modification[/bold]")
+    main_agent_can_write = _ask_main_agent_write_capability(allow_cancel=True)
+
+    # 5. User guidance
+    console.print("\n[bold]Step 5: Project Guidance (Optional)[/bold]")
     user_guidance = _ask_user_guidance(allow_cancel=True)
 
-    # 5. Create setup agent
+    # 6. Create setup agent
     agent, error = create_setup_agent(
         base_dir,
         include_pdf_tool=convert_pdfs,
@@ -1791,8 +1866,8 @@ def _run_full_reconfiguration_inner(
         console.print(f"[red]{error}[/red]")
         return False
 
-    # 6. Iterative analysis and generation
-    console.print("\n[bold]Step 5: Analyzing Project[/bold]\n")
+    # 7. Iterative analysis and generation
+    console.print("\n[bold]Step 6: Analyzing Project[/bold]\n")
 
     config_dir.mkdir(parents=True, exist_ok=True)
     agents_file = config_dir / "agents.yaml"
@@ -1806,6 +1881,7 @@ def _run_full_reconfiguration_inner(
             convert_pdfs=convert_pdfs,
             selected_model=selected_model,
             user_guidance=user_guidance,
+            main_agent_can_write=main_agent_can_write,
             revision_notes=revision_notes,
             include_subagents=include_subagents,
             catalog=catalog,
@@ -1935,6 +2011,7 @@ def _run_agent_revision_inner(
     # Model selection
     console.print("\n[bold]Model for revision:[/bold]")
     selected_model = _select_model_for_setup(settings, allow_cancel=True)
+    main_agent_can_write = _ask_main_agent_write_capability(allow_cancel=True)
 
     # Test connection
     attempted, success = _test_selected_model_connection(settings, selected_model)
@@ -1978,6 +2055,7 @@ def _run_agent_revision_inner(
         task = _build_revision_task(
             current_config=current_config,
             selected_model=selected_model,
+            main_agent_can_write=main_agent_can_write,
             feedback=feedback,
             catalog=catalog,
         )
@@ -2031,10 +2109,24 @@ def _run_agent_revision_inner(
 def _build_revision_task(
     current_config: str,
     selected_model: str,
+    main_agent_can_write: bool,
     feedback: str,
     catalog: Optional[Any] = None,
 ) -> str:
     """Build a revision task that includes the current config and user feedback."""
+    write_tools_str = ", ".join(WRITE_TOOLS)
+    if main_agent_can_write:
+        write_instruction = (
+            "Keep or enable write capability for the main agent. "
+            f"Ensure `main.tools` includes all write tools ({write_tools_str}) "
+            "and `permissions.write` includes allowed writable paths."
+        )
+    else:
+        write_instruction = (
+            "Enforce read-only behavior for the main agent. "
+            f"Ensure `main.tools` does NOT include write tools ({write_tools_str})."
+        )
+
     parts = [
         "You are revising an existing agents.yaml configuration. "
         "The user wants to modify the current setup. "
@@ -2045,6 +2137,7 @@ def _build_revision_task(
             "The generated main agent must explicitly set "
             f"model to '{selected_model}' in agents.yaml."
         ),
+        write_instruction,
         f"User requested changes:\n{feedback}",
     ]
 

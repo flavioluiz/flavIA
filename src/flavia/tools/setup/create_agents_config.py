@@ -34,7 +34,14 @@ class CreateAgentsConfigTool(BaseTool):
                 ToolParameter(
                     name="main_tools",
                     type="array",
-                    description="List of tools for the main agent. Available: read_file, list_files, search_files, get_file_info, spawn_agent, spawn_predefined_agent",
+                    description=(
+                        "List of tools for the main agent. Available: "
+                        "read_file, list_files, search_files, get_file_info, "
+                        "query_catalog, get_catalog_summary, refresh_catalog, "
+                        "write_file, edit_file, insert_text, append_file, delete_file, "
+                        "create_directory, remove_directory, "
+                        "spawn_agent, spawn_predefined_agent"
+                    ),
                     required=True,
                     items={"type": "string"},
                 ),

@@ -38,7 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - `create_directory` — create directories (`mkdir -p`)
   - `remove_directory` — remove directories (empty or recursive)
   - All write operations require user confirmation via a callback mechanism (`WriteConfirmation`); denied by default if no handler is configured (fail-safe)
-  - Automatic backups saved to `.flavia/file_backups/` with timestamped filenames before any destructive operation
+  - Automatic backups saved to `.flavia/file_backups/` with high-resolution timestamped filenames before destructive file operations
   - All tools enforce `AgentPermissions.write_paths` via existing permission infrastructure
   - CLI displays real-time status for write operations (e.g., "Writing config.yaml", "Editing main.py")
   - Write confirmation preserved across agent switches (`/agent`, `/model`)

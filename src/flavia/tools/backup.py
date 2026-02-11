@@ -6,6 +6,7 @@ destructive edits can be audited or rolled back manually.
 
 import shutil
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -45,9 +46,14 @@ class FileBackup:
             # File is outside base_dir — use the full path as structure.
             relative = Path(*file_path.parts[1:])
 
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_name = f"{relative.name}.{timestamp}.bak"
         backup_path = backup_root / relative.parent / backup_name
+        suffix = 1
+        while backup_path.exists():
+            backup_name = f"{relative.name}.{timestamp}.{suffix}.bak"
+            backup_path = backup_root / relative.parent / backup_name
+            suffix += 1
 
         try:
             backup_path.parent.mkdir(parents=True, exist_ok=True)

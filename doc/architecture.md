@@ -143,7 +143,7 @@ Write tools require explicit user confirmation before execution. The `WriteConfi
 - **Telegram**: no callback registered, so write operations are denied by default (fail-safe)
 - **Testing**: auto-approve mode bypasses the prompt
 
-Before any destructive write operation, the `FileBackup` class (in `tools/backup.py`) saves a timestamped copy to `.flavia/file_backups/`.
+Before destructive file write operations, the `FileBackup` class (in `tools/backup.py`) saves a timestamped copy to `.flavia/file_backups/`.
 
 ## Content Catalog
 

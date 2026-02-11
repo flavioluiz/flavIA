@@ -11,12 +11,18 @@ class AgentPermissions:
 
     read_paths: list[Path] = field(default_factory=list)
     write_paths: list[Path] = field(default_factory=list)
+    # True when permissions were explicitly configured (even if empty).
+    # This lets the permission checker distinguish:
+    # - implicit defaults/backward-compat fallback
+    # - explicit "deny all" configs
+    explicit: bool = False
 
     def copy(self) -> "AgentPermissions":
         """Create a shallow copy of permissions paths."""
         return AgentPermissions(
             read_paths=self.read_paths.copy(),
             write_paths=self.write_paths.copy(),
+            explicit=self.explicit,
         )
 
     @classmethod
@@ -31,7 +37,7 @@ class AgentPermissions:
         for path_str in config.get("write", []):
             write_paths.append(cls._resolve_path(path_str, base_dir))
 
-        return cls(read_paths=read_paths, write_paths=write_paths)
+        return cls(read_paths=read_paths, write_paths=write_paths, explicit=True)
 
     @staticmethod
     def _resolve_path(path_str: str, base_dir: Path) -> Path:

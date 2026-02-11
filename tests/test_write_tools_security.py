@@ -37,6 +37,25 @@ def _auto_approve_ctx(base_dir: Path, permissions: AgentPermissions | None = Non
     )
 
 
+def _denied_ctx(base_dir: Path, callback) -> AgentContext:
+    wc = WriteConfirmation()
+    wc.set_callback(callback)
+    return AgentContext(
+        agent_id="test",
+        name="test",
+        current_depth=0,
+        max_depth=3,
+        parent_id=None,
+        base_dir=base_dir,
+        available_tools=[],
+        subagents={},
+        model_id="test-model",
+        messages=[],
+        permissions=AgentPermissions(),
+        write_confirmation=wc,
+    )
+
+
 # ──────────────────────────────────────────────
 #  Path traversal — all write tools must refuse
 #  to write outside the allowed directories.
@@ -192,6 +211,84 @@ class TestExplicitPermissions:
         result = CreateDirectoryTool().execute({"path": "forbidden_dir"}, ctx)
         assert "denied" in result.lower()
 
+    def test_edit_denied_outside_allowed(self, tmp_path):
+        allowed = tmp_path / "allowed"
+        denied = tmp_path / "denied"
+        allowed.mkdir()
+        denied.mkdir()
+        target = denied / "file.txt"
+        target.write_text("abc")
+
+        permissions = AgentPermissions(
+            read_paths=[tmp_path.resolve()],
+            write_paths=[allowed.resolve()],
+        )
+        ctx = _auto_approve_ctx(tmp_path, permissions)
+        result = EditFileTool().execute(
+            {"path": "denied/file.txt", "old_text": "a", "new_text": "z"}, ctx
+        )
+        assert "denied" in result.lower()
+        assert target.read_text() == "abc"
+
+    def test_insert_denied_outside_allowed(self, tmp_path):
+        allowed = tmp_path / "allowed"
+        denied = tmp_path / "denied"
+        allowed.mkdir()
+        denied.mkdir()
+        target = denied / "file.txt"
+        target.write_text("line1\n")
+
+        permissions = AgentPermissions(
+            read_paths=[tmp_path.resolve()],
+            write_paths=[allowed.resolve()],
+        )
+        ctx = _auto_approve_ctx(tmp_path, permissions)
+        result = InsertTextTool().execute(
+            {"path": "denied/file.txt", "line_number": 1, "text": "x"}, ctx
+        )
+        assert "denied" in result.lower()
+        assert target.read_text() == "line1\n"
+
+    def test_append_denied_outside_allowed(self, tmp_path):
+        allowed = tmp_path / "allowed"
+        denied = tmp_path / "denied"
+        allowed.mkdir()
+        denied.mkdir()
+        target = denied / "file.txt"
+        target.write_text("base")
+
+        permissions = AgentPermissions(
+            read_paths=[tmp_path.resolve()],
+            write_paths=[allowed.resolve()],
+        )
+        ctx = _auto_approve_ctx(tmp_path, permissions)
+        result = AppendFileTool().execute({"path": "denied/file.txt", "content": "x"}, ctx)
+        assert "denied" in result.lower()
+        assert target.read_text() == "base"
+
+    def test_remove_directory_denied_outside_allowed(self, tmp_path):
+        allowed = tmp_path / "allowed"
+        denied = tmp_path / "denied"
+        allowed.mkdir()
+        denied.mkdir()
+
+        permissions = AgentPermissions(
+            read_paths=[tmp_path.resolve()],
+            write_paths=[allowed.resolve()],
+        )
+        ctx = _auto_approve_ctx(tmp_path, permissions)
+        result = RemoveDirectoryTool().execute({"path": "denied"}, ctx)
+        assert "denied" in result.lower()
+        assert denied.exists()
+
+    def test_explicit_empty_permissions_deny_write_in_base_dir(self, tmp_path):
+        permissions = AgentPermissions.from_config({}, tmp_path)
+        ctx = _auto_approve_ctx(tmp_path, permissions)
+
+        result = WriteFileTool().execute({"path": "file.txt", "content": "x"}, ctx)
+        assert "denied" in result.lower()
+        assert not (tmp_path / "file.txt").exists()
+
 
 class TestConfirmationGate:
     """Write operations must be gated by confirmation."""
@@ -236,3 +333,115 @@ class TestConfirmationGate:
         result = DeleteFileTool().execute({"path": "real.txt"}, ctx)
         assert "cancelled" in result.lower()
         assert target.read_text() == "keep me"
+
+    def test_write_file_denied_by_callback(self, tmp_path):
+        calls: list[tuple[str, str, str]] = []
+
+        def _deny(op, path, details):
+            calls.append((op, path, details))
+            return False
+
+        ctx = _denied_ctx(tmp_path, _deny)
+        result = WriteFileTool().execute({"path": "new.txt", "content": "x"}, ctx)
+        assert "cancelled" in result.lower()
+        assert not (tmp_path / "new.txt").exists()
+        assert len(calls) == 1
+        assert calls[0][0] == "Create file"
+
+    def test_edit_file_denied_by_callback(self, tmp_path):
+        target = tmp_path / "file.txt"
+        target.write_text("before")
+        calls: list[tuple[str, str, str]] = []
+
+        def _deny(op, path, details):
+            calls.append((op, path, details))
+            return False
+
+        ctx = _denied_ctx(tmp_path, _deny)
+        result = EditFileTool().execute(
+            {"path": "file.txt", "old_text": "before", "new_text": "after"}, ctx
+        )
+        assert "cancelled" in result.lower()
+        assert target.read_text() == "before"
+        assert len(calls) == 1
+        assert calls[0][0] == "Edit file"
+
+    def test_insert_text_denied_by_callback(self, tmp_path):
+        target = tmp_path / "file.txt"
+        target.write_text("line1\n")
+        calls: list[tuple[str, str, str]] = []
+
+        def _deny(op, path, details):
+            calls.append((op, path, details))
+            return False
+
+        ctx = _denied_ctx(tmp_path, _deny)
+        result = InsertTextTool().execute(
+            {"path": "file.txt", "line_number": 1, "text": "line0"}, ctx
+        )
+        assert "cancelled" in result.lower()
+        assert target.read_text() == "line1\n"
+        assert len(calls) == 1
+        assert calls[0][0] == "Insert text"
+
+    def test_append_file_denied_by_callback(self, tmp_path):
+        target = tmp_path / "file.txt"
+        target.write_text("line1\n")
+        calls: list[tuple[str, str, str]] = []
+
+        def _deny(op, path, details):
+            calls.append((op, path, details))
+            return False
+
+        ctx = _denied_ctx(tmp_path, _deny)
+        result = AppendFileTool().execute({"path": "file.txt", "content": "line2"}, ctx)
+        assert "cancelled" in result.lower()
+        assert target.read_text() == "line1\n"
+        assert len(calls) == 1
+        assert calls[0][0] == "Append to file"
+
+    def test_delete_file_denied_by_callback(self, tmp_path):
+        target = tmp_path / "file.txt"
+        target.write_text("keep")
+        calls: list[tuple[str, str, str]] = []
+
+        def _deny(op, path, details):
+            calls.append((op, path, details))
+            return False
+
+        ctx = _denied_ctx(tmp_path, _deny)
+        result = DeleteFileTool().execute({"path": "file.txt"}, ctx)
+        assert "cancelled" in result.lower()
+        assert target.read_text() == "keep"
+        assert len(calls) == 1
+        assert calls[0][0] == "Delete file"
+
+    def test_create_directory_denied_by_callback(self, tmp_path):
+        calls: list[tuple[str, str, str]] = []
+
+        def _deny(op, path, details):
+            calls.append((op, path, details))
+            return False
+
+        ctx = _denied_ctx(tmp_path, _deny)
+        result = CreateDirectoryTool().execute({"path": "newdir"}, ctx)
+        assert "cancelled" in result.lower()
+        assert not (tmp_path / "newdir").exists()
+        assert len(calls) == 1
+        assert calls[0][0] == "Create directory"
+
+    def test_remove_directory_denied_by_callback(self, tmp_path):
+        target = tmp_path / "newdir"
+        target.mkdir()
+        calls: list[tuple[str, str, str]] = []
+
+        def _deny(op, path, details):
+            calls.append((op, path, details))
+            return False
+
+        ctx = _denied_ctx(tmp_path, _deny)
+        result = RemoveDirectoryTool().execute({"path": "newdir"}, ctx)
+        assert "cancelled" in result.lower()
+        assert target.exists()
+        assert len(calls) == 1
+        assert calls[0][0] == "Remove directory"

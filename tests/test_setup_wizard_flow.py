@@ -253,10 +253,12 @@ def test_run_setup_wizard_passes_selected_model_to_basic_setup(monkeypatch, tmp_
         _target_dir,
         _config_dir,
         selected_model=None,
+        main_agent_can_write=False,
         preserve_existing_providers=False,
         catalog_already_built=False,
     ):
         captured["model"] = selected_model
+        captured["main_agent_can_write"] = main_agent_can_write
         captured["preserve"] = preserve_existing_providers
         captured["catalog_already_built"] = catalog_already_built
         return True
@@ -265,6 +267,7 @@ def test_run_setup_wizard_passes_selected_model_to_basic_setup(monkeypatch, tmp_
 
     assert run_setup_wizard(tmp_path) is True
     assert captured["model"] == "openai:gpt-4o"
+    assert captured["main_agent_can_write"] is False
     assert captured["preserve"] is False
     assert captured["catalog_already_built"] is False
 
@@ -330,8 +333,8 @@ def test_run_setup_wizard_passes_relative_pdf_paths_from_subfolders(monkeypatch,
     pdf_path.parent.mkdir(parents=True)
     pdf_path.write_text("dummy", encoding="utf-8")
 
-    # Answers: convert docs?, generate summaries?, include subagents?
-    confirm_answers = iter([True, False, False])  # convert, no summaries, no subagents
+    # Answers: convert docs?, write capability?, include subagents?
+    confirm_answers = iter([True, False, False])  # convert, read-only, no subagents
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
@@ -368,6 +371,7 @@ def test_run_setup_wizard_passes_relative_pdf_paths_from_subfolders(monkeypatch,
         convert_pdfs=False,
         pdf_files=None,
         user_guidance="",
+        main_agent_can_write=False,
         preserve_existing_providers=False,
         include_subagents=False,
         catalog=None,
@@ -376,6 +380,7 @@ def test_run_setup_wizard_passes_relative_pdf_paths_from_subfolders(monkeypatch,
         captured["convert_pdfs"] = convert_pdfs
         captured["pdf_files"] = pdf_files
         captured["user_guidance"] = user_guidance
+        captured["main_agent_can_write"] = main_agent_can_write
         captured["preserve_existing_providers"] = preserve_existing_providers
         captured["include_subagents"] = include_subagents
         return True
@@ -386,6 +391,7 @@ def test_run_setup_wizard_passes_relative_pdf_paths_from_subfolders(monkeypatch,
     assert captured["selected_model"] == "openai:gpt-4o"
     assert captured["convert_pdfs"] is True
     assert captured["pdf_files"] == ["papers/nested.pdf"]
+    assert captured["main_agent_can_write"] is False
     assert captured["include_subagents"] is False
 
 
@@ -605,7 +611,8 @@ def test_run_full_reconfiguration_skips_missing_steps_when_user_declines(monkeyp
             True,  # Step 1: Use this model (accept default)
             False,  # Step 2: Run missing steps (build catalog) — decline
             False,  # Step 3: include subagents
-            False,  # Step 4: add guidance
+            False,  # Step 4: write capability (read-only)
+            False,  # Step 5: add guidance
             True,  # Accept configuration
         ]
     )
@@ -661,7 +668,8 @@ def test_run_full_reconfiguration_can_generate_summaries_after_new_catalog(
             True,  # Step 2: Run missing steps (build catalog)
             True,  # Step 2: Generate summaries with LLM
             False,  # Step 3: include subagents
-            False,  # Step 4: add guidance
+            False,  # Step 4: write capability (read-only)
+            False,  # Step 5: add guidance
             True,  # Accept configuration
         ]
     )
@@ -743,7 +751,8 @@ def test_run_full_reconfiguration_rebuild_fallback_without_questionary(monkeypat
             True,  # Step 1: Use this model (accept default)
             True,  # Step 2: All complete -> Rebuild any? yes
             False,  # Step 3: include subagents
-            False,  # Step 4: add guidance
+            False,  # Step 4: write capability (read-only)
+            False,  # Step 5: add guidance
             True,  # Accept configuration
         ]
     )
@@ -805,7 +814,8 @@ def test_run_full_reconfiguration_uses_relative_pdf_paths_from_subfolders(monkey
             True,  # Step 2: Run missing steps (convert documents, build catalog)
             False,  # Step 2: Generate summaries with LLM
             False,  # Step 3: include subagents
-            False,  # Step 4: add guidance
+            False,  # Step 4: write capability (read-only)
+            False,  # Step 5: add guidance
             True,  # Accept configuration
         ]
     )
@@ -873,6 +883,7 @@ def test_run_full_reconfiguration_skips_pdf_prompt_when_nested_converted_exists(
             "All preparation steps are complete. Rebuild any?": False,
             "Run missing steps (build catalog)?": False,
             "Include specialized subagents?": False,
+            "Enable file-writing tools for main agent?": False,
             "Add guidance?": False,
             "\nAccept this configuration?": True,
         }
@@ -930,7 +941,8 @@ def test_run_full_reconfiguration_aborts_when_subagent_approval_cannot_be_applie
             True,  # Step 1: Use this model (accept default)
             False,  # Step 2: Run missing steps (build catalog) — decline
             True,  # Step 3: Include subagents
-            False,  # Step 4: Add guidance — decline
+            False,  # Step 4: write capability (read-only)
+            False,  # Step 5: Add guidance — decline
         ]
     )
 

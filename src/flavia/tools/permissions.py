@@ -38,7 +38,11 @@ def check_read_permission(path: Path, context: "AgentContext") -> tuple[bool, st
     """
     # If no explicit permissions are configured, fall back to base_dir check
     # (backward compatibility)
-    if not context.permissions.read_paths and not context.permissions.write_paths:
+    if (
+        not context.permissions.explicit
+        and not context.permissions.read_paths
+        and not context.permissions.write_paths
+    ):
         resolved = path.resolve()
         base_resolved = context.base_dir.resolve()
         try:
@@ -74,7 +78,11 @@ def check_write_permission(path: Path, context: "AgentContext") -> tuple[bool, s
     """
     # If no explicit permissions are configured, fall back to base_dir check
     # (backward compatibility)
-    if not context.permissions.read_paths and not context.permissions.write_paths:
+    if (
+        not context.permissions.explicit
+        and not context.permissions.read_paths
+        and not context.permissions.write_paths
+    ):
         resolved = path.resolve()
         base_resolved = context.base_dir.resolve()
         try:

@@ -58,14 +58,13 @@ Configuration options:
 When the agent uses a write tool (e.g., `write_file`, `edit_file`, `delete_file`), the CLI prompts for explicit confirmation before executing the operation:
 
 ```text
-⚠ Write operation: write_file
-  Path: ./output/report.md
-  Confirm? [y/N]
+Write confirmation: Write file: ./output/report.md (1842 bytes)
+Allow? [y/N]
 ```
 
 This applies to all seven write tools: `write_file`, `edit_file`, `insert_text`, `append_file`, `delete_file`, `create_directory`, and `remove_directory`. If declined, the operation is cancelled and the agent is notified.
 
-Before any destructive operation, a backup is automatically saved to `.flavia/file_backups/` with a timestamped filename (e.g., `report.md.20250210_143022.bak`).
+Before destructive file operations, a backup is automatically saved to `.flavia/file_backups/` with a timestamped filename (e.g., `report.md.20250210_143022_123456.bak`).
 
 In Telegram mode, write operations are denied by default since there is no interactive confirmation mechanism.
 

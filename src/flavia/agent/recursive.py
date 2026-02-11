@@ -15,6 +15,15 @@ class RecursiveAgent(BaseAgent):
     """Agent capable of spawning and managing sub-agents."""
 
     MAX_ITERATIONS = 20
+    WRITE_TOOL_NAMES = {
+        "write_file",
+        "edit_file",
+        "insert_text",
+        "append_file",
+        "delete_file",
+        "create_directory",
+        "remove_directory",
+    }
 
     def __init__(
         self,
@@ -36,6 +45,9 @@ class RecursiveAgent(BaseAgent):
 
         iterations = 0
         pending_spawns: list[dict[str, Any]] = []
+        had_write_tool_call = False
+        had_successful_write = False
+        write_failures: list[str] = []
 
         while iterations < self.MAX_ITERATIONS:
             iterations += 1
@@ -57,12 +69,28 @@ class RecursiveAgent(BaseAgent):
                     "I could not produce a textual response. "
                     "Please try rephrasing your question."
                 )
-                return (
-                    response.content
-                    or fallback
-                )
+                final_text = response.content or fallback
+                if had_write_tool_call and not had_successful_write and write_failures:
+                    details = "\n".join(f"- {item}" for item in write_failures[-3:])
+                    final_text += (
+                        "\n\nWrite operations were not applied due to errors:\n"
+                        f"{details}"
+                    )
+                return final_text
 
             tool_results, spawns = self._process_tool_calls_with_spawns(response.tool_calls)
+
+            for tool_call, tool_result in zip(response.tool_calls, tool_results):
+                tool_name = getattr(getattr(tool_call, "function", None), "name", "")
+                if tool_name not in self.WRITE_TOOL_NAMES:
+                    continue
+                had_write_tool_call = True
+                result_text = str(tool_result.get("content", ""))
+                if self._is_error_result(result_text):
+                    write_failures.append(f"{tool_name}: {result_text}")
+                else:
+                    had_successful_write = True
+
             self.messages.extend(tool_results)
             pending_spawns.extend(spawns)
 
@@ -80,6 +108,12 @@ class RecursiveAgent(BaseAgent):
 
         self.log("Max iterations reached")
         return "Maximum iterations reached. Please try a more specific request."
+
+    @staticmethod
+    def _is_error_result(result_text: str) -> bool:
+        """Return True when a tool result indicates failure/cancellation."""
+        lowered = result_text.strip().lower()
+        return lowered.startswith("error:") or lowered.startswith("operation cancelled")
 
     def _process_tool_calls_with_spawns(
         self,

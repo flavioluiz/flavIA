@@ -19,6 +19,13 @@ def test_permissions_write_implies_read(tmp_path):
     assert not permissions.can_write(base_dir / "docs" / "a.txt")
 
 
+def test_permissions_from_config_marks_as_explicit(tmp_path):
+    permissions = AgentPermissions.from_config({}, base_dir=tmp_path.resolve())
+    assert permissions.explicit is True
+    assert permissions.read_paths == []
+    assert permissions.write_paths == []
+
+
 def test_subagent_inherits_permissions_as_copy(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     profile = AgentProfile.from_config(

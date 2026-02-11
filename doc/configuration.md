@@ -241,7 +241,7 @@ main:
 ### Permission rules
 
 - **Default**: without a `permissions` block, full access to `base_dir`
-- **Backward compatibility**: an empty `permissions` block (`permissions: {}`) also falls back to full `base_dir` access
+- **Fail-safe explicit config**: an empty `permissions` block (`permissions: {}`) means no read/write paths are allowed
 - **Inheritance**: sub-agents inherit parent permissions unless they specify their own
 - **Dynamic sub-agents**: agents created with `spawn_agent` inherit the current agent's permissions
 - **Write implies read**: write permission automatically grants read access to the same path

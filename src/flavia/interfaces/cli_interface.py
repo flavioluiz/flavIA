@@ -588,47 +588,48 @@ def _cli_write_confirmation_callback(operation: str, path: str, details: str) ->
     fd = sys.stdin.fileno() if hasattr(sys.stdin, "fileno") else None
     old_settings = None
 
-    try:
-        # Restore terminal so the user can type.
-        if _termios is not None and fd is not None:
-            try:
-                old_settings = _termios.tcgetattr(fd)
-                restore = _termios.tcgetattr(fd)
-                restore[3] |= _termios.ECHO | _termios.ICANON
-                _termios.tcsetattr(fd, _termios.TCSANOW, restore)
-            except Exception:
-                old_settings = None
-
-        # Clear animation line and show prompt.
-        _clear_terminal_line()
-        detail_str = f" ({details})" if details else ""
-        console.print(
-            f"\n[bold yellow]Write confirmation:[/bold yellow] "
-            f"{operation}: [cyan]{path}[/cyan]{detail_str}"
-        )
-        console.print("[bold yellow]Allow? [y/N][/bold yellow] ", end="")
-
+    with _confirmation_lock:
         try:
-            answer = input().strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            console.print()
-            return False
+            # Restore terminal so the user can type.
+            if _termios is not None and fd is not None:
+                try:
+                    old_settings = _termios.tcgetattr(fd)
+                    restore = _termios.tcgetattr(fd)
+                    restore[3] |= _termios.ECHO | _termios.ICANON
+                    _termios.tcsetattr(fd, _termios.TCSANOW, restore)
+                except Exception:
+                    old_settings = None
 
-        approved = answer in ("y", "yes")
-        if approved:
-            console.print("[green]Approved[/green]")
-        else:
-            console.print("[yellow]Denied[/yellow]")
-        return approved
+            # Clear animation line and show prompt.
+            _clear_terminal_line()
+            detail_str = f" ({details})" if details else ""
+            console.print(
+                f"\n[bold yellow]Write confirmation:[/bold yellow] "
+                f"{operation}: [cyan]{path}[/cyan]{detail_str}"
+            )
+            console.print("[bold yellow]Allow? [y/N][/bold yellow] ", end="")
 
-    finally:
-        # Re-suppress terminal input.
-        if _termios is not None and old_settings is not None and fd is not None:
             try:
-                _termios.tcflush(fd, _termios.TCIFLUSH)
-                _termios.tcsetattr(fd, _termios.TCSANOW, old_settings)
-            except Exception:
-                pass
+                answer = input().strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                console.print()
+                return False
+
+            approved = answer in ("y", "yes")
+            if approved:
+                console.print("[green]Approved[/green]")
+            else:
+                console.print("[yellow]Denied[/yellow]")
+            return approved
+
+        finally:
+            # Re-suppress terminal input.
+            if _termios is not None and old_settings is not None and fd is not None:
+                try:
+                    _termios.tcflush(fd, _termios.TCIFLUSH)
+                    _termios.tcsetattr(fd, _termios.TCSANOW, old_settings)
+                except Exception:
+                    pass
 
 
 def _run_loading_animation(stop_event: threading.Event, model_ref: str) -> None:
@@ -681,6 +682,13 @@ def _run_status_animation(
     header_printed = False
 
     while not stop_event.is_set():
+        # Pause status rendering while a write-confirmation prompt is active,
+        # otherwise the animation can overwrite the "[y/N]" prompt line.
+        if _confirmation_lock.locked():
+            if stop_event.wait(0.05):
+                break
+            continue
+
         if not header_printed:
             output = console.file
             header_line = _colorize_status(_build_session_header_line(model_ref), _ANSI_BOLD_CYAN)

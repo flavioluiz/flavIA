@@ -124,15 +124,27 @@ def build_system_prompt(
 
     # Permissions info
     permissions = context.permissions
-    if permissions.read_paths or permissions.write_paths:
+    if permissions.explicit or permissions.read_paths or permissions.write_paths:
         perm_lines = ["\nAccess permissions:"]
         if permissions.read_paths:
             read_paths_str = ", ".join(str(p) for p in permissions.read_paths)
             perm_lines.append(f"  Read: {read_paths_str}")
+        else:
+            perm_lines.append("  Read: (none)")
         if permissions.write_paths:
             write_paths_str = ", ".join(str(p) for p in permissions.write_paths)
             perm_lines.append(f"  Write: {write_paths_str}")
+        else:
+            perm_lines.append("  Write: (none)")
         parts.append("\n".join(perm_lines))
+
+    # File-write reliability guard to reduce hallucinated "I wrote the file" responses.
+    parts.append(
+        "\nExecution policy for filesystem changes:\n"
+        "- Use write tools for any filesystem modification request.\n"
+        "- Never claim a file/directory was changed unless a write tool returned a success result.\n"
+        "- If a write tool returns an error or cancellation, clearly report the failure."
+    )
 
     # Tools info
     if tools_description:

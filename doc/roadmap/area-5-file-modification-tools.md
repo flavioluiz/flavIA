@@ -36,7 +36,7 @@ Created `tools/write/` with seven tools that let the agent modify project files,
    - The CLI interface registers a callback that temporarily restores terminal settings (since the agent runs in a thread with suppressed input), presents a `[y/N]` prompt, and re-suppresses after the answer.
    - Telegram interface: no confirmation handler is set, so write operations are naturally denied (fail-safe).
 
-3. **Automatic backups**: Before any destructive operation (write, edit, insert, append, delete), a backup is created in `.flavia/file_backups/` with a timestamped filename (e.g., `config.yaml.20250210_143022.bak`). The `FileBackup` class in `tools/backup.py` handles backup creation and old backup cleanup.
+3. **Automatic backups**: Before destructive file operations (write, edit, insert, append, delete), a backup is created in `.flavia/file_backups/` with a high-resolution timestamped filename (e.g., `config.yaml.20250210_143022_123456.bak`). The `FileBackup` class in `tools/backup.py` handles backup creation and old backup cleanup.
 
 4. **Edit safety**: `edit_file` requires the text to replace to appear exactly once in the file. If it appears zero times or more than once, the operation is rejected with a clear error message.
 
