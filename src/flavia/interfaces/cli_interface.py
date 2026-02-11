@@ -44,6 +44,7 @@ _COMMANDS_WITH_ARGS = {
     "/tools",
     "/provider-manage",
     "/provider-test",
+    "/compact",
 }
 
 

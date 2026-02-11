@@ -541,9 +541,7 @@ def cmd_agent(ctx: CommandContext, args: str) -> bool:
         ctx.console.print(f"[red]Failed to switch to agent '{agent_name}': {e}[/red]")
         return True
 
-    ctx.console.print(
-        f"[green]Switched to agent '{agent_name}'. Conversation reset.[/green]"
-    )
+    ctx.console.print(f"[green]Switched to agent '{agent_name}'. Conversation reset.[/green]")
     _print_active_model_hint(ctx.agent, ctx.settings)
 
     return True
@@ -841,5 +839,57 @@ def cmd_provider_test(ctx: CommandContext, args: str) -> bool:
         ctx.console.print(f"\n[green]SUCCESS[/green] {message}")
     else:
         ctx.console.print(f"\n[red]FAILED[/red] {message}")
+
+    return True
+
+
+@register_command(
+    name="/compact",
+    category="Session",
+    short_desc="Compact conversation",
+    long_desc="Manually trigger conversation compaction to summarize and reduce token usage. "
+    "Shows current context utilization, asks for confirmation, then summarizes the conversation "
+    "and displays the new token usage.",
+    usage="/compact",
+    related=["/reset"],
+)
+def cmd_compact(ctx: CommandContext, args: str) -> bool:
+    """Manually compact the conversation."""
+    prompt_tokens = ctx.agent.last_prompt_tokens
+    max_tokens = ctx.agent.max_context_tokens
+    pct = ctx.agent.context_utilization * 100
+
+    ctx.console.print(
+        f"Context: {prompt_tokens:,}/{max_tokens:,} ({pct:.0f}%). Compact conversation? \\[y/N] ",
+        end="",
+    )
+
+    try:
+        answer = input().strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        ctx.console.print()
+        return True
+
+    if answer in ("y", "yes"):
+        ctx.console.print("[dim]Compacting conversation...[/dim]")
+        try:
+            summary = ctx.agent.compact_conversation()
+            if not summary:
+                ctx.console.print("[yellow]Nothing to compact (conversation is empty).[/yellow]")
+                return True
+
+            ctx.console.print("[green]Conversation compacted.[/green]")
+            ctx.console.print(f"[bold]Summary:[/bold]")
+            ctx.console.print(summary)
+
+            new_pct = ctx.agent.context_utilization * 100
+            new_prompt = ctx.agent.last_prompt_tokens
+            ctx.console.print(
+                f"[dim]New context: {new_prompt:,}/{max_tokens:,} ({new_pct:.1f}%)[/dim]"
+            )
+        except Exception as e:
+            ctx.console.print(f"[red]Compaction failed: {e}[/red]")
+    else:
+        ctx.console.print("[yellow]Compaction cancelled.[/yellow]")
 
     return True

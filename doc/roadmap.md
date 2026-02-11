@@ -11,10 +11,10 @@ Planned features and improvements for flavIA, organized by area. Each task inclu
 This roadmap outlines **41 tasks** across **10 major areas** to extend flavIA from a read-only research assistant into a comprehensive, production-ready AI agent system with multimodal processing, write capabilities, external service integration, web & academic research tools, multi-platform deployment, and file delivery through messaging interfaces.
 
 ### Quick Stats
-- **9 Easy tasks** (< 1 day each) — Quick wins for immediate value — **4 completed** ✓
-- **23 Medium tasks** (1-2 days each) — Core feature development — **3 completed** ✓
+ - **9 Easy tasks** (< 1 day each) — Quick wins for immediate value — **5 completed** ✓
+ - **23 Medium tasks** (1-2 days each) — Core feature development — **3 completed** ✓
 - **9 Hard tasks** (3+ days each) — Complex integrations requiring careful design
-- **Total completed so far**: **7 / 41 tasks** ✓
+ - **Total completed so far**: **8 / 41 tasks** ✓
 
 ### Strategic Priorities
 1. **Immediate value** (Tasks 4.1-4.8, 8.1): Improve CLI UX and add token tracking
@@ -87,9 +87,9 @@ Connect to email and calendar services with read-autonomous, write-confirmed pat
 ### [Area 8: Context Window Management & Compaction](roadmap/area-8-context-window-management.md) (3 tasks)
 Track token usage and automatically summarize conversations approaching context limits.
 
-- **8.1** ~~Token Usage Tracking (Easy)~~ ✅ — Capture response.usage, display utilization in CLI/Telegram
-- **8.2** ~~Compaction with Confirmation (Medium)~~ ✅ — Auto-summarize at threshold with user approval
-- **8.3** Manual /compact Command (Easy) — On-demand conversation summarization
+ - **8.1** ~~Token Usage Tracking (Easy)~~ ✅ — Capture response.usage, display utilization in CLI/Telegram
+ - **8.2** ~~Compaction with Confirmation (Medium)~~ ✅ — Auto-summarize at threshold with user approval
+ - **8.3** ~~Manual /compact Command (Easy)~~ ✅ — On-demand conversation summarization
 
 ### [Area 9: Web & Academic Research Tools](roadmap/area-9-web-academic-research-tools.md) (8 tasks)
 Comprehensive web and academic search toolkit for literature reviews, deep research, and precise scientific citation management.

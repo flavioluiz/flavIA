@@ -79,9 +79,24 @@ def _make_provider_settings(
 
 def test_command_registry_contains_expected_commands():
     """Verify all expected commands are registered."""
-    expected = {"/quit", "/exit", "/q", "/reset", "/help", "/agent_setup",
-                "/agent", "/model", "/providers", "/tools", "/config", "/catalog",
-                "/provider-setup", "/provider-manage", "/provider-test"}
+    expected = {
+        "/quit",
+        "/exit",
+        "/q",
+        "/reset",
+        "/help",
+        "/agent_setup",
+        "/agent",
+        "/model",
+        "/providers",
+        "/tools",
+        "/config",
+        "/catalog",
+        "/provider-setup",
+        "/provider-manage",
+        "/provider-test",
+        "/compact",
+    }
     registered = set(COMMAND_REGISTRY.keys())
     assert expected.issubset(registered), f"Missing: {expected - registered}"
 
@@ -508,5 +523,6 @@ def test_commands_have_consistent_usage_format():
                     primary = name
                     break
 
-            assert metadata.usage.startswith(primary), \
+            assert metadata.usage.startswith(primary), (
                 f"{primary} usage '{metadata.usage}' doesn't start with command name"
+            )
