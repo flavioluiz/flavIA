@@ -71,6 +71,9 @@ class CommandMetadata:
     # Command aliases (e.g., /quit also responds to /exit, /q)
     aliases: list[str] = field(default_factory=list)
 
+    # Whether command accepts trailing arguments
+    accepts_args: bool = False
+
 
 # Global command registry
 COMMAND_REGISTRY: dict[str, CommandMetadata] = {}
@@ -93,6 +96,7 @@ def register_command(
     examples: Optional[list[str]] = None,
     related: Optional[list[str]] = None,
     aliases: Optional[list[str]] = None,
+    accepts_args: bool = False,
 ) -> Callable:
     """Decorator to register a command handler with metadata.
 
@@ -117,6 +121,7 @@ def register_command(
             examples=examples or [],
             related=related or [],
             aliases=aliases or [],
+            accepts_args=accepts_args,
         )
 
         # Register primary name
@@ -149,7 +154,10 @@ def get_command(command_input: str) -> tuple[Optional[CommandMetadata], str, str
 
     # Direct lookup
     if cmd_name in COMMAND_REGISTRY:
-        return COMMAND_REGISTRY[cmd_name], cmd_name, args
+        metadata = COMMAND_REGISTRY[cmd_name]
+        if args and not metadata.accepts_args:
+            return None, cmd_name, args
+        return metadata, cmd_name, args
 
     # Check for commands that accept arguments (e.g., /tools matches /tools <name>)
     # This handles cases where the command is registered as "/tools" but input is "/tools read_file"
@@ -392,6 +400,7 @@ def cmd_reset(ctx: CommandContext, args: str) -> bool:
         "/help model        Show detailed help for /model",
         "/help reset        Show detailed help for /reset",
     ],
+    accepts_args=True,
 )
 def cmd_help(ctx: CommandContext, args: str) -> bool:
     """Show help listing or command-specific help."""
@@ -449,6 +458,7 @@ def cmd_agent_setup(ctx: CommandContext, args: str) -> bool:
         "/agent main        Switch back to the main agent",
     ],
     related=["/agent_setup", "/model"],
+    accepts_args=True,
 )
 def cmd_agent(ctx: CommandContext, args: str) -> bool:
     """List or switch agents."""
@@ -531,6 +541,7 @@ def cmd_agent(ctx: CommandContext, args: str) -> bool:
         "/model openai:gpt-4  Switch to provider:model",
     ],
     related=["/providers", "/agent"],
+    accepts_args=True,
 )
 def cmd_model(ctx: CommandContext, args: str) -> bool:
     """Show or switch model."""
@@ -645,6 +656,7 @@ def cmd_providers(ctx: CommandContext, args: str) -> bool:
         "/tools read_file   Show schema for read_file tool",
     ],
     related=["/config"],
+    accepts_args=True,
 )
 def cmd_tools(ctx: CommandContext, args: str) -> bool:
     """List tools or show tool schema."""

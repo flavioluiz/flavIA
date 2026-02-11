@@ -102,6 +102,15 @@ def test_get_command_returns_none_for_unknown():
     assert cmd_name == "/unknown_command"
 
 
+def test_get_command_rejects_args_for_no_arg_command():
+    """Commands that do not accept args should reject trailing input."""
+    metadata, cmd_name, args = get_command("/quit now")
+
+    assert metadata is None
+    assert cmd_name == "/quit"
+    assert args == "now"
+
+
 def test_list_commands_returns_primary_names_only():
     """Verify list_commands excludes aliases."""
     commands = list_commands()
@@ -164,6 +173,18 @@ def test_dispatch_exit_returns_false():
     result = dispatch_command(ctx, "/exit")
 
     assert result is False
+
+
+def test_dispatch_no_arg_command_with_args_is_unknown():
+    """No-arg commands should not execute when trailing args are provided."""
+    console = _DummyConsole()
+    ctx = _make_test_context(console=console)
+
+    result = dispatch_command(ctx, "/quit now")
+
+    assert result is True
+    assert any("Unknown command" in line for line in console.printed)
+    assert not any("Goodbye" in line for line in console.printed)
 
 
 # =============================================================================
