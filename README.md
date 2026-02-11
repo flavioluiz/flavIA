@@ -23,6 +23,7 @@ flavia --telegram
 
 - **Understands your documents**: converts PDFs to searchable text and analyzes content to create agents specialized in the subject matter
 - **Contextual conversation**: answers questions, explains concepts, finds citations, compares arguments -- all grounded in your materials
+- **File modification**: agents can create, edit, and manage files with permission controls, user confirmation, and automatic backups
 - **Works in any folder**: each directory can have its own configuration with agents adapted to its content
 - **Multiple interfaces**: chat via terminal (interactive CLI) or set up a Telegram bot for access from anywhere
 - **Recursive agents**: the main agent can delegate tasks to specialized sub-agents (summarizer, explainer, researcher)

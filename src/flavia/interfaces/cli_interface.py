@@ -18,6 +18,7 @@ from flavia.agent import AgentProfile, RecursiveAgent, StatusPhase, ToolStatus
 from flavia.agent.status import sanitize_terminal_text
 from flavia.config import ProviderConfig, Settings
 from flavia.interfaces.commands import CommandContext, dispatch_command, list_commands
+from flavia.tools.write_confirmation import WriteConfirmation
 
 console = Console()
 
@@ -568,6 +569,68 @@ def _suppress_terminal_input() -> None:
         termios.tcsetattr(fd, termios.TCSANOW, old_settings)
 
 
+# Lock used by the write-confirmation callback to safely pause the
+# status animation thread while prompting the user.
+_confirmation_lock = threading.Lock()
+
+
+def _cli_write_confirmation_callback(operation: str, path: str, details: str) -> bool:
+    """Prompt the user to confirm a write operation from the agent thread.
+
+    This callback is invoked from within `_suppress_terminal_input`.
+    We temporarily restore the terminal so the user can type "y/N".
+    """
+    try:
+        import termios as _termios
+    except Exception:
+        _termios = None
+
+    fd = sys.stdin.fileno() if hasattr(sys.stdin, "fileno") else None
+    old_settings = None
+
+    try:
+        # Restore terminal so the user can type.
+        if _termios is not None and fd is not None:
+            try:
+                old_settings = _termios.tcgetattr(fd)
+                restore = _termios.tcgetattr(fd)
+                restore[3] |= _termios.ECHO | _termios.ICANON
+                _termios.tcsetattr(fd, _termios.TCSANOW, restore)
+            except Exception:
+                old_settings = None
+
+        # Clear animation line and show prompt.
+        _clear_terminal_line()
+        detail_str = f" ({details})" if details else ""
+        console.print(
+            f"\n[bold yellow]Write confirmation:[/bold yellow] "
+            f"{operation}: [cyan]{path}[/cyan]{detail_str}"
+        )
+        console.print("[bold yellow]Allow? [y/N][/bold yellow] ", end="")
+
+        try:
+            answer = input().strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            console.print()
+            return False
+
+        approved = answer in ("y", "yes")
+        if approved:
+            console.print("[green]Approved[/green]")
+        else:
+            console.print("[yellow]Denied[/yellow]")
+        return approved
+
+    finally:
+        # Re-suppress terminal input.
+        if _termios is not None and old_settings is not None and fd is not None:
+            try:
+                _termios.tcflush(fd, _termios.TCIFLUSH)
+                _termios.tcsetattr(fd, _termios.TCSANOW, old_settings)
+            except Exception:
+                pass
+
+
 def _run_loading_animation(stop_event: threading.Event, model_ref: str) -> None:
     """Render loading frames until the stop event is set."""
     message = _choose_loading_message()
@@ -681,9 +744,7 @@ def _run_status_animation(
             break
 
 
-def _run_agent_with_feedback(
-    agent: RecursiveAgent, user_input: str, verbose: bool = False
-) -> str:
+def _run_agent_with_feedback(agent: RecursiveAgent, user_input: str, verbose: bool = False) -> str:
     """Run agent with visual processing feedback.
 
     Args:
@@ -967,6 +1028,12 @@ def run_cli(settings: Settings) -> None:
 
     agent = create_agent_from_settings(settings)
     _print_active_model_hint(agent, settings)
+
+    # Set up write confirmation callback for write tools
+    write_confirm = WriteConfirmation()
+    write_confirm.set_callback(_cli_write_confirmation_callback)
+    if hasattr(agent, "context"):
+        agent.context.write_confirmation = write_confirm
 
     # Create command context for dispatch
     ctx = CommandContext(

@@ -18,7 +18,8 @@ src/flavia/
 │   ├── base.py               # BaseAgent (abstract class)
 │   ├── recursive.py          # RecursiveAgent (with parallel sub-agents)
 │   ├── profile.py            # AgentProfile + AgentPermissions
-│   └── context.py            # AgentContext (prompt construction)
+│   ├── context.py            # AgentContext (prompt construction, write_confirmation)
+│   └── status.py             # ToolStatus + display formatters
 │
 ├── config/                   # Configuration
 │   ├── loader.py             # File discovery (ConfigPaths)
@@ -26,7 +27,8 @@ src/flavia/
 │   └── providers.py          # ProviderConfig + ProviderRegistry + merge
 │
 ├── interfaces/               # User interfaces
-│   ├── cli_interface.py      # Interactive CLI (Rich + readline)
+│   ├── cli_interface.py      # Interactive CLI (Rich + readline + write confirmation)
+│   ├── commands.py           # Slash command handlers
 │   └── telegram_interface.py # Telegram bot (per user)
 │
 ├── setup/                    # Configuration wizards
@@ -43,12 +45,22 @@ src/flavia/
 ├── tools/                    # Tool system
 │   ├── base.py               # BaseTool (abstract class) + ToolSchema
 │   ├── registry.py           # ToolRegistry (singleton)
-│   ├── permissions.py        # Access permission checking
+│   ├── permissions.py        # Access permission checking (read + write)
+│   ├── write_confirmation.py # WriteConfirmation callback mechanism
+│   ├── backup.py             # FileBackup (timestamped backups in .flavia/file_backups/)
 │   ├── read/                 # Read tools
 │   │   ├── read_file.py
 │   │   ├── list_files.py
 │   │   ├── search_files.py
 │   │   └── get_file_info.py
+│   ├── write/                # Write tools (permission + confirmation enforced)
+│   │   ├── write_file.py
+│   │   ├── edit_file.py
+│   │   ├── insert_text.py
+│   │   ├── append_file.py
+│   │   ├── delete_file.py
+│   │   ├── create_directory.py
+│   │   └── remove_directory.py
 │   ├── spawn/                # Agent creation tools
 │   │   ├── spawn_agent.py
 │   │   └── spawn_predefined_agent.py
@@ -116,13 +128,22 @@ Singleton that maintains the registry of all tools. Read/spawn/content tools are
 
 Abstract class for tools. Each tool defines:
 - Name and description
-- Category (`read`, `spawn`, `content`, `setup`)
+- Category (`read`, `write`, `spawn`, `content`, `setup`)
 - Parameter schema (compatible with OpenAI function calling)
 - Execution method
 
 ### Permissions
 
 The `permissions.py` module checks whether an agent has read or write access to a path, based on the permissions defined in the `AgentProfile`.
+
+### Write confirmation
+
+Write tools require explicit user confirmation before execution. The `WriteConfirmation` class (in `tools/write_confirmation.py`) delegates to a callback registered by the interface:
+- **CLI**: prompts `[y/N]` with temporary terminal restore (agent runs in a background thread with suppressed input)
+- **Telegram**: no callback registered, so write operations are denied by default (fail-safe)
+- **Testing**: auto-approve mode bypasses the prompt
+
+Before any destructive write operation, the `FileBackup` class (in `tools/backup.py`) saves a timestamped copy to `.flavia/file_backups/`.
 
 ## Content Catalog
 

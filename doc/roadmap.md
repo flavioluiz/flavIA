@@ -12,9 +12,9 @@ This roadmap outlines **41 tasks** across **10 major areas** to extend flavIA fr
 
 ### Quick Stats
 - **9 Easy tasks** (< 1 day each) — Quick wins for immediate value — **5 completed** ✓
-- **23 Medium tasks** (1-2 days each) — Core feature development — **3 completed** ✓
+- **23 Medium tasks** (1-2 days each) — Core feature development — **5 completed** ✓
 - **9 Hard tasks** (3+ days each) — Complex integrations requiring careful design
-- **Total completed so far**: **8 / 41 tasks** ✓
+- **Total completed so far**: **10 / 41 tasks** ✓
 
 ### Strategic Priorities
 1. **Immediate value** (Tasks 4.1-4.8, 8.1): Improve CLI UX and add token tracking
@@ -68,9 +68,9 @@ Consolidate commands, eliminate redundancies, add runtime switching, and introdu
 - **4.8** ~~Expand questionary Adoption (Medium)~~ — **DONE** ✓ Interactive prompts with arrow-key menus, autocomplete, and non-TTY fallback
 
 ### [Area 5: File Modification Tools](roadmap/area-5-file-modification-tools.md) (1 task)
-Enable write capabilities using the existing permission infrastructure.
+~~Enable write capabilities using the existing permission infrastructure.~~ **DONE** ✓
 
-- **5.1** Write/Edit File Tools (Medium) — write_file, edit_file, insert_text, append_file with permission checks
+- **5.1** ~~Write/Edit File Tools (Medium)~~ — **DONE** ✓ 7 write tools (write_file, edit_file, insert_text, append_file, delete_file, create_directory, remove_directory) with permission checks, user confirmation, and automatic backups
 
 ### [Area 6: Academic Workflow Tools](roadmap/area-6-academic-workflow-tools.md) (2 tasks)
 Bridge the gap between text generation and actual research output.
@@ -128,10 +128,10 @@ Improve CLI usability, add token tracking, expand file processing to Office docs
 ### Phase 2: Core Write Capabilities (Tasks 5.1, 6.1)
 **Timeline**: 1 week | **Effort**: 2 Medium = ~3-4 days
 
-Enable file modification and LaTeX compilation for productive academic workflows.
+Enable file modification and LaTeX compilation for productive academic workflows. Task 5.1 (write tools) is complete.
 
 **Deliverables**:
-- Agent can create, edit, and modify files (with permissions)
+- ~~Agent can create, edit, and modify files (with permissions)~~ ✓
 - Compile LaTeX documents directly from chat
 
 ### Phase 3: Multimodal Expansion (Tasks 1.1-1.2, 1.5)
@@ -292,7 +292,7 @@ Tasks ordered by a pragmatic implementation sequence that balances dependency re
 | 5 | **1.3** Word/Office document converter | Easy | File Processing |
 | 6 | ~~**8.1** Token usage tracking & display~~ | ~~Easy~~ | ~~Context Management~~ |
 | 7 | ~~**8.3** Manual /compact slash command~~ | ~~Easy~~ | ~~Context Management~~ |
-| 8 | **5.1** Write/Edit file tools | Medium | File Modification |
+| 8 | ~~**5.1** Write/Edit file tools~~ | ~~Medium~~ | ~~File Modification~~ |
 | 9 | **1.1** Audio/Video transcription converter | Medium | File Processing |
 | 10 | **1.2** Image description converter | Medium | File Processing |
 | 11 | ~~**4.4** In-session provider & model management~~ | ~~Medium~~ | ~~CLI~~ |

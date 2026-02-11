@@ -100,7 +100,7 @@ def _truncate_path(path: Any, max_len: int = 40) -> str:
     # Show filename with some parent context
     parts = path_text.replace("\\", "/").split("/")
     if len(parts) <= 2:
-        return f"...{path_text[-(max_len - 3):]}"
+        return f"...{path_text[-(max_len - 3) :]}"
     # Try to show parent/filename
     filename = parts[-1]
     parent = parts[-2]
@@ -108,11 +108,7 @@ def _truncate_path(path: Any, max_len: int = 40) -> str:
     if len(result) <= max_len:
         return result
     # Just show truncated filename
-    return (
-        f"...{filename[-(max_len - 3):]}"
-        if len(filename) > max_len - 3
-        else filename
-    )
+    return f"...{filename[-(max_len - 3) :]}" if len(filename) > max_len - 3 else filename
 
 
 def _truncate_text(text: Any, max_len: int = 30) -> str:
@@ -140,6 +136,12 @@ def format_tool_display(tool_name: str, args: Any) -> str:
         "get_file_info": _format_get_file_info,
         "query_catalog": _format_query_catalog,
         "write_file": _format_write_file,
+        "edit_file": _format_edit_file,
+        "insert_text": _format_insert_text,
+        "append_file": _format_append_file,
+        "delete_file": _format_delete_file,
+        "create_directory": _format_create_directory,
+        "remove_directory": _format_remove_directory,
         "execute_command": _format_execute_command,
         "spawn_agent": _format_spawn_agent,
         "spawn_predefined_agent": _format_spawn_predefined,
@@ -189,6 +191,38 @@ def _format_query_catalog(args: dict[str, Any]) -> str:
 def _format_write_file(args: dict[str, Any]) -> str:
     path = args.get("path", args.get("file_path", ""))
     return f"Writing {_truncate_path(path)}"
+
+
+def _format_edit_file(args: dict[str, Any]) -> str:
+    path = args.get("path", args.get("file_path", ""))
+    return f"Editing {_truncate_path(path)}"
+
+
+def _format_insert_text(args: dict[str, Any]) -> str:
+    path = args.get("path", args.get("file_path", ""))
+    line = args.get("line_number", "")
+    suffix = f" at line {line}" if line else ""
+    return f"Inserting text in {_truncate_path(path)}{suffix}"
+
+
+def _format_append_file(args: dict[str, Any]) -> str:
+    path = args.get("path", args.get("file_path", ""))
+    return f"Appending to {_truncate_path(path)}"
+
+
+def _format_delete_file(args: dict[str, Any]) -> str:
+    path = args.get("path", args.get("file_path", ""))
+    return f"Deleting {_truncate_path(path)}"
+
+
+def _format_create_directory(args: dict[str, Any]) -> str:
+    path = args.get("path", "")
+    return f"Creating directory {_truncate_path(path)}"
+
+
+def _format_remove_directory(args: dict[str, Any]) -> str:
+    path = args.get("path", "")
+    return f"Removing directory {_truncate_path(path)}"
 
 
 def _format_execute_command(args: dict[str, Any]) -> str:

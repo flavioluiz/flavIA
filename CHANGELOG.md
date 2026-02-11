@@ -29,6 +29,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **File Modification Tools (Task 5.1)**: Seven new write tools in `tools/write/` enabling agents to create, edit, and delete files and directories:
+  - `write_file` — create or overwrite files
+  - `edit_file` — replace exact text fragments (single-match enforced)
+  - `insert_text` — insert text at a specific line number
+  - `append_file` — append to files (or create new)
+  - `delete_file` — delete files with automatic backup
+  - `create_directory` — create directories (`mkdir -p`)
+  - `remove_directory` — remove directories (empty or recursive)
+  - All write operations require user confirmation via a callback mechanism (`WriteConfirmation`); denied by default if no handler is configured (fail-safe)
+  - Automatic backups saved to `.flavia/file_backups/` with timestamped filenames before any destructive operation
+  - All tools enforce `AgentPermissions.write_paths` via existing permission infrastructure
+  - CLI displays real-time status for write operations (e.g., "Writing config.yaml", "Editing main.py")
+  - Write confirmation preserved across agent switches (`/agent`, `/model`)
+  - Telegram interface naturally denies write operations (no confirmation handler = fail-safe)
 - **Real-time Tool Status Display**: The CLI now shows which tool the agent is currently executing during processing:
   - Status line updates in real-time (e.g., "Reading config.yaml", "Searching 'TODO'", "Querying catalog")
   - Sub-agents display with indentation to show nesting depth

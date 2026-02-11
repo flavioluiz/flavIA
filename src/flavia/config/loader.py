@@ -224,6 +224,9 @@ main:
 # Ignore sensitive files
 .env
 *.env.local
+
+# File backups created by write tools
+file_backups/
 """
         (config_dir / ".gitignore").write_text(gitignore_content)
 

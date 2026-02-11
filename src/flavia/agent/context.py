@@ -6,6 +6,11 @@ from typing import Any, Optional
 
 from .profile import AgentPermissions, AgentProfile
 
+from typing import TYPE_CHECKING as _TYPE_CHECKING
+
+if _TYPE_CHECKING:
+    from flavia.tools.write_confirmation import WriteConfirmation
+
 
 @dataclass
 class AgentContext:
@@ -22,6 +27,7 @@ class AgentContext:
     model_id: str = "hf:moonshotai/Kimi-K2.5"
     messages: list[dict[str, Any]] = field(default_factory=list)
     permissions: AgentPermissions = field(default_factory=lambda: AgentPermissions())
+    write_confirmation: Optional["WriteConfirmation"] = None
 
     @classmethod
     def from_profile(
@@ -68,6 +74,7 @@ class AgentContext:
             subagents=profile.subagents.copy(),
             model_id=resolved_model or str(profile.model),
             permissions=profile.permissions.copy(),
+            write_confirmation=self.write_confirmation,
         )
 
 

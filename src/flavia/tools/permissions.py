@@ -108,3 +108,18 @@ def can_read_path(path: Path, context: "AgentContext") -> bool:
     """
     allowed, _ = check_read_permission(path, context)
     return allowed
+
+
+def can_write_path(path: Path, context: "AgentContext") -> bool:
+    """
+    Check if the agent can write to the given path (simple boolean check).
+
+    Args:
+        path: Path to check (should be resolved/absolute)
+        context: Agent context with permissions
+
+    Returns:
+        True if the path can be written, False otherwise.
+    """
+    allowed, _ = check_write_permission(path, context)
+    return allowed

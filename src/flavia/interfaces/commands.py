@@ -33,10 +33,15 @@ class CommandContext:
 
     def recreate_agent(self, model_override: Optional[str | int] = None) -> None:
         """Recreate the agent from current settings."""
+        # Preserve write confirmation across agent recreation.
+        old_ctx = getattr(self.agent, "context", None)
+        old_wc = getattr(old_ctx, "write_confirmation", None) if old_ctx else None
         if model_override is not None:
             self.agent = self.create_agent(self.settings, model_override)
         else:
             self.agent = self.create_agent(self.settings)
+        if old_wc is not None and hasattr(self.agent, "context"):
+            self.agent.context.write_confirmation = old_wc
 
 
 # Import Path here to avoid issues with TYPE_CHECKING

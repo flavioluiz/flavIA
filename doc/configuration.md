@@ -19,10 +19,11 @@ Important `.env` behavior:
 ```
 .flavia/
 ├── .env                       # API keys (don't commit!)
-├── .gitignore                 # Ignores .env and cache
+├── .gitignore                 # Ignores .env, cache, and file_backups/
 ├── .connection_checks.yaml    # Startup connection check cache
 ├── providers.yaml             # Provider and model configuration
-└── agents.yaml                # Agent configuration
+├── agents.yaml                # Agent configuration
+└── file_backups/              # Automatic backups before write operations
 ```
 
 ## Providers
@@ -157,10 +158,19 @@ The `{base_dir}` placeholder in the context is replaced with the base directory 
 | `list_files` | read | List directory contents |
 | `search_files` | read | Search for patterns in files |
 | `get_file_info` | read | Get file metadata |
+| `write_file` | write | Create or overwrite a file |
+| `edit_file` | write | Replace exact text in a file (single match required) |
+| `insert_text` | write | Insert text at a specific line number |
+| `append_file` | write | Append content to a file |
+| `delete_file` | write | Delete a file (with automatic backup) |
+| `create_directory` | write | Create a directory |
+| `remove_directory` | write | Remove a directory |
 | `spawn_agent` | spawn | Create dynamic sub-agents |
 | `spawn_predefined_agent` | spawn | Invoke predefined sub-agents from `agents.yaml` |
 | `convert_pdfs` | setup | Convert PDFs to markdown (only available during `--init`) |
 | `create_agents_config` | setup | Create `agents.yaml` (only available during `--init`) |
+
+All write tools enforce `AgentPermissions.write_paths` and require user confirmation in the CLI. Write operations are denied in Telegram (no confirmation handler).
 
 ### Per-agent model configuration
 
@@ -223,6 +233,9 @@ main:
           - "./drafts"
       tools:
         - read_file
+        - write_file
+        - edit_file
+        - append_file
 ```
 
 ### Permission rules
