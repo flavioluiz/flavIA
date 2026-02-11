@@ -14,6 +14,7 @@ This roadmap outlines **41 tasks** across **10 major areas** to extend flavIA fr
 - **9 Easy tasks** (< 1 day each) — Quick wins for immediate value — **4 completed** ✓
 - **23 Medium tasks** (1-2 days each) — Core feature development — **2 completed** ✓
 - **9 Hard tasks** (3+ days each) — Complex integrations requiring careful design
+- **Total completed so far**: **6 / 41 tasks** ✓
 
 ### Strategic Priorities
 1. **Immediate value** (Tasks 4.1-4.8, 8.1): Improve CLI UX and add token tracking
@@ -280,7 +281,7 @@ Task 10.3 benefits from ── Task 3.1 (YAML Bot Config, for per-bot file size 
 
 ## Suggested Implementation Order
 
-Tasks ordered by difficulty (easy first) and dependency readiness. Each task can be implemented independently as long as its dependencies are met.
+Tasks ordered by a pragmatic implementation sequence that balances dependency readiness and delivery value. Each task can be implemented independently as long as its dependencies are met.
 
 | Order | Task | Difficulty | Area |
 |-------|------|------------|------|
@@ -296,7 +297,7 @@ Tasks ordered by difficulty (easy first) and dependency readiness. Each task can
 | 10 | **1.2** Image description converter | Medium | File Processing |
 | 11 | ~~**4.4** In-session provider & model management~~ | ~~Medium~~ | ~~CLI~~ |
 | 12 | **4.5** Standard default agent | Medium | CLI |
-| 13 | **4.8** Expand questionary adoption for prompts | Medium | CLI |
+| 13 | ~~**4.8** Expand questionary adoption for prompts~~ | ~~Medium~~ | ~~CLI~~ |
 | 14 | **2.1** Structured agent profiles | Medium | Agents |
 | 15 | **8.2** Context compaction with confirmation | Medium | Context Management |
 | 16 | **3.1** YAML-based bot configuration | Medium | Messaging |
