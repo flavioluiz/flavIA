@@ -32,7 +32,7 @@ def _build_settings(models: list[ModelConfig]) -> Settings:
 
 def test_manage_provider_add_model_handles_empty_model_list(monkeypatch):
     settings = _build_settings([])
-    choices = iter(["a", "s"])
+    q_select_choices = iter(["a", "s"])  # Add model, Save and exit
     saved: dict[str, object] = {}
 
     def _save_changes(_settings, _provider_id, provider, changes=None):
@@ -40,9 +40,10 @@ def test_manage_provider_add_model_handles_empty_model_list(monkeypatch):
         saved["changes"] = changes
         return True
 
+    # Mock q_select for the action menu
     monkeypatch.setattr(
-        "flavia.setup.provider_wizard.safe_prompt",
-        lambda *args, **kwargs: next(choices),
+        "flavia.setup.provider_wizard.q_select",
+        lambda *args, **kwargs: next(q_select_choices),
     )
     monkeypatch.setattr(
         "flavia.setup.provider_wizard._add_custom_model",
@@ -62,7 +63,8 @@ def test_manage_provider_add_model_handles_empty_model_list(monkeypatch):
 
 def test_manage_provider_merge_fetch_keeps_model_objects(monkeypatch):
     settings = _build_settings([ModelConfig(id="gpt-4o", name="GPT-4o", default=True)])
-    choices = iter(["f", "merge", "s"])
+    q_select_choices = iter(["f", "s"])  # Fetch, Save and exit
+    prompt_choices = iter(["merge"])  # merge strategy
     saved: dict[str, object] = {}
 
     def _save_changes(_settings, _provider_id, provider, changes=None):
@@ -70,9 +72,15 @@ def test_manage_provider_merge_fetch_keeps_model_objects(monkeypatch):
         saved["changes"] = changes
         return True
 
+    # Mock q_select for the action menu
+    monkeypatch.setattr(
+        "flavia.setup.provider_wizard.q_select",
+        lambda *args, **kwargs: next(q_select_choices),
+    )
+    # Mock safe_prompt for merge strategy question
     monkeypatch.setattr(
         "flavia.setup.provider_wizard.safe_prompt",
-        lambda *args, **kwargs: next(choices),
+        lambda *args, **kwargs: next(prompt_choices),
     )
     monkeypatch.setattr(
         "flavia.setup.provider_wizard._fetch_models_for_provider",
@@ -209,10 +217,10 @@ def test_save_provider_changes_creates_local_override_without_secret_leak(monkey
         )
     )
 
-    prompts = iter(["1"])  # Save locally
+    # Mock q_select to return "local" for location selection
     monkeypatch.setattr(
-        "flavia.setup.provider_wizard.safe_prompt",
-        lambda *args, **kwargs: next(prompts),
+        "flavia.setup.provider_wizard.q_select",
+        lambda *args, **kwargs: "local",
     )
     monkeypatch.setattr("flavia.setup.provider_wizard.safe_confirm", lambda *args, **kwargs: True)
 
@@ -282,7 +290,8 @@ def test_manage_provider_models_forwards_target_dir_to_save(monkeypatch, tmp_pat
         captured["target_dir"] = target_dir
         return True
 
-    monkeypatch.setattr("flavia.setup.provider_wizard.safe_prompt", lambda *args, **kwargs: "s")
+    # Mock q_select to return "s" (save and exit)
+    monkeypatch.setattr("flavia.setup.provider_wizard.q_select", lambda *args, **kwargs: "s")
     monkeypatch.setattr(
         "flavia.setup.provider_wizard._save_provider_changes",
         _fake_save_changes,
@@ -339,14 +348,15 @@ def test_manage_provider_save_without_header_edits_preserves_header_placeholders
         )
     )
 
-    def _safe_prompt(prompt, *args, default="", **kwargs):
-        if "Choice" in str(prompt):
+    def _q_select(*args, **kwargs):
+        # For action menu, return "s" (save)
+        # For location selection, return "local"
+        message = args[0] if args else kwargs.get("message", "")
+        if "Action" in str(message):
             return "s"
-        if str(prompt) == "Enter number":
-            return "1"
-        return default
+        return "local"
 
-    monkeypatch.setattr("flavia.setup.provider_wizard.safe_prompt", _safe_prompt)
+    monkeypatch.setattr("flavia.setup.provider_wizard.q_select", _q_select)
     monkeypatch.setattr("flavia.setup.provider_wizard.safe_confirm", lambda *args, **kwargs: True)
 
     assert manage_provider_models(settings, "xai") is True
@@ -411,7 +421,8 @@ def test_save_provider_changes_rename_updates_default_provider(monkeypatch, tmp_
         "headers_changed": False,
     }
 
-    monkeypatch.setattr("flavia.setup.provider_wizard.safe_prompt", lambda *args, **kwargs: "1")
+    # Mock q_select for location selection (return "local")
+    monkeypatch.setattr("flavia.setup.provider_wizard.q_select", lambda *args, **kwargs: "local")
     monkeypatch.setattr("flavia.setup.provider_wizard.safe_confirm", lambda *args, **kwargs: True)
 
     assert _save_provider_changes(settings, "xai", provider, changes=changes) is True

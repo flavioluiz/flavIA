@@ -12,7 +12,7 @@ This roadmap outlines **41 tasks** across **10 major areas** to extend flavIA fr
 
 ### Quick Stats
 - **9 Easy tasks** (< 1 day each) — Quick wins for immediate value — **4 completed** ✓
-- **23 Medium tasks** (1-2 days each) — Core feature development
+- **23 Medium tasks** (1-2 days each) — Core feature development — **2 completed** ✓
 - **9 Hard tasks** (3+ days each) — Complex integrations requiring careful design
 
 ### Strategic Priorities
@@ -64,7 +64,7 @@ Consolidate commands, eliminate redundancies, add runtime switching, and introdu
 - **4.5** Standard Default Agent (Medium) — Built-in fallback agent always available
 - **4.6** Global Agent Definitions (Medium) — User-level agents in ~/.config/flavia/agents.yaml
 - **4.7** ~~Unified Help System (Easy)~~ — **DONE** ✓ Structured /help with categories, command registry, and per-command help
-- **4.8** Expand questionary Adoption (Medium) — Interactive CLI prompts with autocomplete, file paths, and menus
+- **4.8** ~~Expand questionary Adoption (Medium)~~ — **DONE** ✓ Interactive prompts with arrow-key menus, autocomplete, and non-TTY fallback
 
 ### [Area 5: File Modification Tools](roadmap/area-5-file-modification-tools.md) (1 task)
 Enable write capabilities using the existing permission infrastructure.

@@ -10,6 +10,7 @@ from rich.tree import Tree
 
 from flavia.config import Settings
 from flavia.content.catalog import ContentCatalog
+from flavia.setup.prompt_utils import q_select
 
 console = Console()
 
@@ -60,19 +61,47 @@ def _print_catalog_menu() -> str:
     """Print the main catalog menu and get user choice."""
     console.print("\n[bold cyan]Content Catalog[/bold cyan]")
     console.print("=" * 40)
-    console.print("[1] Overview / Statistics")
-    console.print("[2] Browse Files (tree view)")
-    console.print("[3] Search")
-    console.print("[4] View Summaries")
-    console.print("[5] Online Sources")
-    console.print("[6] Add Online Source")
-    console.print("[q] Back to chat")
-    console.print()
 
     try:
-        return console.input("[bold]Choice:[/bold] ").strip()
-    except (EOFError, KeyboardInterrupt):
+        import questionary
+
+        menu_choices = [
+            questionary.Choice(title="Overview / Statistics", value="1"),
+            questionary.Choice(title="Browse Files (tree view)", value="2"),
+            questionary.Choice(title="Search", value="3"),
+            questionary.Choice(title="View Summaries", value="4"),
+            questionary.Choice(title="Online Sources", value="5"),
+            questionary.Choice(title="Add Online Source", value="6"),
+            questionary.Choice(title="Back to chat", value="q"),
+        ]
+    except ImportError:
+        menu_choices = [
+            "Overview / Statistics",
+            "Browse Files (tree view)",
+            "Search",
+            "View Summaries",
+            "Online Sources",
+            "Add Online Source",
+            "Back to chat",
+        ]
+
+    choice = q_select("Select option:", choices=menu_choices, default="1")
+
+    if choice is None:
         return "q"
+
+    # Map title back to value if needed
+    title_to_value = {
+        "Overview / Statistics": "1",
+        "Browse Files (tree view)": "2",
+        "Search": "3",
+        "View Summaries": "4",
+        "Online Sources": "5",
+        "Add Online Source": "6",
+        "Back to chat": "q",
+    }
+
+    return title_to_value.get(choice, choice)
 
 
 def _show_overview(catalog: ContentCatalog) -> None:

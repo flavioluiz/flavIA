@@ -29,6 +29,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Interactive Prompts with questionary (Task 4.8)**: Replaced plain `input()` and numbered menus with `questionary` interactive prompts throughout the CLI:
+  - New wrapper functions in `prompt_utils.py`: `q_select()`, `q_autocomplete()`, `q_path()`, `q_password()`, `q_confirm()`, `q_checkbox()`
+  - All wrappers include automatic non-TTY fallback for scripts and CI environments
+  - Agent setup mode selection now uses arrow-key navigation
+  - Provider wizard menus converted to interactive selection
+  - Catalog browser uses interactive menu
+  - `/agent` command offers autocomplete when no args provided
 - **In-Session Provider Management (Task 4.4)**: New slash commands for managing providers without exiting the CLI
   - `/provider-setup` — Run the interactive provider configuration wizard
   - `/provider-manage [id]` — Manage provider models and settings (add, remove, fetch, rename)

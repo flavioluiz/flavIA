@@ -449,11 +449,11 @@ def cmd_agent_setup(ctx: CommandContext, args: str) -> bool:
     name="/agent",
     category="Agents",
     short_desc="List or switch agents",
-    long_desc="Without arguments, lists all available agents. "
+    long_desc="Without arguments, lists all available agents (or offers interactive selection). "
     "With an agent name, switches to that agent and resets the conversation.",
     usage="/agent [name]",
     examples=[
-        "/agent             List available agents",
+        "/agent             List available agents (or interactive selection)",
         "/agent summarizer  Switch to the 'summarizer' agent",
         "/agent main        Switch back to the main agent",
     ],
@@ -467,60 +467,79 @@ def cmd_agent(ctx: CommandContext, args: str) -> bool:
         _print_active_model_hint,
         _resolve_agent_model_ref,
     )
+    from flavia.setup.prompt_utils import is_interactive, q_autocomplete
 
-    if args.strip():
-        # Switch to specified agent
-        agent_name = args.strip()
-        current = ctx.settings.active_agent or "main"
+    available = _get_available_agents(ctx.settings)
 
-        if agent_name == current:
-            ctx.console.print(f"[yellow]Already using agent '{agent_name}'.[/yellow]")
-            return True
-
-        # Validate agent exists
-        available = _get_available_agents(ctx.settings)
-        if agent_name not in available:
-            ctx.console.print(f"[red]Agent '{agent_name}' not found.[/red]")
-            ctx.console.print(f"Available: {', '.join(available.keys()) or '(none)'}")
-            return True
-
-        # Validate provider auth for target agent model before switching
-        target_model_ref = _resolve_agent_model_ref(ctx.settings, agent_name, available)
-        provider, _ = ctx.settings.resolve_model_with_provider(target_model_ref)
-        if provider is not None and not provider.api_key:
-            ctx.console.print(
-                f"[red]Cannot switch to '{agent_name}': API key not configured "
-                f"for provider '{provider.id}'.[/red]"
+    if not args.strip():
+        # No args - either offer autocomplete or list
+        if is_interactive() and available:
+            agent_name = q_autocomplete(
+                "Switch to agent:",
+                choices=list(available.keys()),
+                default="main",
             )
-            if provider.api_key_env_var:
-                ctx.console.print(
-                    f"[dim]Set {provider.api_key_env_var}, run /reset, and try again.[/dim]"
-                )
+            if agent_name and agent_name in available:
+                args = agent_name
             else:
-                ctx.console.print(
-                    "[dim]Run 'flavia --setup-provider', run /reset, and try again.[/dim]"
-                )
+                # User cancelled or invalid - show list
+                from flavia.display import display_agents
+
+                display_agents(ctx.settings, console=ctx.console, use_rich=True)
+                return True
+        else:
+            # Non-interactive or no agents - show list
+            from flavia.display import display_agents
+
+            display_agents(ctx.settings, console=ctx.console, use_rich=True)
             return True
 
-        # Update settings and create new agent
-        previous_active_agent = ctx.settings.active_agent
-        ctx.settings.active_agent = None if agent_name == "main" else agent_name
-        try:
-            ctx.recreate_agent()
-        except Exception as e:
-            ctx.settings.active_agent = previous_active_agent
-            ctx.console.print(f"[red]Failed to switch to agent '{agent_name}': {e}[/red]")
-            return True
+    # Switch to specified agent
+    agent_name = args.strip()
+    current = ctx.settings.active_agent or "main"
 
+    if agent_name == current:
+        ctx.console.print(f"[yellow]Already using agent '{agent_name}'.[/yellow]")
+        return True
+
+    # Validate agent exists
+    if agent_name not in available:
+        ctx.console.print(f"[red]Agent '{agent_name}' not found.[/red]")
+        ctx.console.print(f"Available: {', '.join(available.keys()) or '(none)'}")
+        return True
+
+    # Validate provider auth for target agent model before switching
+    target_model_ref = _resolve_agent_model_ref(ctx.settings, agent_name, available)
+    provider, _ = ctx.settings.resolve_model_with_provider(target_model_ref)
+    if provider is not None and not provider.api_key:
         ctx.console.print(
-            f"[green]Switched to agent '{agent_name}'. Conversation reset.[/green]"
+            f"[red]Cannot switch to '{agent_name}': API key not configured "
+            f"for provider '{provider.id}'.[/red]"
         )
-        _print_active_model_hint(ctx.agent, ctx.settings)
-    else:
-        # List available agents
-        from flavia.display import display_agents
+        if provider.api_key_env_var:
+            ctx.console.print(
+                f"[dim]Set {provider.api_key_env_var}, run /reset, and try again.[/dim]"
+            )
+        else:
+            ctx.console.print(
+                "[dim]Run 'flavia --setup-provider', run /reset, and try again.[/dim]"
+            )
+        return True
 
-        display_agents(ctx.settings, console=ctx.console, use_rich=True)
+    # Update settings and create new agent
+    previous_active_agent = ctx.settings.active_agent
+    ctx.settings.active_agent = None if agent_name == "main" else agent_name
+    try:
+        ctx.recreate_agent()
+    except Exception as e:
+        ctx.settings.active_agent = previous_active_agent
+        ctx.console.print(f"[red]Failed to switch to agent '{agent_name}': {e}[/red]")
+        return True
+
+    ctx.console.print(
+        f"[green]Switched to agent '{agent_name}'. Conversation reset.[/green]"
+    )
+    _print_active_model_hint(ctx.agent, ctx.settings)
 
     return True
 

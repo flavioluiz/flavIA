@@ -245,8 +245,8 @@ def test_run_setup_wizard_passes_selected_model_to_basic_setup(monkeypatch, tmp_
     )
     monkeypatch.setattr("flavia.setup_wizard.find_binary_documents", lambda _directory: [])
     monkeypatch.setattr("flavia.setup_wizard._build_content_catalog", lambda *args, **kwargs: None)
-    # Option "1" = simple config (no analysis)
-    monkeypatch.setattr("flavia.setup_wizard.safe_prompt", lambda *args, **kwargs: "1")
+    # Option "1" = simple config (no analysis) - mock q_select for the config choice menu
+    monkeypatch.setattr("flavia.setup_wizard.q_select", lambda *args, **kwargs: "1")
     monkeypatch.setattr("flavia.setup_wizard.safe_confirm", lambda *args, **kwargs: False)
 
     def _fake_run_basic_setup(
@@ -330,9 +330,8 @@ def test_run_setup_wizard_passes_relative_pdf_paths_from_subfolders(monkeypatch,
     pdf_path.parent.mkdir(parents=True)
     pdf_path.write_text("dummy", encoding="utf-8")
 
-    # Answers: convert docs?, generate summaries?, config choice "2", include subagents?
+    # Answers: convert docs?, generate summaries?, include subagents?
     confirm_answers = iter([True, False, False])  # convert, no summaries, no subagents
-    prompt_answers = iter(["2"])  # analyze content
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
@@ -348,9 +347,8 @@ def test_run_setup_wizard_passes_relative_pdf_paths_from_subfolders(monkeypatch,
     monkeypatch.setattr(
         "flavia.setup_wizard.safe_confirm", lambda *args, **kwargs: next(confirm_answers)
     )
-    monkeypatch.setattr(
-        "flavia.setup_wizard.safe_prompt", lambda *args, **kwargs: next(prompt_answers)
-    )
+    # Mock q_select to return "2" (analyze content)
+    monkeypatch.setattr("flavia.setup_wizard.q_select", lambda *args, **kwargs: "2")
     monkeypatch.setattr("flavia.setup_wizard._ask_user_guidance", lambda: "")
 
     # Mock catalog build to avoid actual file scanning
@@ -410,7 +408,8 @@ def test_run_setup_wizard_preserves_existing_providers_on_overwrite(monkeypatch,
     (config_dir / ".env").write_text("SYNTHETIC_API_KEY=old\n", encoding="utf-8")
     (config_dir / "agents.yaml").write_text("main:\n  context: old\n", encoding="utf-8")
 
-    confirm_answers = iter([True, False])  # overwrite existing config, no summaries
+    # overwrite existing config, no summaries, no subagents, no guidance
+    confirm_answers = iter([True, False, False, False])
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
@@ -428,9 +427,8 @@ def test_run_setup_wizard_preserves_existing_providers_on_overwrite(monkeypatch,
     monkeypatch.setattr(
         "flavia.setup_wizard.safe_confirm", lambda *args, **kwargs: next(confirm_answers)
     )
-    monkeypatch.setattr(
-        "flavia.setup_wizard.safe_prompt", lambda *args, **kwargs: "1"
-    )  # simple config
+    # Mock q_select to return "1" (simple config)
+    monkeypatch.setattr("flavia.setup_wizard.q_select", lambda *args, **kwargs: "1")
     monkeypatch.setattr("flavia.setup_wizard._offer_provider_setup", lambda _config_dir: None)
 
     assert run_setup_wizard(tmp_path) is True
@@ -534,7 +532,8 @@ def test_run_agent_setup_command_quick_mode_delegates_to_model_manager(monkeypat
     settings = Settings(default_model="openai:gpt-4o")
     captured: dict[str, object] = {}
 
-    monkeypatch.setattr("flavia.setup_wizard.safe_prompt", lambda *args, **kwargs: "1")
+    # Mock q_select to return "1" (quick mode)
+    monkeypatch.setattr("flavia.setup_wizard.q_select", lambda *args, **kwargs: "1")
 
     def _fake_manage_agent_models(_settings, _base_dir):
         captured["settings"] = _settings
@@ -552,7 +551,8 @@ def test_run_agent_setup_command_full_mode_delegates_to_full_reconfiguration(mon
     settings = Settings(default_model="openai:gpt-4o")
     captured: dict[str, object] = {}
 
-    monkeypatch.setattr("flavia.setup_wizard.safe_prompt", lambda *args, **kwargs: "3")
+    # Mock q_select to return "3" (full mode)
+    monkeypatch.setattr("flavia.setup_wizard.q_select", lambda *args, **kwargs: "3")
 
     def _fake_run_full(_settings, _base_dir):
         captured["settings"] = _settings
@@ -572,7 +572,8 @@ def test_run_agent_setup_command_revise_mode_delegates_to_agent_revision(
     settings = Settings(default_model="openai:gpt-4o")
     captured: dict[str, object] = {}
 
-    monkeypatch.setattr("flavia.setup_wizard.safe_prompt", lambda *args, **kwargs: "2")
+    # Mock q_select to return "2" (revise mode)
+    monkeypatch.setattr("flavia.setup_wizard.q_select", lambda *args, **kwargs: "2")
 
     def _fake_run_revision(_settings, _base_dir):
         captured["settings"] = _settings
@@ -586,9 +587,10 @@ def test_run_agent_setup_command_revise_mode_delegates_to_agent_revision(
     assert captured["base_dir"] == tmp_path
 
 
-def test_run_agent_setup_command_returns_false_on_invalid_choice(monkeypatch, tmp_path):
+def test_run_agent_setup_command_returns_false_on_cancelled(monkeypatch, tmp_path):
     settings = Settings(default_model="openai:gpt-4o")
-    monkeypatch.setattr("flavia.setup_wizard.safe_prompt", lambda *args, **kwargs: "x")
+    # Mock q_select to return None (cancelled)
+    monkeypatch.setattr("flavia.setup_wizard.q_select", lambda *args, **kwargs: None)
 
     assert run_agent_setup_command(settings, tmp_path) is False
 

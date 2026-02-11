@@ -110,9 +110,10 @@ class TestRunCatalogCommand:
         settings = MagicMock()
         settings.base_dir = tmp_path
 
-        with patch("flavia.interfaces.catalog_command.console") as mock_console:
-            # Mock input to return 'q' immediately
-            mock_console.input.return_value = "q"
+        with patch("flavia.interfaces.catalog_command.console") as mock_console, \
+             patch("flavia.interfaces.catalog_command.q_select") as mock_q_select:
+            # Mock q_select to return 'q' immediately
+            mock_q_select.return_value = "q"
 
             result = run_catalog_command(settings)
             assert result is True
@@ -130,9 +131,10 @@ class TestRunCatalogCommand:
         settings = MagicMock()
         settings.base_dir = tmp_path
 
-        with patch("flavia.interfaces.catalog_command.console") as mock_console:
+        with patch("flavia.interfaces.catalog_command.console") as mock_console, \
+             patch("flavia.interfaces.catalog_command.q_select") as mock_q_select:
             # Return "1" first, then "q" to exit
-            mock_console.input.side_effect = ["1", "q"]
+            mock_q_select.side_effect = ["1", "q"]
 
             result = run_catalog_command(settings)
             assert result is True
@@ -163,9 +165,10 @@ class TestCatalogCommandIntegration:
         settings = MagicMock()
         settings.base_dir = tmp_path
 
-        with patch("flavia.interfaces.catalog_command.console") as mock_console:
+        with patch("flavia.interfaces.catalog_command.console") as mock_console, \
+             patch("flavia.interfaces.catalog_command.q_select") as mock_q_select:
             # Simulate: overview -> browse -> summaries -> quit
-            mock_console.input.side_effect = ["1", "2", "4", "q"]
+            mock_q_select.side_effect = ["1", "2", "4", "q"]
 
             result = run_catalog_command(settings)
             assert result is True

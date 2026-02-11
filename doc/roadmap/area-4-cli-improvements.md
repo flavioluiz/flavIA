@@ -223,9 +223,46 @@ The `/agent` command (Task 4.2) lists agents from all three sources with source 
 
 ---
 
-### Task 4.8 -- Expand questionary Adoption for Interactive Prompts
+### Task 4.8 -- Expand questionary Adoption for Interactive Prompts ✓ COMPLETED
 
-**Difficulty**: Medium | **Dependencies**: Task 4.7 (command registry)
+**Difficulty**: Medium | **Dependencies**: Task 4.7 (command registry) | **Status**: DONE
+
+**Implementation summary**:
+
+1. **Added questionary wrappers in `prompt_utils.py`** with automatic non-TTY fallback:
+   - `is_interactive()` — Detects TTY for stdin/stdout
+   - `q_select()` — Arrow-key menu selection with numbered fallback
+   - `q_autocomplete()` — Text input with completion suggestions
+   - `q_path()` — File/directory path with tab completion
+   - `q_password()` — Masked password input
+   - `q_confirm()` — Yes/no confirmation
+   - `q_checkbox()` — Multi-select with checkboxes
+
+2. **Converted numbered menus** in:
+   - `setup_wizard.py`: Mode selection (Quick/Revise/Full), config choice (Simple/Analyze), model selection
+   - `provider_wizard.py`: Provider type, model selection, location choice, default model, action menu, model removal
+   - `catalog_command.py`: Main menu navigation
+
+3. **Added agent autocomplete** in `/agent` command when no args provided
+
+4. **Created test helpers** in `tests/helpers/questionary_mocks.py`
+
+5. **Removed obsolete functions**: `safe_prompt_with_style()`, `safe_confirm_with_style()` removed from prompt_utils.py
+
+**Files modified**:
+- `src/flavia/setup/prompt_utils.py` — New wrappers, removed obsolete functions
+- `src/flavia/setup_wizard.py` — Converted to `q_select()`
+- `src/flavia/setup/provider_wizard.py` — Converted menus and selection
+- `src/flavia/interfaces/catalog_command.py` — Converted menu
+- `src/flavia/interfaces/commands.py` — Agent autocomplete
+- `tests/helpers/questionary_mocks.py` — New test utilities
+- `tests/test_setup_wizard_flow.py` — Updated mocks
+- `tests/test_catalog_command.py` — Updated mocks
+- `tests/test_provider_management_regressions.py` — Updated mocks
+
+---
+
+**Original specification (for reference)**:
 
 flavIA's interactive CLI currently uses plain `input()` for all user prompts (via `safe_prompt()`/`safe_confirm()` in `prompt_utils.py`), with `questionary.checkbox()` used only in 2 places. The `questionary` library (already a dependency) provides a rich set of interactive prompts that significantly improve UX: autocomplete, file path selection with tab completion, single/multi-select menus, password masking, and more.
 

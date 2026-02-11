@@ -16,7 +16,13 @@ from flavia.config.providers import (
     ModelConfig as ProviderModelConfig,
     expand_env_vars,
 )
-from flavia.setup.prompt_utils import safe_confirm, safe_prompt
+from flavia.setup.prompt_utils import (
+    is_interactive,
+    q_checkbox,
+    q_select,
+    safe_confirm,
+    safe_prompt,
+)
 
 console = Console()
 
@@ -253,25 +259,45 @@ def test_provider_connection(
 
 def _select_provider_type(settings=None) -> Optional[dict[str, str]]:
     """Ask user to select provider source/type."""
-    console.print("\n[bold]Select a provider:[/bold]")
-
-    table = Table(show_header=False, box=None, padding=(0, 2))
     choices = _collect_provider_choices(settings=settings)
-    for i, choice in enumerate(choices, 1):
-        table.add_row(
-            f"  [{i}]",
-            f"[bold]{choice['name']}[/bold]",
-            f"[dim]{choice['description']}[/dim]",
-        )
-    console.print(table)
-
-    choice = safe_prompt("\nEnter number", default="1")
 
     try:
-        index = int(choice) - 1
+        import questionary
+
+        select_choices = [
+            questionary.Choice(
+                title=f"{choice['name']} - {choice['description']}",
+                value=str(i),
+            )
+            for i, choice in enumerate(choices)
+        ]
+    except ImportError:
+        select_choices = [
+            f"{choice['name']} - {choice['description']}"
+            for choice in choices
+        ]
+
+    selected = q_select("Select a provider:", choices=select_choices, default="0")
+
+    if selected is None:
+        return None
+
+    try:
+        # Handle both index string and title string
+        if selected.isdigit():
+            index = int(selected)
+        else:
+            # Find by title match
+            for i, choice in enumerate(choices):
+                if f"{choice['name']} - {choice['description']}" == selected:
+                    index = i
+                    break
+            else:
+                return None
+
         if 0 <= index < len(choices):
             return choices[index]
-    except ValueError:
+    except (ValueError, AttributeError):
         pass
 
     console.print("[red]Invalid choice[/red]")
@@ -407,43 +433,73 @@ def _select_models(
     headers: Optional[dict[str, str]] = None,
 ) -> list[dict]:
     """Let user select which models to enable."""
-    console.print("\n[bold]Select models to enable:[/bold]")
-
-    table = Table(show_header=False, box=None, padding=(0, 2))
-    for i, model in enumerate(available_models, 1):
-        default_marker = " [default]" if model.get("default") else ""
-        table.add_row(f"  [{i}]", f"{model['name']}{default_marker}", f"[dim]{model['id']}[/dim]")
-    console.print(table)
-    console.print("  \\[a] All models")
+    # Build action choices first
+    action_options = ["Select from list", "All models"]
     if api_key and api_base_url:
-        console.print("  \\[f] Fetch models from provider API")
-    console.print("  \\[+] Add custom model")
+        action_options.append("Fetch models from provider API")
+    action_options.append("Add custom model")
 
-    choice = safe_prompt(
-        "\nEnter numbers separated by comma, 'a' for all, 'f' to fetch, or '+' to add",
-        default="a",
+    try:
+        import questionary
+
+        action_choices = [
+            questionary.Choice(title=opt, value=opt) for opt in action_options
+        ]
+    except ImportError:
+        action_choices = action_options
+
+    action = q_select(
+        "How would you like to select models?",
+        choices=action_choices,
+        default="All models",
     )
 
-    if choice.lower() == "a":
+    if action is None or action == "All models":
         return available_models
 
-    if choice.lower() == "f" and api_key and api_base_url:
+    if action == "Fetch models from provider API" and api_key and api_base_url:
         return _fetch_and_select_models(api_key, api_base_url, headers, available_models)
 
-    if choice == "+":
+    if action == "Add custom model":
         custom = _add_custom_model()
         if custom:
             return available_models + [custom]
         return available_models
 
+    # "Select from list" - use checkbox for multi-select
+    try:
+        import questionary
+
+        model_choices = [
+            questionary.Choice(
+                title=f"{model['name']} ({model['id']})",
+                value=model["id"],
+                checked=model.get("default", False),
+            )
+            for model in available_models
+        ]
+    except ImportError:
+        model_choices = [
+            f"{model['name']} ({model['id']})"
+            for model in available_models
+        ]
+
+    selected_ids = q_checkbox(
+        "Select models to enable (space to toggle, enter to confirm):",
+        choices=model_choices,
+    )
+
+    if not selected_ids:
+        return available_models
+
+    # Map selected IDs back to model dicts
     selected = []
-    for part in choice.split(","):
-        try:
-            index = int(part.strip()) - 1
-            if 0 <= index < len(available_models):
-                selected.append(available_models[index])
-        except ValueError:
-            continue
+    for model in available_models:
+        model_id = model["id"]
+        # Check both exact ID match and title match
+        title = f"{model['name']} ({model['id']})"
+        if model_id in selected_ids or title in selected_ids:
+            selected.append(model)
 
     return selected if selected else available_models
 
@@ -719,17 +775,35 @@ def _select_location(
     if global_exists:
         global_hint += " [configured]"
 
-    console.print(f"\n[bold]{title}[/bold]")
-    console.print(f"  [1] Local ({local_file}) - {local_hint}")
-    console.print(f"  [2] Global ({global_file}) - {global_hint}")
-
-    default_choice = "1"
+    default_choice = "local"
     if global_exists and not local_exists:
-        default_choice = "2"
+        default_choice = "global"
 
-    choice = safe_prompt("Enter number", default=default_choice)
+    try:
+        import questionary
 
-    if choice == "2":
+        location_choices = [
+            questionary.Choice(
+                title=f"Local ({local_file}) - {local_hint}",
+                value="local",
+            ),
+            questionary.Choice(
+                title=f"Global ({global_file}) - {global_hint}",
+                value="global",
+            ),
+        ]
+    except ImportError:
+        location_choices = [
+            f"Local ({local_file}) - {local_hint}",
+            f"Global ({global_file}) - {global_hint}",
+        ]
+
+    choice = q_select(title, choices=location_choices, default=default_choice)
+
+    if choice is None:
+        return default_choice
+
+    if choice == "global" or (isinstance(choice, str) and "Global" in choice):
         return "global"
     return "local"
 
@@ -853,11 +927,37 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
         headers = None
 
         # Model configuration
-        console.print("\n[bold]Model configuration[/bold]")
-        console.print("  \\[1] Fetch available models from provider")
-        console.print("  \\[2] Enter model name manually")
+        try:
+            import questionary
 
-        model_choice = safe_prompt("Choice", default="1")
+            model_config_choices = [
+                questionary.Choice(
+                    title="Fetch available models from provider",
+                    value="1",
+                ),
+                questionary.Choice(
+                    title="Enter model name manually",
+                    value="2",
+                ),
+            ]
+        except ImportError:
+            model_config_choices = [
+                "Fetch available models from provider",
+                "Enter model name manually",
+            ]
+
+        model_choice = q_select(
+            "Model configuration:",
+            choices=model_config_choices,
+            default="1",
+        )
+
+        if model_choice is None:
+            model_choice = "1"
+        elif model_choice.startswith("Fetch"):
+            model_choice = "1"
+        elif model_choice.startswith("Enter"):
+            model_choice = "2"
 
         if model_choice == "1" and api_key:
             # Try to fetch models from the provider
@@ -966,29 +1066,38 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
     # Step 5: Choose default model for this provider
     default_model = next((m for m in models if m.get("default")), models[0] if models else None)
     if len(models) > 1:
-        console.print("\n[bold]Default model for this provider:[/bold]")
-        table = Table(show_header=False, box=None, padding=(0, 2))
-        for i, model in enumerate(models, 1):
-            marker = " [current default]" if model.get("default") else ""
-            table.add_row(f"  [{i}]", f"{model['name']}{marker}", f"[dim]{model['id']}[/dim]")
-        console.print(table)
+        current_default_id = default_model["id"] if default_model else models[0]["id"]
 
-        default_choice = next((str(i) for i, model in enumerate(models, 1) if model.get("default")), "1")
-        choice = safe_prompt(
-            "Select default model",
-            default=default_choice,
-        )
         try:
-            index = int(choice) - 1
-            if 0 <= index < len(models):
-                # Clear old default and set new one
-                for m in models:
-                    m["default"] = False
-                models[index]["default"] = True
-                default_model = models[index]
-                console.print(f"[green]Default model: {default_model['name']}[/green]")
-        except ValueError:
-            pass
+            import questionary
+
+            model_choices = [
+                questionary.Choice(
+                    title=f"{model['name']} ({model['id']})",
+                    value=model["id"],
+                )
+                for model in models
+            ]
+        except ImportError:
+            model_choices = [f"{model['name']} ({model['id']})" for model in models]
+
+        choice = q_select(
+            "Default model for this provider:",
+            choices=model_choices,
+            default=current_default_id,
+        )
+
+        if choice is not None:
+            # Find selected model
+            for model in models:
+                if model["id"] == choice or f"{model['name']} ({model['id']})" == choice:
+                    # Clear old default and set new one
+                    for m in models:
+                        m["default"] = False
+                    model["default"] = True
+                    default_model = model
+                    console.print(f"[green]Default model: {default_model['name']}[/green]")
+                    break
 
     default_model_name = default_model["name"] if default_model else "unknown"
 
@@ -1105,21 +1214,62 @@ def manage_provider_models(
         console.print(table)
 
         # Menu options
-        console.print("\n[bold]Actions:[/bold]")
-        console.print("  \\[a] Add model")
-        console.print("  \\[f] Fetch models from provider API")
-        console.print("  \\[r] Remove model(s)")
-        console.print("  \\[d] Set default model")
-        console.print("  \\[n] Change display name")
-        console.print("  \\[i] Change provider ID")
-        console.print("  \\[u] Change API base URL")
-        console.print("  \\[k] Change API key")
-        console.print("  \\[h] Change headers")
-        console.print("  \\[x] Delete this provider")
-        console.print("  \\[s] Save and exit")
-        console.print("  \\[q] Quit without saving")
+        try:
+            import questionary
 
-        choice = safe_prompt("\nChoice", default="s").lower()
+            action_choices = [
+                questionary.Choice(title="Add model", value="a"),
+                questionary.Choice(title="Fetch models from provider API", value="f"),
+                questionary.Choice(title="Remove model(s)", value="r"),
+                questionary.Choice(title="Set default model", value="d"),
+                questionary.Choice(title="Change display name", value="n"),
+                questionary.Choice(title="Change provider ID", value="i"),
+                questionary.Choice(title="Change API base URL", value="u"),
+                questionary.Choice(title="Change API key", value="k"),
+                questionary.Choice(title="Change headers", value="h"),
+                questionary.Choice(title="Delete this provider", value="x"),
+                questionary.Choice(title="Save and exit", value="s"),
+                questionary.Choice(title="Quit without saving", value="q"),
+            ]
+        except ImportError:
+            action_choices = [
+                "Add model",
+                "Fetch models from provider API",
+                "Remove model(s)",
+                "Set default model",
+                "Change display name",
+                "Change provider ID",
+                "Change API base URL",
+                "Change API key",
+                "Change headers",
+                "Delete this provider",
+                "Save and exit",
+                "Quit without saving",
+            ]
+
+        choice = q_select("Action:", choices=action_choices, default="s")
+
+        if choice is None:
+            choice = "s"
+        elif not isinstance(choice, str) or len(choice) > 1:
+            # Map title back to letter code
+            action_map = {
+                "Add model": "a",
+                "Fetch models from provider API": "f",
+                "Remove model(s)": "r",
+                "Set default model": "d",
+                "Change display name": "n",
+                "Change provider ID": "i",
+                "Change API base URL": "u",
+                "Change API key": "k",
+                "Change headers": "h",
+                "Delete this provider": "x",
+                "Save and exit": "s",
+                "Quit without saving": "q",
+            }
+            choice = action_map.get(choice, "s")
+
+        choice = choice.lower()
 
         if choice == "a":
             custom = _add_custom_model()
@@ -1159,19 +1309,41 @@ def manage_provider_models(
                     console.print(f"[green]Added {added} new models.[/green]")
 
         elif choice == "r":
-            indices = safe_prompt("Enter model numbers to remove (comma-separated)")
-            removed = []
-            for part in indices.split(","):
-                try:
-                    index = int(part.strip()) - 1
-                    if 0 <= index < len(provider.models):
-                        removed.append(provider.models[index])
-                except ValueError:
-                    continue
-            for model in removed:
-                provider.models.remove(model)
-                console.print(f"[yellow]Removed: {model.name}[/yellow]")
-            _ensure_single_default(provider.models)
+            if not provider.models:
+                console.print("[yellow]No models to remove.[/yellow]")
+                continue
+
+            try:
+                import questionary
+
+                remove_choices = [
+                    questionary.Choice(
+                        title=f"{model.name} ({model.id})",
+                        value=model.id,
+                        checked=False,
+                    )
+                    for model in provider.models
+                ]
+            except ImportError:
+                remove_choices = [
+                    f"{model.name} ({model.id})"
+                    for model in provider.models
+                ]
+
+            selected_ids = q_checkbox(
+                "Select models to remove (space to toggle, enter to confirm):",
+                choices=remove_choices,
+            )
+
+            if selected_ids:
+                removed = []
+                for model in provider.models:
+                    if model.id in selected_ids or f"{model.name} ({model.id})" in selected_ids:
+                        removed.append(model)
+                for model in removed:
+                    provider.models.remove(model)
+                    console.print(f"[yellow]Removed: {model.name}[/yellow]")
+                _ensure_single_default(provider.models)
 
         elif choice == "d":
             index_str = safe_prompt("Enter model number to set as default")
@@ -1347,20 +1519,36 @@ def _select_existing_provider(settings) -> Optional[str]:
     """Let user select from existing providers."""
     providers = list(settings.providers.providers.keys())
 
-    console.print("\n[bold]Select provider to manage:[/bold]")
-    table = Table(show_header=False, box=None, padding=(0, 2))
-    for i, pid in enumerate(providers, 1):
-        provider = settings.providers.providers[pid]
-        table.add_row(f"  [{i}]", f"[bold]{provider.name}[/bold]", f"[dim]{pid}[/dim]")
-    console.print(table)
-
-    choice = safe_prompt("Enter number")
     try:
-        index = int(choice) - 1
-        if 0 <= index < len(providers):
-            return providers[index]
-    except ValueError:
-        pass
+        import questionary
+
+        provider_choices = [
+            questionary.Choice(
+                title=f"{settings.providers.providers[pid].name} ({pid})",
+                value=pid,
+            )
+            for pid in providers
+        ]
+    except ImportError:
+        provider_choices = [
+            f"{settings.providers.providers[pid].name} ({pid})"
+            for pid in providers
+        ]
+
+    choice = q_select("Select provider to manage:", choices=provider_choices)
+
+    if choice is None:
+        return None
+
+    # Handle both provider_id value and title string
+    if choice in providers:
+        return choice
+
+    # Try to extract from title format "Name (id)"
+    for pid in providers:
+        provider = settings.providers.providers[pid]
+        if f"{provider.name} ({pid})" == choice:
+            return pid
 
     console.print("[red]Invalid choice.[/red]")
     return None

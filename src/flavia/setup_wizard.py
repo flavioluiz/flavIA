@@ -11,7 +11,12 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
-from flavia.setup.prompt_utils import SetupCancelled, safe_confirm, safe_prompt
+from flavia.setup.prompt_utils import (
+    SetupCancelled,
+    q_select,
+    safe_confirm,
+    safe_prompt,
+)
 
 if TYPE_CHECKING:
     from flavia.content.catalog import ContentCatalog
@@ -334,34 +339,39 @@ def _select_model_for_setup(settings, allow_cancel: bool = False) -> str:
         default=True,
         allow_cancel=allow_cancel,
     ):
-        # Show numbered list of all available models
-        console.print("\n[bold]Available models:[/bold]")
-        table = Table(show_header=False, box=None, padding=(0, 2))
-        for i, choice in enumerate(choices, 1):
-            default_marker = " [default]" if choice["ref"] == default_ref else ""
-            provider_label = choice["provider"]
-            table.add_row(
-                f"  [{i}]",
-                f"{provider_label} / {choice['name']}{default_marker}",
-                f"[dim]{choice['ref']}[/dim]",
-            )
-        console.print(table)
-
-        default_index = next(
-            (i + 1 for i, choice in enumerate(choices) if choice["ref"] == default_ref),
-            1,
-        )
-        selection = safe_prompt(
-            "Enter number", default=str(default_index), allow_cancel=allow_cancel
-        )
+        # Build choices for q_select
         try:
-            idx = int(selection) - 1
-            if 0 <= idx < len(choices):
-                return choices[idx]["ref"]
-        except ValueError:
-            pass
+            import questionary
 
-        console.print("[yellow]Invalid selection, using default.[/yellow]")
+            model_choices = [
+                questionary.Choice(
+                    title=f"{choice['provider']} / {choice['name']}",
+                    value=choice["ref"],
+                )
+                for choice in choices
+            ]
+        except ImportError:
+            model_choices = [
+                f"{choice['provider']} / {choice['name']}"
+                for choice in choices
+            ]
+
+        selected = q_select(
+            "Select model:",
+            choices=model_choices,
+            default=default_ref,
+            allow_cancel=allow_cancel,
+        )
+
+        if selected is not None:
+            # Map back to ref if we got a title string
+            if not any(c["ref"] == selected for c in choices):
+                for i, choice in enumerate(choices):
+                    if f"{choice['provider']} / {choice['name']}" == selected:
+                        return choice["ref"]
+            return selected
+
+        console.print("[yellow]No selection made, using default.[/yellow]")
 
     return default_ref
 
@@ -705,10 +715,41 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
                 _run_summarization(catalog, config_dir, selected_model)
 
     # Ask about agent configuration
-    console.print("\n[bold]How do you want to configure the agent?[/bold]")
-    console.print("  [1] Simple configuration (generic agent, no content analysis)")
-    console.print("  [2] Analyze content and suggest specialized configuration")
-    config_choice = safe_prompt("Select option", default="2").strip()
+    try:
+        import questionary
+
+        config_choices = [
+            questionary.Choice(
+                title="Simple configuration (generic agent, no content analysis)",
+                value="1",
+            ),
+            questionary.Choice(
+                title="Analyze content and suggest specialized configuration",
+                value="2",
+            ),
+        ]
+    except ImportError:
+        config_choices = [
+            "Simple configuration (generic agent, no content analysis)",
+            "Analyze content and suggest specialized configuration",
+        ]
+
+    config_choice = q_select(
+        "How do you want to configure the agent?",
+        choices=config_choices,
+        default="2",
+    )
+
+    if config_choice is None:
+        config_choice = "2"
+    elif hasattr(config_choice, "value"):
+        config_choice = config_choice.value
+    elif config_choice == "1" or config_choice.startswith("Simple"):
+        config_choice = "1"
+    elif config_choice == "2" or config_choice.startswith("Analyze"):
+        config_choice = "2"
+    else:
+        config_choice = "2"
 
     if config_choice == "1":
         return _run_basic_setup(
@@ -2029,14 +2070,47 @@ def run_agent_setup_command(settings, base_dir: Path) -> bool:
     Returns:
         True if successful
     """
-    console.print("\n[bold blue]Agent Setup[/bold blue]\n")
-    console.print("Choose setup mode:\n")
-    console.print("  [1] Quick:  Change models for existing agents")
-    console.print("  [2] Revise: Modify current agents with LLM assistance")
-    console.print("  [3] Full:   Delete current agents and start fresh")
-    console.print()
+    try:
+        import questionary
 
-    choice = safe_prompt("Select mode (1-3)", default="1").strip()
+        choices = [
+            questionary.Choice(
+                title="Quick:  Change models for existing agents",
+                value="1",
+            ),
+            questionary.Choice(
+                title="Revise: Modify current agents with LLM assistance",
+                value="2",
+            ),
+            questionary.Choice(
+                title="Full:   Delete current agents and start fresh",
+                value="3",
+            ),
+        ]
+    except ImportError:
+        choices = [
+            "Quick:  Change models for existing agents",
+            "Revise: Modify current agents with LLM assistance",
+            "Full:   Delete current agents and start fresh",
+        ]
+
+    console.print("\n[bold blue]Agent Setup[/bold blue]\n")
+
+    choice = q_select("Choose setup mode:", choices=choices, default="1")
+
+    if choice is None:
+        console.print("[yellow]Setup cancelled.[/yellow]")
+        return False
+
+    # Handle both Choice objects and plain strings
+    if hasattr(choice, "value"):
+        choice = choice.value
+    elif choice.startswith("Quick"):
+        choice = "1"
+    elif choice.startswith("Revise"):
+        choice = "2"
+    elif choice.startswith("Full"):
+        choice = "3"
 
     if choice == "1":
         # Quick mode: just change models
