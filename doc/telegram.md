@@ -52,6 +52,8 @@ If the bot is not yet configured, the wizard is offered automatically when runni
 - Access control is verified by user ID
 - The bot uses the same agent configuration (`.flavia/agents.yaml`) and providers from the folder where it was started
 - The session persists as long as the process is running
+- Each bot reply includes a context usage footer, for example:
+  - `📊 Context: 12,450/128,000 (9.7%)`
 
 ## Dependency installation
 

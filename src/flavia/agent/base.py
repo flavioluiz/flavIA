@@ -152,10 +152,29 @@ class BaseAgent(ABC):
             usage: The ``response.usage`` object returned by the OpenAI SDK.
                    May be ``None`` if the provider does not include usage data.
         """
+        def _coerce_token_count(value: Any) -> int:
+            """Convert provider token values to safe non-negative ints."""
+            try:
+                return max(0, int(value))
+            except (TypeError, ValueError):
+                return 0
+
         if usage is None:
+            # Usage can be omitted by some OpenAI-compatible providers.
+            # Keep cumulative totals, but clear last-call counters.
+            self.last_prompt_tokens = 0
+            self.last_completion_tokens = 0
             return
-        self.last_prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
-        self.last_completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+
+        if isinstance(usage, dict):
+            prompt_tokens = usage.get("prompt_tokens")
+            completion_tokens = usage.get("completion_tokens")
+        else:
+            prompt_tokens = getattr(usage, "prompt_tokens", 0)
+            completion_tokens = getattr(usage, "completion_tokens", 0)
+
+        self.last_prompt_tokens = _coerce_token_count(prompt_tokens)
+        self.last_completion_tokens = _coerce_token_count(completion_tokens)
         self.total_prompt_tokens += self.last_prompt_tokens
         self.total_completion_tokens += self.last_completion_tokens
 
@@ -182,7 +201,7 @@ class BaseAgent(ABC):
 
         try:
             response = self.client.chat.completions.create(**kwargs)
-            self._update_token_usage(response.usage)
+            self._update_token_usage(getattr(response, "usage", None))
             return response.choices[0].message
         except AuthenticationError as e:
             raise RuntimeError(

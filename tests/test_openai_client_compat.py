@@ -1,6 +1,7 @@
 """Compatibility tests for OpenAI client initialization."""
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -139,3 +140,29 @@ def test_auth_error_message_uses_selected_provider_env_var(monkeypatch):
     agent = DummyAgent(settings=settings, profile=profile)
     with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
         agent._call_llm([{"role": "user", "content": "hello"}])
+
+
+def test_call_llm_handles_response_without_usage_field(monkeypatch):
+    class _FakeCompletions:
+        @staticmethod
+        def create(**kwargs):
+            message = SimpleNamespace(content="hello", tool_calls=None)
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    class _FakeChat:
+        completions = _FakeCompletions()
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.chat = _FakeChat()
+
+    monkeypatch.setattr("flavia.agent.base.OpenAI", FakeOpenAI)
+
+    agent = DummyAgent(settings=_make_settings(), profile=_make_profile())
+    agent.last_prompt_tokens = 123
+    agent.last_completion_tokens = 45
+
+    message = agent._call_llm([{"role": "user", "content": "hello"}])
+    assert message.content == "hello"
+    assert agent.last_prompt_tokens == 0
+    assert agent.last_completion_tokens == 0

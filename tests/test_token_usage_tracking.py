@@ -117,6 +117,26 @@ class TestUpdateTokenUsage:
         assert agent.total_prompt_tokens == 0
         assert agent.total_completion_tokens == 0
 
+    def test_none_usage_resets_last_but_keeps_totals(self):
+        agent = _make_agent()
+        agent._update_token_usage(_make_usage(400, 80))
+        agent._update_token_usage(None)
+
+        assert agent.last_prompt_tokens == 0
+        assert agent.last_completion_tokens == 0
+        assert agent.total_prompt_tokens == 400
+        assert agent.total_completion_tokens == 80
+
+    def test_dict_usage_object_is_supported(self):
+        agent = _make_agent()
+        usage = {"prompt_tokens": 700, "completion_tokens": 150}
+        agent._update_token_usage(usage)
+
+        assert agent.last_prompt_tokens == 700
+        assert agent.last_completion_tokens == 150
+        assert agent.total_prompt_tokens == 700
+        assert agent.total_completion_tokens == 150
+
     def test_partial_usage_missing_fields(self):
         """Provider returns usage without some fields."""
         agent = _make_agent()

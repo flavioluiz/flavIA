@@ -10,6 +10,19 @@ flavia
 
 The interface uses [Rich](https://github.com/Textualize/rich) for formatting, with command history (readline) and loading animations.
 
+### Token usage indicator
+
+After each assistant response, the CLI prints a compact context usage line:
+
+```text
+[tokens: 12,450 / 128,000 (9.7%) | response: 850 tokens]
+```
+
+Color coding:
+- Green: context usage below 70%
+- Yellow: context usage between 70% and 89%
+- Red: context usage at or above 90%
+
 ### Prompt completion (Tab)
 
 In interactive CLI mode, press `Tab` to autocomplete:
