@@ -416,6 +416,57 @@ class TestCompactConversation:
         # Conversation history is preserved when compaction fails.
         assert agent.messages == original_messages
 
+    def test_compaction_falls_back_to_chunked_summary_on_context_error(self):
+        agent = _make_agent()
+        agent.messages.extend(
+            [
+                {"role": "user", "content": "u1"},
+                {"role": "assistant", "content": "a1"},
+                {"role": "user", "content": "u2"},
+                {"role": "assistant", "content": "a2"},
+            ]
+        )
+
+        call_count = {"n": 0}
+
+        def mock_call_llm(_messages):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise RuntimeError("API error (status 400): maximum context length exceeded")
+            response = MagicMock()
+            if call_count["n"] == 2:
+                response.content = "Left summary"
+            elif call_count["n"] == 3:
+                response.content = "Right summary"
+            else:
+                response.content = "Merged summary"
+            return response
+
+        agent._call_llm = MagicMock(side_effect=mock_call_llm)
+        agent._init_system_prompt = MagicMock(
+            side_effect=lambda: setattr(
+                agent,
+                "messages",
+                [{"role": "system", "content": "You are a test assistant."}],
+            )
+        )
+
+        summary = agent.compact_conversation()
+
+        assert summary == "Merged summary"
+        assert call_count["n"] == 4
+        assert len(agent.messages) == 3
+
+    def test_compaction_does_not_retry_non_retryable_error(self):
+        agent = _make_agent()
+        agent.messages.append({"role": "user", "content": "hello"})
+        agent._call_llm = MagicMock(side_effect=RuntimeError("Authentication failed"))
+
+        with pytest.raises(RuntimeError, match="Authentication failed"):
+            agent.compact_conversation()
+
+        agent._call_llm.assert_called_once()
+
 
 class TestResolveCompactThreshold:
     def test_profile_config_threshold_has_highest_priority(self):

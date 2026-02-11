@@ -215,6 +215,7 @@ class BaseAgent(ABC):
         "Be concise but comprehensive. The summary will be used to continue the conversation\n"
         "with full context. Output only the summary, no preamble."
     )
+    _COMPACTION_MAX_RECURSION_DEPTH = 6
 
     def compact_conversation(self) -> str:
         """Compact the conversation by summarizing its history.
@@ -231,28 +232,7 @@ class BaseAgent(ABC):
         if not conversation_messages:
             return ""
 
-        # Build a temporary message list for the summarisation call
-        compaction_messages: list[dict[str, Any]] = [
-            {"role": "system", "content": self._COMPACTION_PROMPT},
-        ]
-
-        # Serialize the conversation into a single user message for the LLM
-        conversation_text = self._serialize_messages_for_compaction(conversation_messages)
-        compaction_messages.append({"role": "user", "content": conversation_text})
-
-        # Temporarily remove tool schemas so the compaction call is plain text
-        saved_tool_schemas = self.tool_schemas
-        self.tool_schemas = []
-        try:
-            summary_response = self._call_llm(compaction_messages)
-        finally:
-            self.tool_schemas = saved_tool_schemas
-
-        summary = (summary_response.content or "").strip()
-        if not summary:
-            raise RuntimeError(
-                "Compaction summary was empty; conversation was not compacted."
-            )
+        summary = self._summarize_messages_for_compaction(conversation_messages)
 
         # Reset conversation to system prompt only
         self.reset()
@@ -275,6 +255,96 @@ class BaseAgent(ABC):
         )
 
         return summary
+
+    def _summarize_messages_for_compaction(self, messages: list[dict[str, Any]]) -> str:
+        """Summarize messages for compaction with size-aware fallback."""
+        self.log(
+            f"Compaction requested: {len(messages)} messages "
+            f"(last prompt tokens: {self.last_prompt_tokens})"
+        )
+        return self._summarize_messages_recursive(messages, depth=0)
+
+    def _summarize_messages_recursive(
+        self, messages: list[dict[str, Any]], depth: int
+    ) -> str:
+        """Summarize messages, recursively splitting on retryable failures."""
+        conversation_text = self._serialize_messages_for_compaction(messages)
+        try:
+            return self._call_compaction_llm(conversation_text)
+        except RuntimeError as exc:
+            if (
+                len(messages) <= 1
+                or depth >= self._COMPACTION_MAX_RECURSION_DEPTH
+                or not self._is_retryable_compaction_error(exc)
+            ):
+                raise
+
+            midpoint = len(messages) // 2
+            if midpoint <= 0:
+                raise
+
+            self.log(
+                f"Compaction pass failed at depth {depth} ({exc}); "
+                "retrying with split conversation chunks."
+            )
+
+            left_summary = self._summarize_messages_recursive(messages[:midpoint], depth + 1)
+            right_summary = self._summarize_messages_recursive(messages[midpoint:], depth + 1)
+
+            merged_text = (
+                "Conversation chunk summaries:\n\n"
+                f"Part 1 summary:\n{left_summary}\n\n"
+                f"Part 2 summary:\n{right_summary}"
+            )
+
+            try:
+                return self._call_compaction_llm(merged_text)
+            except RuntimeError as merge_exc:
+                if (
+                    depth >= self._COMPACTION_MAX_RECURSION_DEPTH
+                    or not self._is_retryable_compaction_error(merge_exc)
+                ):
+                    raise
+                # Last-resort fallback: preserve both summaries when merge compaction fails.
+                merged_summary = f"{left_summary}\n\n{right_summary}".strip()
+                if merged_summary:
+                    return merged_summary
+                raise
+
+    def _call_compaction_llm(self, conversation_text: str) -> str:
+        """Call the LLM for compaction with tools disabled."""
+        compaction_messages: list[dict[str, Any]] = [
+            {"role": "system", "content": self._COMPACTION_PROMPT},
+            {"role": "user", "content": conversation_text},
+        ]
+
+        saved_tool_schemas = self.tool_schemas
+        self.tool_schemas = []
+        try:
+            summary_response = self._call_llm(compaction_messages)
+        finally:
+            self.tool_schemas = saved_tool_schemas
+
+        summary = (summary_response.content or "").strip()
+        if not summary:
+            raise RuntimeError("Compaction summary was empty; conversation was not compacted.")
+        return summary
+
+    @staticmethod
+    def _is_retryable_compaction_error(exc: Exception) -> bool:
+        """Whether a compaction failure is likely caused by prompt size/latency."""
+        message = str(exc).lower()
+        retry_markers = (
+            "timed out",
+            "timeout",
+            "context",
+            "maximum context",
+            "too long",
+            "token",
+            "status 400",
+            "status 413",
+        )
+        return any(marker in message for marker in retry_markers)
 
     @staticmethod
     def _serialize_messages_for_compaction(messages: list[dict[str, Any]]) -> str:
