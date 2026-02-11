@@ -76,7 +76,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Provider compatibility fallback headers**: OpenAI client compatibility fallback paths in provider setup/testing now preserve custom headers (e.g., OpenRouter `HTTP-Referer`/`X-Title`) instead of dropping them.
 - **`/agent` autocomplete cancellation flow**: Cancelling interactive agent selection no longer switches implicitly to `main`; it now safely falls back to listing available agents.
 - **Provider management cancel safety**: Cancelling the provider management action menu now exits without saving instead of defaulting to "Save and exit."
-- **CLI `/model` autocomplete consistency**: Model completion now uses a combined `index_provider:model` format (e.g., `1_openai:gpt-4o`) to keep index-to-model mapping explicit while avoiding duplicate bare IDs.
+- **CLI `/model` autocomplete consistency**: Model completion now prefers `provider:model` references (no duplicate bare IDs), while numeric index selection remains supported directly in `/model`.
 - **CLI prompt completion expansion**: `Tab` completion now supports mention-style file references with `@` (e.g., `@notes.md`, `@docs/chapter.md`).
 
 ### Removed

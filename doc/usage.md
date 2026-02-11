@@ -20,7 +20,6 @@ In interactive CLI mode, press `Tab` to autocomplete:
 - Model references after `/model`:
   - numeric index (`0`, `1`, `2`, ...)
   - provider-prefixed reference (`openai:gpt-4o`)
-  - combined index + reference (`0_openai:gpt-4o`)
 - File and directory paths
 - Mention-style file references with `@` (e.g., `@notes.md`, `@docs/chapter1.md`)
 

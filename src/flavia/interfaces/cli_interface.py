@@ -205,31 +205,12 @@ def _command_completion_candidates(
         if "list".startswith(text):
             matches.add("list")
         if settings.providers.providers:
-            model_index = 0
             for provider in settings.providers.providers.values():
                 for model in provider.models:
                     prefixed = f"{provider.id}:{model.id}"
-                    index_str = str(model_index)
-                    combined = f"{index_str}_{prefixed}"
-                    if (
-                        combined.startswith(text)
-                        or index_str.startswith(text)
-                        or prefixed.startswith(text)
-                        or model.id.startswith(text)
-                    ):
-                        matches.add(combined)
-                    if index_str.startswith(text):
-                        matches.add(combined)
-                    model_index += 1
-            return sorted(
-                matches,
-                key=lambda item: (
-                    0,
-                    int(item.split("_", 1)[0]),
-                )
-                if "_" in item and item.split("_", 1)[0].isdigit()
-                else ((1, -1) if item == "list" else (2, item)),
-            )
+                    if prefixed.startswith(text) or model.id.startswith(text):
+                        matches.add(prefixed)
+            return sorted(matches)
         else:
             for model in settings.models:
                 if model.id.startswith(text):

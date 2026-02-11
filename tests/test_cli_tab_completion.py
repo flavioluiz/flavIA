@@ -79,8 +79,7 @@ def test_model_argument_completion_uses_provider_prefixed_refs_only():
 
     candidates = cli_interface._completion_candidates("openai", "/model openai", settings)
 
-    assert "0_openai:gpt-4o" in candidates
-    assert "openai:gpt-4o" not in candidates
+    assert "openai:gpt-4o" in candidates
     assert "gpt-4o" not in candidates
 
 
@@ -102,12 +101,11 @@ def test_model_argument_completion_matches_by_model_id_with_prefixed_output():
 
     candidates = cli_interface._completion_candidates("gpt", "/model gpt", settings)
 
-    assert "0_openai:gpt-4o" in candidates
-    assert "openai:gpt-4o" not in candidates
+    assert "openai:gpt-4o" in candidates
     assert "gpt-4o" not in candidates
 
 
-def test_model_argument_completion_includes_numeric_indexes():
+def test_model_argument_completion_does_not_suggest_numeric_indexes():
     settings = Settings(
         providers=ProviderRegistry(
             providers={
@@ -125,7 +123,7 @@ def test_model_argument_completion_includes_numeric_indexes():
 
     candidates = cli_interface._completion_candidates("0", "/model 0", settings)
 
-    assert "0_openai:gpt-4o" in candidates
+    assert candidates == []
     assert "0" not in candidates
     assert "openai:gpt-4o" not in candidates
 
