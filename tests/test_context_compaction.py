@@ -341,6 +341,27 @@ class TestCompactConversation:
         assert agent.messages[2]["role"] == "assistant"
         assert "context from our previous conversation" in agent.messages[2]["content"]
 
+    def test_compaction_estimates_non_zero_context_after_injection(self):
+        agent = _make_agent()
+        agent.messages.append({"role": "user", "content": "Hello"})
+        agent.messages.append({"role": "assistant", "content": "Hi!"})
+
+        mock_response = MagicMock()
+        mock_response.content = "Summary: User greeted assistant."
+        agent._call_llm = MagicMock(return_value=mock_response)
+        agent._init_system_prompt = MagicMock(
+            side_effect=lambda: setattr(
+                agent,
+                "messages",
+                [{"role": "system", "content": "You are a test assistant."}],
+            )
+        )
+
+        agent.compact_conversation()
+
+        assert agent.last_prompt_tokens > 0
+        assert agent.context_utilization > 0
+
     def test_compaction_resets_token_counters(self):
         agent = _make_agent()
         agent.messages.append({"role": "user", "content": "Hello"})

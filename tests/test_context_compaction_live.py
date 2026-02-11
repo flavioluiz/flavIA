@@ -221,6 +221,8 @@ def test_live_manual_compact_command_with_large_texts(tmp_path):
     assert "Conversation compacted." in output
     assert "Summary:" in output
     assert "New context:" in output
+    assert "New context: 0/" not in output
+    assert agent.last_prompt_tokens > 0
     assert len(agent.messages) == 3
     assert "[Conversation summary from compaction]" in agent.messages[1]["content"]
     summary = agent.messages[1]["content"].split("]: ", 1)[1]

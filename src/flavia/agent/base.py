@@ -253,8 +253,51 @@ class BaseAgent(ABC):
                 ),
             }
         )
+        # No direct LLM call happens after summary injection, so usage counters
+        # are estimated from current in-memory messages to avoid displaying zero
+        # context right after compaction.
+        self.last_prompt_tokens = self._estimate_prompt_tokens_for_messages(self.messages)
 
         return summary
+
+    @staticmethod
+    def _estimate_prompt_tokens_for_messages(messages: list[dict[str, Any]]) -> int:
+        """Estimate prompt tokens for a list of chat-style messages.
+
+        This is a lightweight heuristic (chars/4 with per-message overhead)
+        used when provider usage data is unavailable for the current prompt.
+        """
+
+        def _estimate_text_tokens(value: Any) -> int:
+            if value is None:
+                return 0
+            if isinstance(value, str):
+                text = value
+            else:
+                try:
+                    text = json.dumps(value, ensure_ascii=False)
+                except Exception:
+                    text = str(value)
+            if not text:
+                return 0
+            return max(1, (len(text) + 3) // 4)
+
+        if not messages:
+            return 0
+
+        total = 0
+        for msg in messages:
+            total += 4  # rough chat-format overhead per message
+            total += _estimate_text_tokens(msg.get("content", ""))
+
+            if "tool_calls" in msg:
+                total += _estimate_text_tokens(msg.get("tool_calls"))
+            if "tool_call_id" in msg:
+                total += _estimate_text_tokens(msg.get("tool_call_id"))
+            if "name" in msg:
+                total += _estimate_text_tokens(msg.get("name"))
+
+        return max(1, total + 2)  # assistant priming overhead
 
     def _summarize_messages_for_compaction(self, messages: list[dict[str, Any]]) -> str:
         """Summarize messages for compaction with size-aware fallback."""
