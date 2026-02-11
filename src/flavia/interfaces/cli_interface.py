@@ -138,6 +138,51 @@ def _build_agent_prefix(agent: RecursiveAgent) -> str:
     return f"Agent [{_get_agent_model_ref(agent)}]:"
 
 
+def _display_current_model(agent: RecursiveAgent, settings: Settings, console: Console) -> None:
+    """Display current active model information."""
+    model_ref = _get_agent_model_ref(agent)
+    provider_config, model_id = settings.resolve_model_with_provider(settings.default_model)
+
+    console.print("\n[bold]Current Model:[/bold]")
+    console.print("-" * 60)
+
+    if provider_config:
+        console.print(f"  Provider:    [cyan]{provider_config.name}[/cyan] ({provider_config.id})")
+
+        # Find the model config for additional details
+        model_config = provider_config.get_model_by_id(model_id)
+        if model_config:
+            console.print(f"  Model:       [cyan]{model_config.name}[/cyan]")
+            console.print(f"  Reference:   [cyan]{model_ref}[/cyan]")
+            if model_config.max_tokens:
+                console.print(f"  Max Tokens:  {model_config.max_tokens:,}")
+            if model_config.description:
+                console.print(f"  Description: {model_config.description}")
+        else:
+            console.print(f"  Model:       [cyan]{model_id}[/cyan]")
+            console.print(f"  Reference:   [cyan]{model_ref}[/cyan]")
+    else:
+        # Fallback display for legacy configs
+        console.print(f"  Model:       [cyan]{model_ref}[/cyan]")
+
+    console.print()
+
+
+def _models_are_equivalent(settings: Settings, current_ref: str, new_ref: str | int) -> bool:
+    """Check if two model references point to the same model."""
+    # Resolve both to provider:model_id format
+    current_provider, current_model_id = settings.resolve_model_with_provider(current_ref)
+    new_provider, new_model_id = settings.resolve_model_with_provider(new_ref)
+
+    # Both must have valid providers
+    if current_provider is None or new_provider is None:
+        return False
+
+    # Compare provider ID and model ID
+    return (current_provider.id == new_provider.id and
+            current_model_id == new_model_id)
+
+
 def _choose_loading_message(current: str = "") -> str:
     """Pick a loading message, avoiding immediate repetition when possible."""
     if len(LOADING_MESSAGES) <= 1:
@@ -393,6 +438,9 @@ def print_help() -> None:
 - `/agent_setup` - Configure agents (quick model change, revise, or full rebuild)
 - `/agent` - List available agents
 - `/agent <name>` - Switch to agent (resets conversation)
+- `/model` - Show current active model
+- `/model <ref>` - Switch to model (by index, id, or provider:id)
+- `/model list` - List all available models (alias for /providers)
 - `/catalog` - Browse content catalog
 - `/quit` - Exit
 - `/providers` - List configured providers and models
@@ -500,6 +548,83 @@ def run_cli(settings: Settings) -> None:
                     from flavia.interfaces.catalog_command import run_catalog_command
 
                     run_catalog_command(settings)
+                    continue
+
+                elif command == "/model" or command.startswith("/model "):
+                    parts = user_input.split(maxsplit=1)
+
+                    if len(parts) == 1:
+                        # No argument: show current model
+                        _display_current_model(agent, settings, console)
+                        continue
+
+                    model_arg = parts[1].strip()
+
+                    # Handle "/model list" as alias for "/providers"
+                    if model_arg.lower() == "list":
+                        from flavia.display import display_providers
+                        display_providers(settings, console=console, use_rich=True)
+                        continue
+
+                    # Switch to specified model
+                    # Try to parse as int (index reference)
+                    try:
+                        model_ref = int(model_arg)
+                    except ValueError:
+                        # Keep as string (model_id or provider:model_id)
+                        model_ref = model_arg
+
+                    # Check if already using this model
+                    current_model_ref = _get_agent_model_ref(agent)
+                    if _models_are_equivalent(settings, current_model_ref, model_ref):
+                        console.print(f"[yellow]Already using model '{current_model_ref}'.[/yellow]")
+                        continue
+
+                    # Resolve and validate model exists
+                    provider, model_id = settings.resolve_model_with_provider(model_ref)
+
+                    # Check if model was found
+                    if provider is None:
+                        console.print(f"[red]Model '{model_arg}' not found.[/red]")
+                        console.print("Use [cyan]/model list[/cyan] to see available models.")
+                        continue
+
+                    # Validate provider has API key
+                    if not provider.api_key:
+                        console.print(
+                            f"[red]Cannot switch to '{model_arg}': API key not configured "
+                            f"for provider '{provider.id}'.[/red]"
+                        )
+                        if provider.api_key_env_var:
+                            console.print(
+                                f"[dim]Set {provider.api_key_env_var}, run /reset, and try "
+                                f"again.[/dim]"
+                            )
+                        else:
+                            console.print(
+                                "[dim]Run 'flavia --setup-provider', run /reset, and try "
+                                "again.[/dim]"
+                            )
+                        continue
+
+                    # Update settings and recreate agent
+                    previous_model = settings.default_model
+                    settings.default_model = model_ref
+
+                    try:
+                        agent = create_agent_from_settings(settings)
+                    except Exception as e:
+                        # Rollback on failure
+                        settings.default_model = previous_model
+                        console.print(f"[red]Failed to switch to model '{model_arg}': {e}[/red]")
+                        continue
+
+                    # Success
+                    new_model_ref = f"{provider.id}:{model_id}"
+                    console.print(
+                        f"[green]Switched to model '{new_model_ref}'. Conversation reset.[/green]"
+                    )
+                    _print_active_model_hint(agent, settings)
                     continue
 
                 elif command == "/agent" or command.startswith("/agent "):

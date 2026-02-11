@@ -29,6 +29,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Runtime Model Switching**: New `/model` command allows changing the active model mid-session without restarting
+  - `/model` — Show current active model details (provider, model name, reference, max tokens)
+  - `/model <ref>` — Switch to different model (by index, model_id, or provider:model_id format)
+  - `/model list` — List all available models (alias for `/providers`)
+  - Model changes are session-only and reset conversation context
+  - Validates model existence and provider API key before switching
+  - Implements rollback on agent creation failure
 - **`/catalog` interactive command**: New command to browse the content catalog with an interactive menu. Features include:
   - Overview with statistics (files, sizes, types, online sources)
   - Tree view of directory structure

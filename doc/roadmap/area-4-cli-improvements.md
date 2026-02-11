@@ -63,23 +63,30 @@ Implemented `/agent` slash command for runtime agent switching:
 
 ---
 
-### Task 4.3 -- Runtime Model Switching in CLI
+### Task 4.3 -- Runtime Model Switching in CLI ✓ COMPLETED
 
-**Difficulty**: Easy | **Dependencies**: None
+**Difficulty**: Easy | **Dependencies**: None | **Status**: DONE
 
-Add a `/model` slash command that allows changing the active model mid-session without restarting:
+Implemented `/model` slash command for runtime model switching:
 
-| Invocation | Behavior |
-|------------|----------|
-| `/model` | Show current active model (provider:model_id) |
-| `/model <ref>` | Switch to a different model. Accepts index number, model ID, or `provider:model_id` format. Recreates the agent with the new model, resets conversation. |
-| `/model list` | Alias for `/providers` (quick access) |
+**Invocation and Behavior:**
+- `/model` — Show current active model with provider, model name, reference (provider:model_id), max tokens, and description
+- `/model <ref>` — Switch to a different model. Accepts index number, model ID, or `provider:model_id` format. Recreates the agent with the new model, resets conversation
+- `/model list` — Alias for `/providers` (quick access to see all available models)
 
-This replaces the current workflow of exiting, running `flavia -m <model>`, and losing context. The model change updates `settings.default_model` for the session (not persisted to disk unless explicitly saved).
+This replaces the workflow of exiting, running `flavia -m <model>`, and losing context. The model change updates `settings.default_model` for the session (not persisted to disk unless explicitly saved).
 
-**Key files to modify**:
-- `interfaces/cli_interface.py` -- add `/model` command handler
-- `interfaces/cli_interface.py` -- update `create_agent_from_settings()` to accept model override
+**Implementation summary:**
+- Added `/model` command handler in `cli_interface.py` with three behaviors
+- Added `_display_current_model()` helper to show current model details
+- Added `_models_are_equivalent()` helper to check model equivalence across reference formats
+- Updated `print_help()` with `/model` command documentation
+- Follows same pattern as `/agent` command: validate before switch, rollback on error, show confirmation
+
+**Files modified:**
+- `src/flavia/interfaces/cli_interface.py` — Added `/model` command handler, helper functions, updated help text
+- `doc/roadmap/area-4-cli-improvements.md` — Marked task as completed
+- `CHANGELOG.md` — Documented new feature
 
 ---
 
