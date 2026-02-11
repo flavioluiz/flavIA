@@ -8,11 +8,11 @@ Planned features and improvements for flavIA, organized by area. Each task inclu
 
 ## 📋 Executive Summary
 
-This roadmap outlines **38 tasks** across **9 major areas** to extend flavIA from a read-only research assistant into a comprehensive, production-ready AI agent system with multimodal processing, write capabilities, external service integration, web & academic research tools, and multi-platform deployment.
+This roadmap outlines **41 tasks** across **10 major areas** to extend flavIA from a read-only research assistant into a comprehensive, production-ready AI agent system with multimodal processing, write capabilities, external service integration, web & academic research tools, multi-platform deployment, and file delivery through messaging interfaces.
 
 ### Quick Stats
-- **8 Easy tasks** (< 1 day each) — Quick wins for immediate value — **2 completed** ✓
-- **21 Medium tasks** (1-2 days each) — Core feature development
+- **9 Easy tasks** (< 1 day each) — Quick wins for immediate value — **2 completed** ✓
+- **23 Medium tasks** (1-2 days each) — Core feature development
 - **9 Hard tasks** (3+ days each) — Complex integrations requiring careful design
 
 ### Strategic Priorities
@@ -21,7 +21,8 @@ This roadmap outlines **38 tasks** across **9 major areas** to extend flavIA fro
 3. **Academic workflows** (Tasks 6.1-6.2): LaTeX compilation and script execution
 4. **Production readiness** (Tasks 3.1-3.6, 8.2-8.3): Multi-platform bots and context management
 5. **Web & academic research** (Tasks 9.1-9.8): Web search, academic databases, DOI resolution, Scopus, article download, BibTeX management
-6. **Advanced features** (Tasks 7.1-7.2, 2.3): External services and meta-agents
+6. **Telegram file delivery** (Tasks 10.1-10.3): Structured agent responses, send file tool, and Telegram document delivery
+7. **Advanced features** (Tasks 7.1-7.2, 2.3): External services and meta-agents
 
 ---
 
@@ -100,6 +101,13 @@ Comprehensive web and academic search toolkit for literature reviews, deep resea
 - **9.6** CAPES/Academic Network Publisher Access (Hard) — Access licensed publisher content via institutional networks
 - **9.7** BibTeX Reference Management (Medium) — Automatic .bib file generation and maintenance
 - **9.8** Research Session Management (Medium) — Track, manage, and organize web research results
+
+### [Area 10: Telegram File Delivery](roadmap/area-10-telegram-file-delivery.md) (3 tasks)
+Enable the agent to send files directly through the Telegram chat, with structured agent responses to support side effects beyond plain text.
+
+- **10.1** Structured Agent Responses (Medium) — `AgentResponse` dataclass with text + actions, replacing plain `str` return
+- **10.2** Send File Tool (Easy) — `send_file(path)` tool that validates and registers a file delivery action
+- **10.3** Telegram File Delivery Handler (Medium) — Bot processes `SendFileAction` and calls `reply_document()`
 
 ---
 
@@ -259,6 +267,15 @@ Cross-area dependencies for Area 9:
 Task 9.1 enhanced by ── Task 1.5 (YouTube/Web converters, for content extraction)
 Task 9.5 depends on ── Task 1.5 (webpage converter for HTML articles)
 Task 9.7 depends on ── Task 5.1 (write tools for .bib file modification)
+
+Area 10 -- Telegram File Delivery:
+Task 10.1 (Structured Agent Responses) ──┬── Task 10.2 (Send File Tool)
+                                          └── Task 10.3 (Telegram File Delivery Handler)
+Task 10.2 ─────────────────────────────────── Task 10.3
+
+Cross-area dependencies for Area 10:
+Task 10.3 benefits from ── Task 3.4 (Abstract Messaging Interface)
+Task 10.3 benefits from ── Task 3.1 (YAML Bot Config, for per-bot file size limits)
 ```
 
 ## Suggested Implementation Order
@@ -305,5 +322,8 @@ Tasks ordered by difficulty (easy first) and dependency readiness. Each task can
 | 36 | **9.8** Research session management | Medium | Web & Academic Research |
 | 37 | **9.5** Article download & content integration | Hard | Web & Academic Research |
 | 38 | **9.6** CAPES/academic network publisher access | Hard | Web & Academic Research |
+| 39 | **10.1** Structured agent responses | Medium | Telegram File Delivery |
+| 40 | **10.2** Send file tool | Easy | Telegram File Delivery |
+| 41 | **10.3** Telegram file delivery handler | Medium | Telegram File Delivery |
 
 This order is a suggestion. Tasks can be implemented in any order that respects the dependency graph above.
