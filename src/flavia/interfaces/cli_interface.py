@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import random
 import sys
 import threading
@@ -15,7 +16,7 @@ from rich.markdown import Markdown
 
 from flavia.agent import AgentProfile, RecursiveAgent
 from flavia.config import ProviderConfig, Settings
-from flavia.interfaces.commands import CommandContext, dispatch_command
+from flavia.interfaces.commands import CommandContext, dispatch_command, list_commands
 
 console = Console()
 
@@ -33,6 +34,17 @@ LOADING_MESSAGES = (
     "Comparing citations with suspicious rigor",
     "Preparing arguments for the committee",
 )
+
+_COMPLETION_SETTINGS: Optional[Settings] = None
+
+_COMMANDS_WITH_ARGS = {
+    "/help",
+    "/agent",
+    "/model",
+    "/tools",
+    "/provider-manage",
+    "/provider-test",
+}
 
 
 def _build_loading_line(message: str, step: int, model_ref: str = "") -> str:
@@ -98,6 +110,7 @@ def _read_user_input(history_enabled: bool, active_agent: Optional[str] = None) 
     has_prefix = active_agent and active_agent != "main"
 
     if history_enabled and _readline is not None:
+        _configure_readline_completion()
         # Keep a plain prompt with readline; styled ANSI prompts can break redraw
         # when deleting characters or navigating history with arrows.
         prefix = f"[{active_agent}] " if has_prefix else ""
@@ -106,6 +119,167 @@ def _read_user_input(history_enabled: bool, active_agent: Optional[str] = None) 
     if has_prefix:
         return console.input(f"[dim][{active_agent}] [/dim][bold green]You:[/bold green] ")
     return console.input("[bold green]You:[/bold green] ")
+
+
+def _configure_readline_completion() -> None:
+    """Enable TAB completion for commands, agent names, and file paths."""
+    if _readline is None:
+        return
+    if not hasattr(_readline, "set_completer"):
+        return
+
+    try:
+        # Keep "/" in tokens so command and path completion see full fragments.
+        if hasattr(_readline, "set_completer_delims"):
+            _readline.set_completer_delims(" \t\n")
+        _readline.set_completer(_readline_completer)
+        if hasattr(_readline, "parse_and_bind"):
+            _readline.parse_and_bind("tab: complete")
+    except Exception:
+        pass
+
+
+def _readline_completer(text: str, state: int) -> Optional[str]:
+    """Readline completion callback."""
+    line_buffer = ""
+    if _readline is not None and hasattr(_readline, "get_line_buffer"):
+        try:
+            line_buffer = _readline.get_line_buffer()
+        except Exception:
+            line_buffer = ""
+
+    matches = _completion_candidates(text, line_buffer, _COMPLETION_SETTINGS)
+    if state < len(matches):
+        return matches[state]
+    return None
+
+
+def _completion_candidates(
+    text: str,
+    line_buffer: str,
+    settings: Optional[Settings],
+) -> list[str]:
+    """Build completion candidates for the current prompt fragment."""
+    stripped = line_buffer.lstrip()
+    if text.startswith("@"):
+        return _path_completion_candidates(
+            text[1:],
+            settings,
+            allow_empty=True,
+            prefix="@",
+        )
+    if stripped.startswith("/"):
+        return _command_completion_candidates(text, stripped, settings)
+    return _path_completion_candidates(text, settings)
+
+
+def _command_completion_candidates(
+    text: str,
+    stripped_line: str,
+    settings: Optional[Settings],
+) -> list[str]:
+    """Complete slash commands and command-specific arguments."""
+    parts = stripped_line.split()
+
+    if len(parts) <= 1 and not stripped_line.endswith(" "):
+        commands = []
+        for cmd in list_commands():
+            if cmd.startswith(text):
+                commands.append(f"{cmd} " if cmd in _COMMANDS_WITH_ARGS else cmd)
+        return sorted(commands)
+
+    if not parts:
+        return []
+
+    cmd = parts[0]
+
+    if cmd == "/agent" and settings is not None:
+        return sorted(name for name in _get_available_agents(settings).keys() if name.startswith(text))
+
+    if cmd in {"/provider-manage", "/provider-test"} and settings is not None:
+        providers = settings.providers.providers.keys()
+        return sorted(pid for pid in providers if pid.startswith(text))
+
+    if cmd == "/model" and settings is not None:
+        matches: set[str] = set()
+        if "list".startswith(text):
+            matches.add("list")
+        if settings.providers.providers:
+            model_index = 0
+            for provider in settings.providers.providers.values():
+                for model in provider.models:
+                    prefixed = f"{provider.id}:{model.id}"
+                    index_str = str(model_index)
+                    combined = f"{index_str}_{prefixed}"
+                    if (
+                        combined.startswith(text)
+                        or index_str.startswith(text)
+                        or prefixed.startswith(text)
+                        or model.id.startswith(text)
+                    ):
+                        matches.add(combined)
+                    if index_str.startswith(text):
+                        matches.add(combined)
+                    model_index += 1
+            return sorted(
+                matches,
+                key=lambda item: (
+                    0,
+                    int(item.split("_", 1)[0]),
+                )
+                if "_" in item and item.split("_", 1)[0].isdigit()
+                else ((1, -1) if item == "list" else (2, item)),
+            )
+        else:
+            for model in settings.models:
+                if model.id.startswith(text):
+                    matches.add(model.id)
+        return sorted(matches)
+
+    if cmd == "/help":
+        names = [name.lstrip("/") for name in list_commands()]
+        return sorted(name for name in names if name.startswith(text))
+
+    return []
+
+
+def _path_completion_candidates(
+    text: str,
+    settings: Optional[Settings],
+    allow_empty: bool = False,
+    prefix: str = "",
+) -> list[str]:
+    """Complete file/directory names relative to project base directory."""
+    if not text and not allow_empty:
+        return []
+
+    base_dir = settings.base_dir if settings is not None else Path.cwd()
+    raw_dir, raw_partial = os.path.split(text)
+    expanded = os.path.expanduser(text)
+    expanded_dir, expanded_partial = os.path.split(expanded)
+    search_partial = expanded_partial if expanded_partial is not None else raw_partial
+
+    if os.path.isabs(expanded):
+        search_dir = Path(expanded_dir or os.sep)
+    else:
+        search_dir = (base_dir / expanded_dir) if expanded_dir else base_dir
+
+    try:
+        entries = sorted(search_dir.iterdir(), key=lambda p: p.name.lower())
+    except Exception:
+        return []
+
+    candidates: list[str] = []
+    for entry in entries:
+        name = entry.name
+        if search_partial and not name.startswith(search_partial):
+            continue
+        candidate = os.path.join(raw_dir, name) if raw_dir else name
+        if entry.is_dir():
+            candidate += "/"
+        candidates.append(f"{prefix}{candidate}")
+
+    return candidates
 
 
 def _append_chat_log(chat_log_file: Path, role: str, content: str, model_ref: str = "") -> None:
@@ -451,6 +625,7 @@ __ _                Welcome to
     console.print(
         "[dim]Tip: use Up/Down arrows to browse previous prompts in this project.[/dim]\n"
     )
+    console.print("[dim]Tip: press Tab to autocomplete commands, agents, and paths.[/dim]\n")
 
 
 def _print_active_model_hint(agent: RecursiveAgent, settings: Optional[Settings] = None) -> None:
@@ -470,6 +645,8 @@ def _print_active_model_hint(agent: RecursiveAgent, settings: Optional[Settings]
 
 def run_cli(settings: Settings) -> None:
     """Run the interactive CLI."""
+    global _COMPLETION_SETTINGS
+
     # Keep CLI output clean even if logging is configured elsewhere.
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("openai").setLevel(logging.WARNING)
@@ -494,6 +671,7 @@ def run_cli(settings: Settings) -> None:
     )
 
     while True:
+        _COMPLETION_SETTINGS = ctx.settings
         try:
             user_input = _read_user_input(ctx.history_enabled, ctx.settings.active_agent).strip()
 

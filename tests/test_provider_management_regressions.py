@@ -101,6 +101,22 @@ def test_manage_provider_merge_fetch_keeps_model_objects(monkeypatch):
     assert sum(1 for model in saved["models"] if model.default) == 1
 
 
+def test_manage_provider_cancelled_action_does_not_save(monkeypatch):
+    settings = _build_settings([ModelConfig(id="gpt-4o", name="GPT-4o", default=True)])
+    save_called = {"value": False}
+
+    monkeypatch.setattr("flavia.setup.provider_wizard.q_select", lambda *args, **kwargs: None)
+
+    def _save_changes(*args, **kwargs):
+        save_called["value"] = True
+        return True
+
+    monkeypatch.setattr("flavia.setup.provider_wizard._save_provider_changes", _save_changes)
+
+    assert manage_provider_models(settings, "openai") is False
+    assert save_called["value"] is False
+
+
 def test_search_models_select_all_returns_all_matches(monkeypatch):
     models = [{"id": f"model-{idx}", "name": f"Model {idx}"} for idx in range(25)]
     answers = iter(["model", "a"])

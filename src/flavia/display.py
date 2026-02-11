@@ -17,7 +17,7 @@ def _strip_rich_markup(text: str) -> str:
     """Strip only Rich markup tags used by this module."""
     import re
 
-    return re.sub(r"\[/?(?:bold|cyan|red|green|dim)\]", "", text)
+    return re.sub(r"\[/?(?:bold|cyan|red|green|dim|yellow)\]", "", text)
 
 
 def display_providers(
@@ -82,7 +82,10 @@ def display_providers(
         for model in provider.models:
             default = " (default)" if model.default else ""
             model_id = f"{provider_id}:{model.id}"
-            _print(f"      {global_index}: {model.name} - [cyan]{model_id}[/cyan]{default}")
+            _print(
+                f"      [yellow]{global_index}[/yellow]: {model.name} - "
+                f"[cyan]{model_id}[/cyan]{default}"
+            )
             global_index += 1
 
     _print()

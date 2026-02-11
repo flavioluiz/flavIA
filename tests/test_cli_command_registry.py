@@ -212,6 +212,44 @@ def test_dispatch_no_arg_command_with_args_is_unknown():
     assert not any("Goodbye" in line for line in console.printed)
 
 
+def test_dispatch_agent_cancelled_selection_shows_list_without_switch(monkeypatch, tmp_path):
+    """Cancelling /agent selection should not switch to 'main' implicitly."""
+    from flavia.setup.prompt_utils import SetupCancelled
+
+    console = _DummyConsole()
+    settings = Settings(
+        base_dir=tmp_path,
+        agents_config={
+            "main": {"context": "Main", "tools": []},
+            "subagents": {"reviewer": {"context": "Review", "tools": []}},
+        },
+    )
+    ctx = _make_test_context(settings=settings, console=console)
+    listed: list[tuple[Settings, bool]] = []
+
+    monkeypatch.setattr(
+        "flavia.interfaces.cli_interface._get_available_agents",
+        lambda _settings: {"main": {}, "reviewer": {}},
+    )
+    monkeypatch.setattr("flavia.setup.prompt_utils.is_interactive", lambda: True)
+    monkeypatch.setattr(
+        "flavia.setup.prompt_utils.q_select",
+        lambda *args, **kwargs: (_ for _ in ()).throw(SetupCancelled()),
+    )
+    monkeypatch.setattr(
+        "flavia.display.display_agents",
+        lambda configured_settings, console=None, use_rich=True: listed.append(
+            (configured_settings, use_rich)
+        ),
+    )
+
+    result = dispatch_command(ctx, "/agent")
+
+    assert result is True
+    assert settings.active_agent is None
+    assert listed == [(settings, True)]
+
+
 def test_dispatch_provider_setup_runs_wizard_with_base_dir(monkeypatch, tmp_path):
     """Provider setup command should run wizard for the active session base_dir."""
     console = _DummyConsole()

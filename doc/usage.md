@@ -10,6 +10,20 @@ flavia
 
 The interface uses [Rich](https://github.com/Textualize/rich) for formatting, with command history (readline) and loading animations.
 
+### Prompt completion (Tab)
+
+In interactive CLI mode, press `Tab` to autocomplete:
+
+- Slash commands (`/ag` -> `/agent`)
+- Agent names after `/agent`
+- Provider IDs after `/provider-manage` and `/provider-test`
+- Model references after `/model`:
+  - numeric index (`0`, `1`, `2`, ...)
+  - provider-prefixed reference (`openai:gpt-4o`)
+  - combined index + reference (`0_openai:gpt-4o`)
+- File and directory paths
+- Mention-style file references with `@` (e.g., `@notes.md`, `@docs/chapter1.md`)
+
 ## Command-line flags
 
 ### Initialization and modes
@@ -92,7 +106,7 @@ Inside a chat session, the following commands are available:
 | `/help <command>` | Show detailed help for a specific command (usage, examples, related commands) |
 | `/reset` | Reset conversation and reload configuration |
 | `/agent_setup` | Configure agents (quick model change, revise, or full rebuild) |
-| `/agent` | List available agents with configurations |
+| `/agent` | Open interactive agent selection (fallback: list available agents) |
 | `/agent <name>` | Switch to a different agent (resets conversation) |
 | `/model` | Show the current active model |
 | `/model <ref>` | Switch model by index, model ID, or `provider:model_id` (resets conversation) |
@@ -203,14 +217,8 @@ Configuration saved! Use /reset to load.
 Inside the interactive CLI:
 
 1. Run `/catalog`.
-2. Use the menu:
-   - `1` overview/statistics
-   - `2` directory tree
-   - `3` search
-   - `4` summaries
-   - `5` list online sources
-   - `6` add online source URL
-3. Press `q` to return to chat.
+2. Use the interactive menu (arrow keys + Enter). Non-interactive fallback uses numbered options.
+3. Press Esc/Ctrl+C (or choose "Back to chat") to return.
 
 Notes:
 - Online source converters are currently placeholders (URLs are cataloged, but content fetching/conversion is not implemented yet).

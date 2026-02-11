@@ -146,6 +146,27 @@ def test_model_switch_applies_runtime_override_even_with_main_agent_model(monkey
     assert any("Switched to model 'openai:gpt-4o'. Conversation reset." in line for line in printed)
 
 
+def test_model_switch_accepts_combined_index_reference(monkeypatch, tmp_path):
+    settings = _make_settings(tmp_path)
+    create_calls: list[str | int | None] = []
+
+    def _fake_create_agent(configured_settings: Settings, model_override=None):
+        create_calls.append(model_override)
+        model_ref = model_override or configured_settings.agents_config["main"]["model"]
+        provider, model = configured_settings.providers.resolve_model(model_ref)
+        assert provider is not None
+        assert model is not None
+        return _DummyAgent(provider=provider, model_id=model.id)
+
+    monkeypatch.setattr(cli_interface, "create_agent_from_settings", _fake_create_agent)
+
+    printed = _run_cli_with_inputs(monkeypatch, settings, ["/model 1_openai:gpt-4o", "/quit"])
+
+    assert create_calls == [None, "openai:gpt-4o"]
+    assert settings.default_model == "openai:gpt-4o"
+    assert any("Switched to model 'openai:gpt-4o'. Conversation reset." in line for line in printed)
+
+
 def test_model_switch_rolls_back_default_model_on_agent_creation_failure(monkeypatch, tmp_path):
     settings = _make_settings(tmp_path)
     create_calls: list[str | int | None] = []

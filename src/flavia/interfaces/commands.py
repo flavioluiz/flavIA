@@ -467,18 +467,23 @@ def cmd_agent(ctx: CommandContext, args: str) -> bool:
         _print_active_model_hint,
         _resolve_agent_model_ref,
     )
-    from flavia.setup.prompt_utils import is_interactive, q_autocomplete
+    from flavia.setup.prompt_utils import SetupCancelled, is_interactive, q_select
 
     available = _get_available_agents(ctx.settings)
 
     if not args.strip():
         # No args - either offer autocomplete or list
         if is_interactive() and available:
-            agent_name = q_autocomplete(
-                "Switch to agent:",
-                choices=list(available.keys()),
-                default="main",
-            )
+            try:
+                current_agent = ctx.settings.active_agent or "main"
+                agent_name = q_select(
+                    "Select agent:",
+                    choices=list(available.keys()),
+                    default=current_agent,
+                    allow_cancel=True,
+                )
+            except SetupCancelled:
+                agent_name = ""
             if agent_name and agent_name in available:
                 args = agent_name
             else:
@@ -556,6 +561,7 @@ def cmd_agent(ctx: CommandContext, args: str) -> bool:
         "/model             Show current active model",
         "/model list        List all available models",
         "/model 1           Switch to model at index 1",
+        "/model 1_openai:gpt-4o  Switch using combined index+reference",
         "/model gpt-4o      Switch to model by ID",
         "/model openai:gpt-4  Switch to provider:model",
     ],
@@ -591,8 +597,16 @@ def cmd_model(ctx: CommandContext, args: str) -> bool:
     try:
         model_ref: str | int = int(model_arg)
     except ValueError:
-        # Keep as string (model_id or provider:model_id)
-        model_ref = model_arg
+        # Accept combined completion format: "<index>_<provider:model>"
+        if "_" in model_arg:
+            index_part, _ = model_arg.split("_", 1)
+            if index_part.isdigit():
+                model_ref = int(index_part)
+            else:
+                model_ref = model_arg
+        else:
+            # Keep as string (model_id or provider:model_id)
+            model_ref = model_arg
 
     # Check if already using this model
     current_model_ref = _get_agent_model_ref(ctx.agent)

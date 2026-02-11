@@ -62,7 +62,13 @@ def fetch_provider_models(
             if "unexpected keyword argument 'proxies'" not in str(exc):
                 raise
             http_kwargs = {k: v for k, v in kwargs.items() if k != "default_headers"}
-            client = OpenAI(**http_kwargs, http_client=httpx.Client(timeout=httpx.Timeout(timeout, connect=10.0)))
+            client = OpenAI(
+                **http_kwargs,
+                http_client=httpx.Client(
+                    timeout=httpx.Timeout(timeout, connect=10.0),
+                    headers=headers or None,
+                ),
+            )
 
         response = client.models.list()
 
@@ -237,7 +243,13 @@ def test_provider_connection(
                 raise
             # Compatibility fallback for environments where OpenAI SDK and httpx versions mismatch.
             http_kwargs = {k: v for k, v in kwargs.items() if k != "default_headers"}
-            client = OpenAI(**http_kwargs, http_client=httpx.Client(timeout=httpx.Timeout(30.0, connect=10.0)))
+            client = OpenAI(
+                **http_kwargs,
+                http_client=httpx.Client(
+                    timeout=httpx.Timeout(30.0, connect=10.0),
+                    headers=headers or None,
+                ),
+            )
 
         # Try a simple completion
         response = client.chat.completions.create(
@@ -1250,7 +1262,8 @@ def manage_provider_models(
         choice = q_select("Action:", choices=action_choices, default="s")
 
         if choice is None:
-            choice = "s"
+            console.print("[yellow]Changes discarded.[/yellow]")
+            return False
         elif not isinstance(choice, str) or len(choice) > 1:
             # Map title back to letter code
             action_map = {
