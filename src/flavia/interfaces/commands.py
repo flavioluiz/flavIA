@@ -701,3 +701,117 @@ def cmd_catalog(ctx: CommandContext, args: str) -> bool:
 
     run_catalog_command(ctx.settings)
     return True
+
+
+@register_command(
+    name="/provider-setup",
+    category="Models & Providers",
+    short_desc="Run provider configuration wizard",
+    long_desc="Launch the interactive provider configuration wizard to add or reconfigure "
+    "LLM providers. Supports known providers (OpenAI, Anthropic, OpenRouter, Synthetic) "
+    "and custom OpenAI-compatible endpoints.",
+    usage="/provider-setup",
+    examples=["/provider-setup       Launch the provider configuration wizard"],
+    related=["/provider-manage", "/provider-test", "/providers", "/model"],
+)
+def cmd_provider_setup(ctx: CommandContext, args: str) -> bool:
+    """Run provider configuration wizard."""
+    from flavia.setup.provider_wizard import run_provider_wizard
+
+    success = run_provider_wizard(target_dir=ctx.settings.base_dir)
+    if success:
+        ctx.console.print("[dim]Use /reset to reload configuration.[/dim]")
+    return True
+
+
+@register_command(
+    name="/provider-manage",
+    category="Models & Providers",
+    short_desc="Manage provider models and settings",
+    long_desc="Open the provider management interface to add, remove, or fetch models, "
+    "change settings, or delete a provider. Without ID, prompts to select from configured providers.",
+    usage="/provider-manage [id]",
+    examples=[
+        "/provider-manage          Select provider interactively",
+        "/provider-manage openai   Manage the 'openai' provider directly",
+    ],
+    related=["/provider-setup", "/provider-test", "/providers"],
+    accepts_args=True,
+)
+def cmd_provider_manage(ctx: CommandContext, args: str) -> bool:
+    """Manage provider models and settings."""
+    from flavia.setup.provider_wizard import manage_provider_models
+
+    provider_id = args.strip() if args.strip() else None
+    success = manage_provider_models(ctx.settings, provider_id)
+    if success:
+        ctx.console.print("[dim]Use /reset to reload configuration.[/dim]")
+    return True
+
+
+@register_command(
+    name="/provider-test",
+    category="Models & Providers",
+    short_desc="Test provider connection",
+    long_desc="Test connectivity to a provider by making a small API request. "
+    "Without arguments, tests the default provider. With a provider ID, tests that specific provider.",
+    usage="/provider-test [id]",
+    examples=[
+        "/provider-test           Test the default provider",
+        "/provider-test openai    Test the 'openai' provider",
+    ],
+    related=["/provider-setup", "/provider-manage", "/providers"],
+    accepts_args=True,
+)
+def cmd_provider_test(ctx: CommandContext, args: str) -> bool:
+    """Test provider connection."""
+    from flavia.setup.provider_wizard import test_provider_connection
+
+    provider_id = args.strip() if args.strip() else None
+
+    # Resolve provider
+    if provider_id:
+        provider = ctx.settings.providers.get_provider(provider_id)
+        if not provider:
+            ctx.console.print(f"[red]Provider '{provider_id}' not found.[/red]")
+            available = list(ctx.settings.providers.providers.keys())
+            if available:
+                ctx.console.print(f"Available: {', '.join(available)}")
+            return True
+    else:
+        provider = ctx.settings.providers.get_default_provider()
+        if not provider:
+            ctx.console.print("[red]No default provider configured.[/red]")
+            ctx.console.print("Use [cyan]/provider-setup[/cyan] to configure one.")
+            return True
+
+    ctx.console.print(f"\n[bold]Testing: {provider.name}[/bold] ({provider.id})")
+    ctx.console.print(f"  URL: [dim]{provider.api_base_url}[/dim]")
+
+    if not provider.api_key:
+        ctx.console.print("\n[red]Error: API key not configured[/red]")
+        if provider.api_key_env_var:
+            ctx.console.print(f"[dim]Set {provider.api_key_env_var} environment variable[/dim]")
+        return True
+
+    model = provider.get_default_model()
+    if not model:
+        ctx.console.print("[red]Error: No models configured[/red]")
+        return True
+
+    ctx.console.print(f"  Model: [cyan]{model.id}[/cyan]")
+    ctx.console.print("\n[dim]Connecting...[/dim]")
+
+    success, message = test_provider_connection(
+        provider.api_key,
+        provider.api_base_url,
+        model.id,
+        provider.headers if provider.headers else None,
+    )
+
+    if success:
+        ctx.console.print(f"\n[green]SUCCESS[/green] {message}")
+    else:
+        ctx.console.print(f"\n[red]FAILED[/red] {message}")
+
+    return True

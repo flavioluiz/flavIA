@@ -29,6 +29,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **In-Session Provider Management (Task 4.4)**: New slash commands for managing providers without exiting the CLI
+  - `/provider-setup` — Run the interactive provider configuration wizard
+  - `/provider-manage [id]` — Manage provider models and settings (add, remove, fetch, rename)
+  - `/provider-test [id]` — Test connection to a provider (tests default provider if no ID given)
+  - All config-changing commands prompt to use `/reset` to reload settings
 - **Runtime Model Switching**: New `/model` command allows changing the active model mid-session without restarting
   - `/model` — Show current active model details (provider, model name, reference, max tokens)
   - `/model <ref>` — Switch to different model (by index, model_id, or provider:model_id format)

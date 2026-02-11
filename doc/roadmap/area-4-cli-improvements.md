@@ -90,25 +90,30 @@ This replaces the workflow of exiting, running `flavia -m <model>`, and losing c
 
 ---
 
-### Task 4.4 -- In-Session Provider & Model Management
+### Task 4.4 -- In-Session Provider & Model Management ✓ COMPLETED
 
-**Difficulty**: Medium | **Dependencies**: Task 4.1
+**Difficulty**: Medium | **Dependencies**: Task 4.1 | **Status**: DONE
 
-Expose the provider management wizards (currently only accessible via CLI flags) as interactive slash commands within the CLI session:
+Exposed provider management wizards as interactive slash commands:
 
 | Command | Equivalent flag | Description |
 |---------|----------------|-------------|
-| `/provider-setup` | `--setup-provider` | Run the interactive provider configuration wizard |
-| `/provider-manage [id]` | `--manage-provider` | Manage models for a provider (add, remove, fetch from API) |
+| `/provider-setup` | `--setup-provider` | Run the provider configuration wizard |
+| `/provider-manage [id]` | `--manage-provider` | Manage models for a provider |
 | `/provider-test [id]` | `--test-provider` | Test connection to a provider |
 
-After provider changes, prompt the user to `/reset` to reload the updated configuration (same pattern as `/agent_setup` already uses).
+**Implementation summary**:
+- Added `/provider-setup` — calls `run_provider_wizard(target_dir=settings.base_dir)`
+- Added `/provider-manage [id]` — calls `manage_provider_models(settings, provider_id)`
+- Added `/provider-test [id]` — resolves provider, validates API key/model, calls `test_provider_connection()`
 
-This eliminates the need to exit the interactive session for provider management, making the CLI fully self-sufficient.
+After config changes, commands prompt to use `/reset` to reload (same pattern as `/agent_setup`).
 
-**Key files to modify**:
-- `interfaces/cli_interface.py` -- add slash command handlers that call existing wizard functions
-- `setup/provider_wizard.py` -- no changes needed (functions are already importable)
+**Files modified**:
+- `src/flavia/interfaces/commands.py` — Added three command handlers
+- `doc/usage.md` — Documented new commands
+- `CHANGELOG.md` — Added feature entry
+- `doc/roadmap/area-4-cli-improvements.md` — Marked task completed
 
 ---
 

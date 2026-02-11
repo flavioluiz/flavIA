@@ -99,6 +99,9 @@ Inside a chat session, the following commands are available:
 | `/model list` | Quick alias for `/providers` |
 | `/catalog` | Browse content catalog (overview, search, summaries, online sources) |
 | `/providers` | List configured providers with indexed models |
+| `/provider-setup` | Run interactive provider configuration wizard |
+| `/provider-manage [id]` | Manage provider models and settings |
+| `/provider-test [id]` | Test connection to a provider |
 | `/tools` | List available tools by category |
 | `/tools <name>` | Show tool schema and parameters |
 | `/config` | Show configuration paths and active settings |
@@ -110,7 +113,7 @@ The unified help system organizes commands into logical categories:
 
 - **Session**: `/quit`, `/reset`
 - **Agents**: `/agent`, `/agent_setup`
-- **Models & Providers**: `/model`, `/providers`
+- **Models & Providers**: `/model`, `/providers`, `/provider-setup`, `/provider-manage`, `/provider-test`
 - **Information**: `/tools`, `/config`, `/catalog`, `/help`
 
 Use `/help` without arguments to see all commands with one-line descriptions grouped by category. Use `/help <command>` for detailed help including usage patterns, examples, and related commands:
