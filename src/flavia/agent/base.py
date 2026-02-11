@@ -49,7 +49,13 @@ class BaseAgent(ABC):
         self.last_completion_tokens: int = 0
         self.total_prompt_tokens: int = 0
         self.total_completion_tokens: int = 0
+        self.compaction_warning_pending: bool = False
+        self.compaction_warning_prompt_tokens: int = 0
         self.max_context_tokens: int = self._resolve_max_context_tokens()
+        (
+            self.profile.compact_threshold,
+            self.profile.compact_threshold_source,
+        ) = self._resolve_compact_threshold()
 
         self._init_system_prompt()
 
@@ -74,6 +80,66 @@ class BaseAgent(ABC):
             if model_config and model_config.max_tokens:
                 return model_config.max_tokens
         return 128_000
+
+    @staticmethod
+    def _parse_compact_threshold(value: Any) -> Optional[float]:
+        """Parse and validate a compact threshold value."""
+        if value is None:
+            return None
+        try:
+            threshold = float(value)
+        except (TypeError, ValueError):
+            return None
+        if 0.0 <= threshold <= 1.0:
+            return threshold
+        return None
+
+    def _resolve_compact_threshold(self) -> tuple[float, str]:
+        """Resolve compaction threshold with precedence rules.
+
+        Precedence:
+        1. Agent profile threshold when explicitly configured (including inherited)
+        2. Provider model-level threshold
+        3. Provider-level threshold
+        4. Global settings threshold
+        5. Default (0.9)
+        """
+        profile_source = getattr(self.profile, "compact_threshold_source", "default")
+        profile_threshold = self._parse_compact_threshold(
+            getattr(self.profile, "compact_threshold", 0.9)
+        )
+        if profile_source != "default" and profile_threshold is not None:
+            return profile_threshold, profile_source
+
+        model_threshold: Optional[float] = None
+        provider_threshold: Optional[float] = None
+        if self.provider:
+            model_config = self.provider.get_model_by_id(self.model_id)
+            if model_config:
+                model_threshold = self._parse_compact_threshold(
+                    getattr(model_config, "compact_threshold", None)
+                )
+            provider_threshold = self._parse_compact_threshold(
+                getattr(self.provider, "compact_threshold", None)
+            )
+
+        if model_threshold is not None:
+            return model_threshold, "provider-model"
+        if provider_threshold is not None:
+            return provider_threshold, "provider"
+
+        settings_configured = bool(
+            getattr(self.settings, "compact_threshold_configured", False)
+        )
+        settings_threshold = self._parse_compact_threshold(
+            getattr(self.settings, "compact_threshold", 0.9)
+        )
+        if settings_configured and settings_threshold is not None:
+            return settings_threshold, "settings"
+
+        if profile_threshold is not None:
+            return profile_threshold, profile_source
+        return 0.9, "default"
 
     def _create_openai_client(self, provider: Optional[ProviderConfig] = None) -> OpenAI:
         """
@@ -133,6 +199,8 @@ class BaseAgent(ABC):
         self.last_completion_tokens = 0
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
+        self.compaction_warning_pending = False
+        self.compaction_warning_prompt_tokens = 0
 
     _COMPACTION_PROMPT = (
         "You are summarizing a conversation to preserve context for continuation.\n"
@@ -180,7 +248,11 @@ class BaseAgent(ABC):
         finally:
             self.tool_schemas = saved_tool_schemas
 
-        summary = summary_response.content or ""
+        summary = (summary_response.content or "").strip()
+        if not summary:
+            raise RuntimeError(
+                "Compaction summary was empty; conversation was not compacted."
+            )
 
         # Reset conversation to system prompt only
         self.reset()

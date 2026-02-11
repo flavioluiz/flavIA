@@ -28,8 +28,13 @@ from flavia.config.providers import ProviderConfig, ModelConfig as ProviderModel
 def _make_agent(
     max_tokens: int = 128_000,
     compact_threshold: float = 0.9,
+    compact_threshold_source: str = "config",
     provider_id: str = "test",
     model_id: str = "test-model",
+    provider_compact_threshold: float | None = None,
+    model_compact_threshold: float | None = None,
+    settings_compact_threshold: float = 0.9,
+    settings_compact_threshold_configured: bool = False,
     *,
     with_provider: bool = True,
 ) -> RecursiveAgent:
@@ -46,15 +51,22 @@ def _make_agent(
     # Profile with compact_threshold
     agent.profile = MagicMock()
     agent.profile.compact_threshold = compact_threshold
+    agent.profile.compact_threshold_source = compact_threshold_source
 
     if with_provider:
-        model_cfg = ProviderModelConfig(id=model_id, name=model_id, max_tokens=max_tokens)
+        model_cfg = ProviderModelConfig(
+            id=model_id,
+            name=model_id,
+            max_tokens=max_tokens,
+            compact_threshold=model_compact_threshold,
+        )
         agent.provider = ProviderConfig(
             id=provider_id,
             name=provider_id,
             api_base_url="http://localhost",
             api_key="test-key",
             models=[model_cfg],
+            compact_threshold=provider_compact_threshold,
         )
     else:
         agent.provider = None
@@ -63,6 +75,10 @@ def _make_agent(
     agent.messages = [{"role": "system", "content": "You are a test assistant."}]
     agent.settings = MagicMock()
     agent.settings.verbose = False
+    agent.settings.compact_threshold = settings_compact_threshold
+    agent.settings.compact_threshold_configured = settings_compact_threshold_configured
+    agent.compaction_warning_pending = False
+    agent.compaction_warning_prompt_tokens = 0
     agent.tool_schemas = []
     return agent
 
@@ -123,6 +139,14 @@ class TestAgentProfileCompactThreshold:
         profile = AgentProfile.from_config(config)
         assert profile.compact_threshold == 0.85
 
+    def test_from_config_rejects_out_of_range(self):
+        with pytest.raises(ValueError, match="compact_threshold"):
+            AgentProfile.from_config({"context": "test", "compact_threshold": 1.5})
+
+    def test_from_config_rejects_invalid_type(self):
+        with pytest.raises(ValueError, match="compact_threshold"):
+            AgentProfile.from_config({"context": "test", "compact_threshold": "abc"})
+
 
 # ---------------------------------------------------------------------------
 # needs_compaction property tests
@@ -162,6 +186,34 @@ class TestNeedsCompaction:
         agent = _make_agent(max_tokens=100_000, compact_threshold=1.0)
         agent._update_token_usage(_make_usage(prompt_tokens=99_999))
         assert agent.needs_compaction is False
+
+
+class TestCompactionSignalInRun:
+    def test_warning_pending_when_any_llm_call_crosses_threshold(self):
+        agent = _make_agent(max_tokens=100_000, compact_threshold=0.9)
+
+        first_response = SimpleNamespace(content="", tool_calls=[object()])
+        final_response = SimpleNamespace(content="final", tool_calls=None)
+
+        calls = {"n": 0}
+
+        def fake_call_llm(_messages):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                agent.last_prompt_tokens = 92_000
+                return first_response
+            agent.last_prompt_tokens = 10_000
+            return final_response
+
+        agent._call_llm = MagicMock(side_effect=fake_call_llm)
+        agent._assistant_message_to_dict = MagicMock(return_value={"role": "assistant", "content": ""})
+        agent._process_tool_calls_with_spawns = MagicMock(return_value=([], []))
+
+        result = agent.run("Hello")
+
+        assert result == "final"
+        assert agent.compaction_warning_pending is True
+        assert agent.compaction_warning_prompt_tokens == 92_000
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +397,83 @@ class TestCompactConversation:
         assert len(agent.tool_schemas) == 1
         assert agent.tool_schemas[0]["function"]["name"] == "test_tool"
 
+    def test_compaction_empty_summary_raises_without_resetting_messages(self):
+        agent = _make_agent()
+        original_messages = [
+            {"role": "system", "content": "You are a test assistant."},
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi!"},
+        ]
+        agent.messages = list(original_messages)
+
+        mock_response = MagicMock()
+        mock_response.content = "   "
+        agent._call_llm = MagicMock(return_value=mock_response)
+
+        with pytest.raises(RuntimeError, match="summary was empty"):
+            agent.compact_conversation()
+
+        # Conversation history is preserved when compaction fails.
+        assert agent.messages == original_messages
+
+
+class TestResolveCompactThreshold:
+    def test_profile_config_threshold_has_highest_priority(self):
+        agent = _make_agent(
+            compact_threshold=0.77,
+            compact_threshold_source="config",
+            provider_compact_threshold=0.55,
+            model_compact_threshold=0.44,
+            settings_compact_threshold=0.33,
+            settings_compact_threshold_configured=True,
+        )
+
+        threshold, source = agent._resolve_compact_threshold()
+        assert threshold == pytest.approx(0.77)
+        assert source == "config"
+
+    def test_model_threshold_overrides_provider_and_settings_when_profile_default(self):
+        agent = _make_agent(
+            compact_threshold=0.9,
+            compact_threshold_source="default",
+            provider_compact_threshold=0.6,
+            model_compact_threshold=0.5,
+            settings_compact_threshold=0.4,
+            settings_compact_threshold_configured=True,
+        )
+
+        threshold, source = agent._resolve_compact_threshold()
+        assert threshold == pytest.approx(0.5)
+        assert source == "provider-model"
+
+    def test_provider_threshold_overrides_settings_when_profile_default(self):
+        agent = _make_agent(
+            compact_threshold=0.9,
+            compact_threshold_source="default",
+            provider_compact_threshold=0.65,
+            model_compact_threshold=None,
+            settings_compact_threshold=0.4,
+            settings_compact_threshold_configured=True,
+        )
+
+        threshold, source = agent._resolve_compact_threshold()
+        assert threshold == pytest.approx(0.65)
+        assert source == "provider"
+
+    def test_settings_threshold_used_when_no_provider_defaults(self):
+        agent = _make_agent(
+            compact_threshold=0.9,
+            compact_threshold_source="default",
+            provider_compact_threshold=None,
+            model_compact_threshold=None,
+            settings_compact_threshold=0.42,
+            settings_compact_threshold_configured=True,
+        )
+
+        threshold, source = agent._resolve_compact_threshold()
+        assert threshold == pytest.approx(0.42)
+        assert source == "settings"
+
 
 # ---------------------------------------------------------------------------
 # CLI _prompt_compaction tests
@@ -438,6 +567,32 @@ class TestCliPromptCompaction:
 
         assert result is False
 
+    def test_prompt_shown_when_warning_pending_even_if_last_usage_is_low(self):
+        from flavia.interfaces.cli_interface import _prompt_compaction
+        from rich.console import Console
+
+        agent = _make_agent(max_tokens=100_000, compact_threshold=0.9)
+        agent._update_token_usage(_make_usage(prompt_tokens=10_000))
+        agent.compaction_warning_pending = True
+        agent.compaction_warning_prompt_tokens = 92_000
+
+        buf = StringIO()
+        test_console = Console(file=buf, no_color=True, width=200)
+
+        import flavia.interfaces.cli_interface as cli_mod
+
+        original_console = cli_mod.console
+        cli_mod.console = test_console
+        try:
+            with patch("builtins.input", return_value="n"):
+                result = _prompt_compaction(agent)
+        finally:
+            cli_mod.console = original_console
+
+        assert result is False
+        output = buf.getvalue()
+        assert "92%" in output
+
 
 # ---------------------------------------------------------------------------
 # Telegram _build_compaction_warning tests
@@ -474,3 +629,15 @@ class TestTelegramCompactionWarning:
         warning = _build_compaction_warning(agent)
         assert warning != ""
         assert "90%" in warning
+
+    def test_warning_when_pending_even_if_current_usage_is_low(self):
+        from flavia.interfaces.telegram_interface import _build_compaction_warning
+
+        agent = _make_agent(max_tokens=100_000, compact_threshold=0.9)
+        agent._update_token_usage(_make_usage(prompt_tokens=5_000))
+        agent.compaction_warning_pending = True
+        agent.compaction_warning_prompt_tokens = 92_000
+
+        warning = _build_compaction_warning(agent)
+        assert warning != ""
+        assert "92%" in warning

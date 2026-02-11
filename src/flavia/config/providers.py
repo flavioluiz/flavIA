@@ -18,6 +18,7 @@ class ModelConfig:
     max_tokens: int = 128000
     default: bool = False
     description: str = ""
+    compact_threshold: Optional[float] = None
 
 
 @dataclass
@@ -31,6 +32,7 @@ class ProviderConfig:
     api_key_env_var: Optional[str] = None  # Original variable name (for display)
     headers: dict[str, str] = field(default_factory=dict)
     models: list[ModelConfig] = field(default_factory=list)
+    compact_threshold: Optional[float] = None
 
     def get_model_by_id(self, model_id: str) -> Optional[ModelConfig]:
         """Get a model by its ID."""
@@ -166,6 +168,7 @@ def load_provider_config(data: dict[str, Any], provider_id: str) -> ProviderConf
     """Load a single provider configuration from parsed YAML data."""
     name = data.get("name", provider_id)
     api_base_url = data.get("api_base_url", "")
+    provider_compact_threshold = _parse_compact_threshold(data.get("compact_threshold"))
 
     # Resolve API key
     api_key_raw = data.get("api_key", "")
@@ -187,6 +190,7 @@ def load_provider_config(data: dict[str, Any], provider_id: str) -> ProviderConf
                 max_tokens=model_data.get("max_tokens", 128000),
                 default=model_data.get("default", False),
                 description=model_data.get("description", ""),
+                compact_threshold=_parse_compact_threshold(model_data.get("compact_threshold")),
             )
         )
 
@@ -198,7 +202,24 @@ def load_provider_config(data: dict[str, Any], provider_id: str) -> ProviderConf
         api_key_env_var=api_key_env_var,
         headers=headers,
         models=models,
+        compact_threshold=provider_compact_threshold,
     )
+
+
+def _parse_compact_threshold(value: Any) -> Optional[float]:
+    """Parse optional compact threshold from provider config.
+
+    Returns ``None`` for missing/invalid values.
+    """
+    if value is None:
+        return None
+    try:
+        threshold = float(value)
+    except (TypeError, ValueError):
+        return None
+    if 0.0 <= threshold <= 1.0:
+        return threshold
+    return None
 
 
 def load_providers_from_file(file_path: Path) -> ProviderRegistry:

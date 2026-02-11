@@ -66,6 +66,26 @@ def test_load_settings_supports_wildcard_public_mode(tmp_path, monkeypatch):
     assert settings.telegram_whitelist_configured is False
 
 
+def test_load_settings_reads_global_compact_threshold_from_env(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("AGENT_COMPACT_THRESHOLD", "0.82")
+
+    settings = load_settings()
+    assert settings.compact_threshold == 0.82
+    assert settings.compact_threshold_configured is True
+
+
+def test_load_settings_ignores_invalid_compact_threshold_env(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("AGENT_COMPACT_THRESHOLD", "9.99")
+
+    settings = load_settings()
+    assert settings.compact_threshold == 0.9
+    assert settings.compact_threshold_configured is False
+
+
 def test_python_m_flavia_propagates_exit_code(tmp_path):
     """python -m flavia should return the CLI exit code."""
     repo_root = Path(__file__).resolve().parents[1]

@@ -49,6 +49,39 @@ default_provider: openai
     assert settings.api_key == "openai-key"
 
 
+def test_load_settings_parses_provider_and_model_compact_thresholds(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+    monkeypatch.delenv("SYNTHETIC_API_KEY", raising=False)
+
+    local_config = tmp_path / ".flavia"
+    local_config.mkdir()
+    (local_config / "providers.yaml").write_text(
+        """
+providers:
+  openai:
+    name: OpenAI
+    api_base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+    compact_threshold: 0.87
+    models:
+      - id: gpt-4o
+        name: GPT-4o
+        compact_threshold: 0.74
+        default: true
+default_provider: openai
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    settings = load_settings()
+    provider = settings.providers.get_provider("openai")
+    assert provider is not None
+    assert provider.compact_threshold == 0.87
+    assert provider.models[0].compact_threshold == 0.74
+
+
 def test_apply_args_uses_provider_index_when_registry_is_loaded():
     registry = ProviderRegistry(
         providers={

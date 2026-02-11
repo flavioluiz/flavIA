@@ -29,6 +29,8 @@ class RecursiveAgent(BaseAgent):
 
     def run(self, user_message: str) -> str:
         """Run the agent with a user message."""
+        self.compaction_warning_pending = False
+        self.compaction_warning_prompt_tokens = 0
         self.messages.append({"role": "user", "content": user_message})
 
         iterations = 0
@@ -39,6 +41,12 @@ class RecursiveAgent(BaseAgent):
 
             response = self._call_llm(self.messages)
             self.messages.append(self._assistant_message_to_dict(response))
+            if self.needs_compaction:
+                self.compaction_warning_pending = True
+                self.compaction_warning_prompt_tokens = max(
+                    self.compaction_warning_prompt_tokens,
+                    self.last_prompt_tokens,
+                )
 
             if not response.tool_calls:
                 return response.content or "I could not produce a textual response. Please try rephrasing your question."
@@ -248,6 +256,8 @@ class RecursiveAgent(BaseAgent):
             subagents={},
             name=f"sub-{self._child_counter}",
             max_depth=self.profile.max_depth,
+            compact_threshold=self.profile.compact_threshold,
+            compact_threshold_source=self.profile.compact_threshold_source,
             permissions=self.profile.permissions.copy(),
         )
 

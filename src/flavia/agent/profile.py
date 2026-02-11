@@ -101,7 +101,12 @@ class AgentProfile:
     name: str = "agent"
     max_depth: int = 3
     compact_threshold: float = 0.9
+    compact_threshold_source: str = "default"
     permissions: AgentPermissions = field(default_factory=lambda: AgentPermissions())
+
+    def __post_init__(self) -> None:
+        """Validate compact threshold constraints."""
+        self.compact_threshold = self._validate_compact_threshold(self.compact_threshold)
 
     @classmethod
     def from_config(
@@ -113,11 +118,13 @@ class AgentProfile:
             model = parent.model
             max_depth = parent.max_depth
             compact_threshold = parent.compact_threshold
+            compact_threshold_source = parent.compact_threshold_source
         else:
             base_dir = Path.cwd()
             model = "hf:moonshotai/Kimi-K2.5"
             max_depth = 3
             compact_threshold = 0.9
+            compact_threshold_source = "default"
 
         if "path" in config:
             path = Path(config["path"])
@@ -133,7 +140,8 @@ class AgentProfile:
             max_depth = config["max_depth"]
 
         if "compact_threshold" in config:
-            compact_threshold = float(config["compact_threshold"])
+            compact_threshold = cls._validate_compact_threshold(config["compact_threshold"])
+            compact_threshold_source = "config"
 
         # Parse permissions with inheritance
         if "permissions" in config:
@@ -154,6 +162,7 @@ class AgentProfile:
             name=config.get("name", "agent"),
             max_depth=max_depth,
             compact_threshold=compact_threshold,
+            compact_threshold_source=compact_threshold_source,
             permissions=permissions,
         )
 
@@ -183,3 +192,17 @@ class AgentProfile:
         if perm_dict:
             result["permissions"] = perm_dict
         return result
+
+    @staticmethod
+    def _validate_compact_threshold(value: Any) -> float:
+        """Validate and normalize compact threshold to [0.0, 1.0]."""
+        try:
+            threshold = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("compact_threshold must be a number between 0.0 and 1.0") from exc
+
+        if not (0.0 <= threshold <= 1.0):
+            raise ValueError(
+                f"compact_threshold must be between 0.0 and 1.0 (got {threshold})"
+            )
+        return threshold

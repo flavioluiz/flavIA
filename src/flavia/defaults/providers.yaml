@@ -10,12 +10,14 @@
 #       name: "Display Name"
 #       api_base_url: "https://api.example.com/v1"
 #       api_key: "${API_KEY_ENV_VAR}"
+#       compact_threshold: 0.9  # Optional provider-level compaction threshold
 #       headers:  # Optional custom headers
 #         X-Custom-Header: "${HEADER_VALUE}"
 #       models:
 #         - id: "model-id"
 #           name: "Model Name"
 #           max_tokens: 128000
+#           compact_threshold: 0.9  # Optional model-level override
 #           default: true  # One model should be marked as default
 
 providers:

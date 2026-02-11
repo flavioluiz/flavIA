@@ -43,6 +43,8 @@ class Settings:
     # Agent defaults
     default_model: str = "hf:moonshotai/Kimi-K2.5"
     max_depth: int = 3
+    compact_threshold: float = 0.9
+    compact_threshold_configured: bool = False
     parallel_workers: int = 4
     subagents_enabled: bool = True
     active_agent: Optional[str] = None  # None means "main"; can be a subagent name
@@ -232,6 +234,7 @@ def load_settings() -> Settings:
     api_key = os.getenv("SYNTHETIC_API_KEY", "")
     api_base_url = os.getenv("API_BASE_URL", "https://api.synthetic.new/openai/v1")
     default_model = os.getenv("DEFAULT_MODEL", "hf:moonshotai/Kimi-K2.5")
+    compact_threshold, compact_threshold_configured = _load_compact_threshold_from_env()
 
     # If no providers loaded but we have env vars, create fallback provider
     if not providers.providers and api_key:
@@ -255,6 +258,8 @@ def load_settings() -> Settings:
         config_paths=paths,
         default_model=default_model,
         max_depth=int(os.getenv("AGENT_MAX_DEPTH", "3")),
+        compact_threshold=compact_threshold,
+        compact_threshold_configured=compact_threshold_configured,
         parallel_workers=int(os.getenv("AGENT_PARALLEL_WORKERS", "4")),
         telegram_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
         telegram_allowed_users=allowed_users,
@@ -278,6 +283,25 @@ def load_settings() -> Settings:
         ]
 
     return settings
+
+
+def _load_compact_threshold_from_env() -> tuple[float, bool]:
+    """Load global compact threshold from environment.
+
+    Uses ``AGENT_COMPACT_THRESHOLD`` when valid, otherwise returns default (0.9).
+    """
+    raw = os.getenv("AGENT_COMPACT_THRESHOLD", "").strip()
+    if not raw:
+        return 0.9, False
+
+    try:
+        threshold = float(raw)
+    except ValueError:
+        return 0.9, False
+
+    if 0.0 <= threshold <= 1.0:
+        return threshold, True
+    return 0.9, False
 
 
 # Global settings instance

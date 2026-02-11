@@ -23,6 +23,26 @@ Color coding:
 - Yellow: context usage between 70% and 89%
 - Red: context usage at or above 90%
 
+### Context compaction confirmation
+
+When context usage reaches the configured `compact_threshold` (default `0.9`), the interface warns before the context window gets full:
+
+- CLI prompt:
+  - `⚠ Context usage at 92% (117,760/128,000 tokens). Compact conversation? [y/N]`
+- Telegram warning:
+  - `⚠ Context usage at 92%. Reply /compact to summarize and continue, or keep chatting.`
+
+Compaction summarizes the conversation and resets context with the summary injected as starting context.
+
+Configuration options:
+- `agents.yaml` per-agent:
+  - `main.compact_threshold: 0.9`
+- Global setting (environment):
+  - `AGENT_COMPACT_THRESHOLD=0.9`
+- Provider/model defaults (`providers.yaml`, optional):
+  - `providers.<id>.compact_threshold`
+  - `providers.<id>.models[].compact_threshold`
+
 ### Prompt completion (Tab)
 
 In interactive CLI mode, press `Tab` to autocomplete:

@@ -26,9 +26,17 @@ def _build_compaction_warning(agent: RecursiveAgent) -> str:
 
     Returns an empty string if compaction is not needed.
     """
-    if not agent.needs_compaction:
+    warning_pending = getattr(agent, "compaction_warning_pending", False)
+    if not warning_pending and not agent.needs_compaction:
         return ""
-    pct = agent.context_utilization * 100
+    prompt_tokens = agent.last_prompt_tokens
+    if warning_pending:
+        prompt_tokens = max(
+            prompt_tokens,
+            getattr(agent, "compaction_warning_prompt_tokens", prompt_tokens),
+        )
+    max_tokens = agent.max_context_tokens
+    pct = (prompt_tokens / max_tokens * 100) if max_tokens > 0 else 0.0
     return (
         f"\n\n\u26a0 Context usage at {pct:.0f}%. "
         "Reply /compact to summarize and continue, or keep chatting."
