@@ -1,5 +1,6 @@
 """Tool status types and formatting for flavIA."""
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Optional
@@ -37,16 +38,18 @@ class ToolStatus:
     def executing_tool(
         cls,
         tool_name: str,
-        args: dict[str, Any],
+        args: Any,
         agent_id: str = "main",
         depth: int = 0,
     ) -> "ToolStatus":
         """Create an executing tool status."""
+        normalized_args = _normalize_args(args)
+        safe_tool_name = sanitize_terminal_text(tool_name) or "tool"
         return cls(
             phase=StatusPhase.EXECUTING_TOOL,
-            tool_name=tool_name,
-            tool_display=format_tool_display(tool_name, args),
-            args=args,
+            tool_name=safe_tool_name,
+            tool_display=format_tool_display(safe_tool_name, normalized_args),
+            args=normalized_args,
             agent_id=agent_id,
             depth=depth,
         )
@@ -62,7 +65,7 @@ class ToolStatus:
         return cls(
             phase=StatusPhase.SPAWNING_AGENT,
             tool_name="spawn_agent",
-            tool_display=f"Spawning {agent_name}",
+            tool_display=f"Spawning {sanitize_terminal_text(agent_name)}",
             agent_id=agent_id,
             depth=depth,
         )
@@ -71,14 +74,33 @@ class ToolStatus:
 StatusCallback = Callable[[ToolStatus], None]
 
 
-def _truncate_path(path: str, max_len: int = 40) -> str:
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def sanitize_terminal_text(value: Any) -> str:
+    """Convert text to a single safe line for terminal rendering."""
+    if value is None:
+        return ""
+
+    text = value if isinstance(value, str) else str(value)
+    text = text.replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    return _CONTROL_CHARS_RE.sub("", text)
+
+
+def _normalize_args(args: Any) -> dict[str, Any]:
+    """Normalize tool arguments to a dictionary."""
+    return args if isinstance(args, dict) else {}
+
+
+def _truncate_path(path: Any, max_len: int = 40) -> str:
     """Truncate a path to show the most relevant part."""
-    if len(path) <= max_len:
-        return path
+    path_text = sanitize_terminal_text(path)
+    if len(path_text) <= max_len:
+        return path_text
     # Show filename with some parent context
-    parts = path.replace("\\", "/").split("/")
+    parts = path_text.replace("\\", "/").split("/")
     if len(parts) <= 2:
-        return f"...{path[-(max_len - 3):]}"
+        return f"...{path_text[-(max_len - 3):]}"
     # Try to show parent/filename
     filename = parts[-1]
     parent = parts[-2]
@@ -86,17 +108,22 @@ def _truncate_path(path: str, max_len: int = 40) -> str:
     if len(result) <= max_len:
         return result
     # Just show truncated filename
-    return f"...{filename[-(max_len - 3):]}" if len(filename) > max_len - 3 else filename
+    return (
+        f"...{filename[-(max_len - 3):]}"
+        if len(filename) > max_len - 3
+        else filename
+    )
 
 
-def _truncate_text(text: str, max_len: int = 30) -> str:
+def _truncate_text(text: Any, max_len: int = 30) -> str:
     """Truncate text with ellipsis."""
-    if len(text) <= max_len:
-        return text
-    return text[: max_len - 3] + "..."
+    safe_text = sanitize_terminal_text(text)
+    if len(safe_text) <= max_len:
+        return safe_text
+    return safe_text[: max_len - 3] + "..."
 
 
-def format_tool_display(tool_name: str, args: dict[str, Any]) -> str:
+def format_tool_display(tool_name: str, args: Any) -> str:
     """Format tool call for user-friendly display.
 
     Args:
@@ -118,12 +145,18 @@ def format_tool_display(tool_name: str, args: dict[str, Any]) -> str:
         "spawn_predefined_agent": _format_spawn_predefined,
     }
 
-    formatter = formatters.get(tool_name)
+    safe_tool_name = sanitize_terminal_text(tool_name) or "tool"
+    safe_args = _normalize_args(args)
+
+    formatter = formatters.get(safe_tool_name)
     if formatter:
-        return formatter(args)
+        try:
+            return formatter(safe_args)
+        except Exception:
+            return safe_tool_name
 
     # Default: show tool name with first argument
-    return _format_default(tool_name, args)
+    return _format_default(safe_tool_name, safe_args)
 
 
 def _format_read_file(args: dict[str, Any]) -> str:
@@ -170,7 +203,7 @@ def _format_spawn_agent(args: dict[str, Any]) -> str:
 
 def _format_spawn_predefined(args: dict[str, Any]) -> str:
     agent_name = args.get("agent_name", "agent")
-    return f"Spawning {agent_name}"
+    return f"Spawning {sanitize_terminal_text(agent_name)}"
 
 
 def _format_default(tool_name: str, args: dict[str, Any]) -> str:
@@ -189,7 +222,8 @@ def _format_default(tool_name: str, args: dict[str, Any]) -> str:
         # Just use the first argument's value
         first_value = next(iter(args.values()), "")
 
-    if isinstance(first_value, str) and first_value:
-        return f"{tool_name}({_truncate_text(first_value, 25)})"
+    value_text = sanitize_terminal_text(first_value)
+    if value_text:
+        return f"{tool_name}({_truncate_text(value_text, 25)})"
 
     return tool_name

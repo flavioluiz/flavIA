@@ -15,6 +15,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 
 from flavia.agent import AgentProfile, RecursiveAgent, StatusPhase, ToolStatus
+from flavia.agent.status import sanitize_terminal_text
 from flavia.config import ProviderConfig, Settings
 from flavia.interfaces.commands import CommandContext, dispatch_command, list_commands
 
@@ -48,11 +49,69 @@ _COMMANDS_WITH_ARGS = {
 }
 
 
-def _build_loading_line(message: str, step: int, model_ref: str = "") -> str:
+_ANSI_RESET = "\033[0m"
+_ANSI_BOLD_CYAN = "\033[1;36m"
+_ANSI_BOLD_BLUE = "\033[1;34m"
+_ANSI_GREEN = "\033[32m"
+_ANSI_DIM = "\033[2m"
+
+
+def _supports_status_colors() -> bool:
+    """Return whether ANSI colors should be used for status streaming."""
+    if os.getenv("NO_COLOR") is not None:
+        return False
+    out_stream = getattr(console, "file", None)
+    return bool(out_stream and hasattr(out_stream, "isatty") and out_stream.isatty())
+
+
+def _colorize_status(text: str, ansi_code: str) -> str:
+    """Apply ANSI style to a status line when color is supported."""
+    if not text or not _supports_status_colors():
+        return text
+    return f"{ansi_code}{text}{_ANSI_RESET}"
+
+
+def _build_loading_line(
+    message: str,
+    step: int,
+    model_ref: str = "",
+    include_prefix: bool = True,
+) -> str:
     """Build one loading frame line."""
     dots = LOADING_DOTS[step % len(LOADING_DOTS)]
-    prefix = f"Agent [{model_ref}]" if model_ref else "Agent"
-    return f"{prefix}: {message} {dots}"
+    safe_model_ref = sanitize_terminal_text(model_ref)
+    safe_message = sanitize_terminal_text(message)
+    if not include_prefix:
+        return f"{safe_message} {dots}"
+    prefix = f"Agent [{safe_model_ref}]" if safe_model_ref else "Agent"
+    return f"{prefix}: {safe_message} {dots}"
+
+
+def _build_session_header_line(model_ref: str = "") -> str:
+    """Build one-time session header line shown before streaming status."""
+    safe_model_ref = sanitize_terminal_text(model_ref)
+    return f"Agent [{safe_model_ref}]" if safe_model_ref else "Agent"
+
+
+def _truncate_status_text(text: str, max_len: int = 30) -> str:
+    """Truncate text for compact single-line status rendering."""
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 3] + "..."
+
+
+def _agent_label_from_id(agent_id: str) -> str:
+    """Map internal agent IDs to compact labels for CLI status."""
+    safe_id = sanitize_terminal_text(agent_id).strip() or "main"
+    if safe_id == "main":
+        return "main"
+
+    parts = safe_id.split(".")
+    if len(parts) >= 2 and parts[-2] == "sub" and parts[-1].isdigit():
+        return f"sub-{parts[-1]}"
+    if len(parts) >= 2 and parts[-1].isdigit():
+        return parts[-2]
+    return parts[-1]
 
 
 def _build_tool_status_line(
@@ -60,6 +119,8 @@ def _build_tool_status_line(
     step: int,
     model_ref: str = "",
     verbose: bool = False,
+    show_dots: bool = True,
+    include_prefix: bool = True,
 ) -> str:
     """Build a status line for tool execution.
 
@@ -68,27 +129,67 @@ def _build_tool_status_line(
         step: Animation step for dots.
         model_ref: Model reference for display.
         verbose: Whether to show detailed arguments.
+        show_dots: Whether to append animated dots.
+        include_prefix: Whether to include "Agent [model]" prefix.
 
     Returns:
         Formatted status line string.
     """
-    dots = LOADING_DOTS[step % len(LOADING_DOTS)]
-    prefix = f"Agent [{model_ref}]" if model_ref else "Agent"
-
-    # Indent for sub-agents
-    if status.depth > 0:
-        prefix = f"{'  ' * status.depth}{prefix}"
+    dots = LOADING_DOTS[step % len(LOADING_DOTS)] if show_dots else ""
+    indent = "  " * status.depth
+    safe_model_ref = sanitize_terminal_text(model_ref)
+    prefix = f"Agent [{safe_model_ref}]" if safe_model_ref else "Agent"
 
     if verbose and status.args:
         # Verbose: show tool name with arguments
-        args_str = ", ".join(
-            f"{k}={repr(v)[:30]}" for k, v in list(status.args.items())[:3]
-        )
-        display = f"{status.tool_name}({args_str})"
-    else:
-        display = status.tool_display or status.tool_name or "Working"
+        def _format_arg_value(value: object) -> str:
+            if isinstance(value, str):
+                value_repr = repr(sanitize_terminal_text(value))
+            else:
+                value_repr = repr(value)
+            return _truncate_status_text(sanitize_terminal_text(value_repr))
 
-    return f"{prefix}: {display} {dots}"
+        args_str = ", ".join(
+            f"{sanitize_terminal_text(k)}={_format_arg_value(v)}"
+            for k, v in list(status.args.items())[:3]
+        )
+        display = f"{sanitize_terminal_text(status.tool_name)}({args_str})"
+    else:
+        display = sanitize_terminal_text(status.tool_display or status.tool_name or "Working")
+
+    if include_prefix:
+        line = f"{indent}{prefix}: {display}"
+    else:
+        line = f"{indent}{display}"
+
+    if show_dots:
+        return f"{line} {dots}"
+    return line
+
+
+def _build_agent_header_line(status: ToolStatus) -> str:
+    """Build one-time header line for an agent/sub-agent section."""
+    indent = "  " * status.depth
+    return f"{indent}{_agent_label_from_id(status.agent_id)}:"
+
+
+def _build_agent_activity_line(
+    status: ToolStatus,
+    step: int,
+    model_ref: str = "",
+    verbose: bool = False,
+) -> str:
+    """Build a tool activity line nested under the agent header."""
+    display = _build_tool_status_line(
+        status,
+        step,
+        model_ref,
+        verbose,
+        show_dots=False,
+        include_prefix=False,
+    ).strip()
+    indent = "  " * (status.depth + 1)
+    return f"{indent}{display}"
 
 
 def _history_paths(base_dir: Path) -> tuple[Path, Path]:
@@ -492,6 +593,8 @@ def _run_status_animation(
     stop_event: threading.Event,
     model_ref: str,
     status_holder: list[Optional[ToolStatus]],
+    status_events: list[ToolStatus],
+    status_lock: threading.Lock,
     verbose: bool = False,
 ) -> None:
     """Render status animation with tool status updates.
@@ -502,26 +605,74 @@ def _run_status_animation(
         stop_event: Event to signal animation stop.
         model_ref: Model reference for display.
         status_holder: Single-element list holding current ToolStatus.
+        status_events: Buffered status events to avoid losing fast tool updates.
+        status_lock: Lock protecting shared status structures.
         verbose: Whether to show detailed tool arguments.
     """
     step = 0
     fallback_message = _choose_loading_message()
     next_message_step = random.randint(14, 24)
+    last_tool_line: Optional[str] = None
+    needs_gap_before_loading = False
+    seen_agent_headers: set[str] = set()
+    header_printed = False
 
     while not stop_event.is_set():
-        current_status = status_holder[0] if status_holder else None
+        if not header_printed:
+            output = console.file
+            header_line = _colorize_status(_build_session_header_line(model_ref), _ANSI_BOLD_CYAN)
+            output.write("\r\033[2K" + header_line + "\n\n")
+            output.flush()
+            header_printed = True
 
-        if current_status and current_status.phase == StatusPhase.EXECUTING_TOOL:
-            line = _build_tool_status_line(current_status, step, model_ref, verbose)
+        with status_lock:
+            current_status = status_holder[0] if status_holder else None
+            pending_events = status_events[:]
+            status_events.clear()
+
+        for event in pending_events:
+            if event.phase not in (StatusPhase.EXECUTING_TOOL, StatusPhase.SPAWNING_AGENT):
+                continue
+            if event.agent_id not in seen_agent_headers:
+                header_line = _build_agent_header_line(event)
+                header_line = _colorize_status(header_line, _ANSI_BOLD_BLUE)
+                output = console.file
+                output.write("\r\033[2K" + header_line + "\n")
+                output.flush()
+                seen_agent_headers.add(event.agent_id)
+
+            tool_line = _build_agent_activity_line(event, step, model_ref, verbose)
+            if tool_line == last_tool_line:
+                continue
+            tool_line = _colorize_status(tool_line, _ANSI_GREEN)
+            output = console.file
+            output.write("\r\033[2K" + tool_line + "\n")
+            output.flush()
+            last_tool_line = tool_line
+            needs_gap_before_loading = True
+
+        tool_active = bool(
+            current_status
+            and current_status.phase in (StatusPhase.EXECUTING_TOOL, StatusPhase.SPAWNING_AGENT)
+        )
+
+        if tool_active and current_status is not None:
+            line = _build_loading_line("Trabalhando", step, model_ref, include_prefix=False)
+            line = _colorize_status(line, _ANSI_DIM)
         else:
-            line = _build_loading_line(fallback_message, step, model_ref)
+            last_tool_line = None
+            line = _build_loading_line(fallback_message, step, model_ref, include_prefix=False)
+            line = _colorize_status(line, _ANSI_DIM)
 
         output = console.file
+        if needs_gap_before_loading:
+            output.write("\n")
+            needs_gap_before_loading = False
         output.write("\r\033[2K" + line)
         output.flush()
 
         step += 1
-        if step % next_message_step == 0:
+        if (not tool_active) and step % next_message_step == 0:
             fallback_message = _choose_loading_message(fallback_message)
             next_message_step = random.randint(14, 24)
 
@@ -551,15 +702,19 @@ def _run_agent_with_feedback(
 
     # Thread-safe container for status updates
     status_holder: list[Optional[ToolStatus]] = [None]
+    status_events: list[ToolStatus] = []
+    status_lock = threading.Lock()
 
     def update_status(status: ToolStatus) -> None:
-        status_holder[0] = status
+        with status_lock:
+            status_holder[0] = status
+            status_events.append(status)
 
     agent.status_callback = update_status
 
     animation_thread = threading.Thread(
         target=_run_status_animation,
-        args=(stop_event, model_ref, status_holder, verbose),
+        args=(stop_event, model_ref, status_holder, status_events, status_lock, verbose),
         daemon=True,
     )
     animation_thread.start()
@@ -784,7 +939,7 @@ def _prompt_compaction(agent: RecursiveAgent) -> bool:
     if answer in ("y", "yes"):
         console.print("[dim]Compacting conversation...[/dim]")
         try:
-            summary = agent.compact_conversation()
+            agent.compact_conversation()
             console.print("[green]Conversation compacted.[/green]")
             new_pct = agent.context_utilization * 100
             new_prompt = agent.last_prompt_tokens

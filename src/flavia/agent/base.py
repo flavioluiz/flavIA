@@ -5,9 +5,15 @@ from abc import ABC, abstractmethod
 from typing import Any, Optional
 
 import httpx
-from openai import OpenAI, APIConnectionError, AuthenticationError, APITimeoutError, APIStatusError
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AuthenticationError,
+    OpenAI,
+)
 
-from flavia.config import Settings, ProviderConfig
+from flavia.config import ProviderConfig, Settings
 from flavia.tools import registry
 
 from .context import AgentContext, build_system_prompt, build_tools_description
@@ -594,7 +600,7 @@ class BaseAgent(ABC):
 
     def log(self, message: str) -> None:
         """Log a message if verbose mode is enabled."""
-        if self.settings.verbose:
+        if self.settings.verbose and not self.status_callback:
             print(f"[{self.context.agent_id}] {message}")
 
     def _notify_status(self, status: ToolStatus) -> None:

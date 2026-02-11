@@ -2,15 +2,15 @@
 
 import threading
 
-import pytest
-
 from flavia.agent.status import (
     StatusPhase,
     ToolStatus,
-    format_tool_display,
     _truncate_path,
     _truncate_text,
+    format_tool_display,
+    sanitize_terminal_text,
 )
+from flavia.tools import list_available_tools
 
 
 class TestFormatToolDisplay:
@@ -82,6 +82,25 @@ class TestFormatToolDisplay:
         display = format_tool_display("custom_tool", {})
         assert display == "custom_tool"
 
+    def test_handles_non_dict_args_without_crashing(self):
+        """Formatter should tolerate malformed tool arguments."""
+        display = format_tool_display("read_file", ["not", "a", "dict"])
+        assert display == "Reading "
+
+    def test_sanitizes_terminal_control_chars(self):
+        """Display text must not include terminal control characters."""
+        display = format_tool_display("read_file", {"path": "bad\x1b[31mname\nfile.txt"})
+        assert "\x1b" not in display
+        assert "\n" not in display
+
+    def test_registered_tools_always_produce_non_empty_display(self):
+        """Every registered tool should have a safe status label."""
+        for tool_name in list_available_tools():
+            display = format_tool_display(tool_name, {})
+            assert isinstance(display, str)
+            assert display.strip()
+            assert "\x1b" not in display
+
 
 class TestTruncation:
     """Tests for truncation helpers."""
@@ -112,6 +131,11 @@ class TestTruncation:
         result = _truncate_text("hello world this is long", 15)
         assert len(result) == 15
         assert result.endswith("...")
+
+    def test_sanitize_terminal_text(self):
+        """Terminal sanitizer removes control chars and newlines."""
+        sanitized = sanitize_terminal_text("A\x1b[31m\nB\tC")
+        assert sanitized == "A[31m B C"
 
 
 class TestToolStatus:
@@ -144,6 +168,13 @@ class TestToolStatus:
         assert status.tool_display == "Reading config.yaml"
         assert status.args == {"path": "config.yaml"}
         assert status.agent_id == "main"
+
+    def test_executing_tool_with_malformed_args(self):
+        """Malformed args should not break status generation."""
+        status = ToolStatus.executing_tool("read_file", ["invalid"], "main", depth=0)
+        assert status.phase == StatusPhase.EXECUTING_TOOL
+        assert status.args == {}
+        assert status.tool_display == "Reading "
 
     def test_spawning_agent(self):
         """Test spawning_agent factory method."""

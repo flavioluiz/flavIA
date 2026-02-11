@@ -80,3 +80,17 @@ def test_basic_setup_succeeds_when_config_dir_already_exists(tmp_path):
     assert "TELEGRAM_BOT_TOKEN" in env_text
     assert "TELEGRAM_ALLOWED_USER_IDS" in env_text
     assert "TELEGRAM_ALLOW_ALL_USERS" in env_text
+
+
+def test_verbose_log_is_suppressed_when_status_callback_is_active(capsys):
+    agent = _make_agent()
+    agent.settings.verbose = True
+
+    agent.log("Tool: read_file({'path': 'x'})")
+    first = capsys.readouterr()
+    assert "[main] Tool: read_file({'path': 'x'})" in first.out
+
+    agent.status_callback = lambda _status: None
+    agent.log("Tool: read_file({'path': 'y'})")
+    second = capsys.readouterr()
+    assert second.out == ""

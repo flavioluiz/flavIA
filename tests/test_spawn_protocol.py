@@ -1,11 +1,13 @@
 """Tests for spawn tool payload protocol."""
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import flavia.agent.recursive as recursive_module
 from flavia.agent.context import AgentContext
 from flavia.agent.profile import AgentPermissions, AgentProfile
 from flavia.agent.recursive import RecursiveAgent
+from flavia.agent.status import StatusPhase
 from flavia.tools.spawn.spawn_agent import SpawnAgentTool
 from flavia.tools.spawn.spawn_predefined_agent import SpawnPredefinedAgentTool
 
@@ -108,3 +110,59 @@ def test_spawn_dynamic_inherits_parent_permissions(monkeypatch, tmp_path):
     assert spawned_permissions.read_paths == parent_permissions.read_paths
     assert spawned_permissions.write_paths == parent_permissions.write_paths
     assert spawned_permissions is not parent_permissions
+
+
+def test_process_tool_calls_normalizes_non_object_json_arguments():
+    agent = RecursiveAgent.__new__(RecursiveAgent)
+    agent.context = AgentContext(agent_id="main", current_depth=0, max_depth=3)
+    agent.log = lambda _msg: None
+
+    captured: dict[str, object] = {}
+
+    def fake_execute(name: str, args: dict) -> str:
+        captured["name"] = name
+        captured["args"] = args
+        return "ok"
+
+    statuses = []
+    agent._execute_tool = fake_execute
+    agent._notify_status = statuses.append
+
+    tool_call = SimpleNamespace(
+        id="call-1",
+        function=SimpleNamespace(name="read_file", arguments='["unexpected"]'),
+    )
+
+    results, spawns = RecursiveAgent._process_tool_calls_with_spawns(agent, [tool_call])
+
+    assert captured["name"] == "read_file"
+    assert captured["args"] == {}
+    assert results[0]["content"] == "ok"
+    assert spawns == []
+    assert statuses[0].phase == StatusPhase.EXECUTING_TOOL
+
+
+def test_process_tool_calls_emits_spawning_status_for_predefined_agents():
+    agent = RecursiveAgent.__new__(RecursiveAgent)
+    agent.context = AgentContext(agent_id="main", current_depth=0, max_depth=3)
+    agent.log = lambda _msg: None
+    agent._execute_tool = (
+        lambda _name, _args: '__SPAWN_PREDEFINED__:{"agent_name":"summarizer","task":"resumir"}'
+    )
+
+    statuses = []
+    agent._notify_status = statuses.append
+
+    tool_call = SimpleNamespace(
+        id="call-2",
+        function=SimpleNamespace(
+            name="spawn_predefined_agent",
+            arguments='{"agent_name":"summarizer","task":"resumir"}',
+        ),
+    )
+
+    results, spawns = RecursiveAgent._process_tool_calls_with_spawns(agent, [tool_call])
+
+    assert results[0]["content"] == "[Spawning predefined agent...]"
+    assert spawns[0]["agent_name"] == "summarizer"
+    assert [s.phase for s in statuses] == [StatusPhase.EXECUTING_TOOL, StatusPhase.SPAWNING_AGENT]

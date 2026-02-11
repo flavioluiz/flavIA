@@ -165,6 +165,7 @@ Interactive interface based on Rich:
 - Markdown formatting
 - Command history via readline
 - Loading animations during LLM calls
+- Real-time tool status updates (`ToolStatus` callbacks from agents)
 - Conversation logging
 - Slash commands (`/help`, `/reset`, `/agent_setup`, `/agent`, etc.)
 

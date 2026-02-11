@@ -53,7 +53,14 @@ class RecursiveAgent(BaseAgent):
                 )
 
             if not response.tool_calls:
-                return response.content or "I could not produce a textual response. Please try rephrasing your question."
+                fallback = (
+                    "I could not produce a textual response. "
+                    "Please try rephrasing your question."
+                )
+                return (
+                    response.content
+                    or fallback
+                )
 
             tool_results, spawns = self._process_tool_calls_with_spawns(response.tool_calls)
             self.messages.extend(tool_results)
@@ -85,7 +92,8 @@ class RecursiveAgent(BaseAgent):
         for tool_call in tool_calls:
             name = tool_call.function.name
             try:
-                args = json.loads(tool_call.function.arguments)
+                parsed_args = json.loads(tool_call.function.arguments)
+                args = parsed_args if isinstance(parsed_args, dict) else {}
             except json.JSONDecodeError:
                 args = {}
 
@@ -102,12 +110,26 @@ class RecursiveAgent(BaseAgent):
                 spawn_info = self._parse_spawn_agent(result, args)
                 spawn_info["tool_call_id"] = tool_call.id
                 spawns.append(spawn_info)
+                self._notify_status(
+                    ToolStatus.spawning_agent(
+                        "sub-agent",
+                        self.context.agent_id,
+                        self.context.current_depth,
+                    )
+                )
                 result = "[Spawning sub-agent...]"
 
             elif result.startswith("__SPAWN_PREDEFINED__:"):
                 spawn_info = self._parse_spawn_predefined(result, args)
                 spawn_info["tool_call_id"] = tool_call.id
                 spawns.append(spawn_info)
+                self._notify_status(
+                    ToolStatus.spawning_agent(
+                        spawn_info.get("agent_name", "sub-agent"),
+                        self.context.agent_id,
+                        self.context.current_depth,
+                    )
+                )
                 result = "[Spawning predefined agent...]"
 
             results.append({

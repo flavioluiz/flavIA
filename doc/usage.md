@@ -10,6 +10,15 @@ flavia
 
 The interface uses [Rich](https://github.com/Textualize/rich) for formatting, with command history (readline) and loading animations.
 
+### Real-time tool status
+
+During agent execution, the CLI status line shows the current action in real time:
+
+- Tool-aware messages such as `Reading config.yaml`, `Searching 'TODO'`, or `Querying catalog`
+- Sub-agent depth with indentation
+- Verbose mode (`-v`) includes compact tool arguments in the status line
+- Automatic fallback to generic loading messages while waiting for the next LLM response
+
 ### Token usage indicator
 
 After each assistant response, the CLI prints a compact context usage line:
