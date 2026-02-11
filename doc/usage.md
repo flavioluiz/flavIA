@@ -90,7 +90,7 @@ Inside a chat session, the following commands are available:
 |---------|-------------|
 | `/help` | Show help |
 | `/reset` | Reset conversation and reload configuration |
-| `/agent_setup` | Configure agents (models or full reconfiguration) |
+| `/agent_setup` | Configure agents (quick model change, revise, or full rebuild) |
 | `/agent` | List available agents with configurations |
 | `/agent <name>` | Switch to a different agent (resets conversation) |
 | `/catalog` | Browse content catalog (overview, search, summaries, online sources) |

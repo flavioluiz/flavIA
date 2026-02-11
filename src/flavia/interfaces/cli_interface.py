@@ -390,7 +390,7 @@ def print_help() -> None:
 **Commands:**
 - `/help` - Show this message
 - `/reset` - Reset conversation
-- `/agent_setup` - Configure agents (models or full reconfiguration)
+- `/agent_setup` - Configure agents (quick model change, revise, or full rebuild)
 - `/agent` - List available agents
 - `/agent <name>` - Switch to agent (resets conversation)
 - `/catalog` - Browse content catalog
@@ -403,7 +403,7 @@ def print_help() -> None:
 **Tips:**
 - Run `flavia --init` to create initial config
 - Run `flavia --setup-provider` to configure providers
-- Use `/agent_setup` to reconfigure agents
+- Use `/agent_setup` to change models, revise, or fully reconfigure agents
 
 **CLI flags:**
 - `--no-subagents` - Disable sub-agent spawning

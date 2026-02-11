@@ -84,7 +84,7 @@ def test_run_ai_setup_builds_catalog_when_not_prebuilt(monkeypatch, tmp_path):
             return "done"
 
     class FakeCatalog:
-        pass
+        files = {}
 
     monkeypatch.setattr(
         "flavia.setup_wizard.create_setup_agent",
@@ -566,11 +566,228 @@ def test_run_agent_setup_command_full_mode_delegates_to_full_reconfiguration(mon
     assert captured["base_dir"] == tmp_path
 
 
+def test_run_agent_setup_command_revise_mode_delegates_to_agent_revision(
+    monkeypatch, tmp_path
+):
+    settings = Settings(default_model="openai:gpt-4o")
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr("flavia.setup_wizard.safe_prompt", lambda *args, **kwargs: "2")
+
+    def _fake_run_revision(_settings, _base_dir):
+        captured["settings"] = _settings
+        captured["base_dir"] = _base_dir
+        return True
+
+    monkeypatch.setattr("flavia.setup_wizard._run_agent_revision", _fake_run_revision)
+
+    assert run_agent_setup_command(settings, tmp_path) is True
+    assert captured["settings"] is settings
+    assert captured["base_dir"] == tmp_path
+
+
 def test_run_agent_setup_command_returns_false_on_invalid_choice(monkeypatch, tmp_path):
     settings = Settings(default_model="openai:gpt-4o")
     monkeypatch.setattr("flavia.setup_wizard.safe_prompt", lambda *args, **kwargs: "x")
 
     assert run_agent_setup_command(settings, tmp_path) is False
+
+
+def test_run_full_reconfiguration_skips_missing_steps_when_user_declines(monkeypatch, tmp_path):
+    settings = Settings(default_model="openai:gpt-4o")
+    build_calls: list[bool] = []
+    summary_calls: list[str] = []
+
+    confirm_answers = iter(
+        [
+            True,  # Step 1: Use this model (accept default)
+            False,  # Step 2: Run missing steps (build catalog) — decline
+            False,  # Step 3: include subagents
+            False,  # Step 4: add guidance
+            True,  # Accept configuration
+        ]
+    )
+
+    monkeypatch.setattr(
+        "flavia.setup_wizard.safe_confirm", lambda *args, **kwargs: next(confirm_answers)
+    )
+    monkeypatch.setattr("flavia.setup_wizard._show_agents_preview", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "flavia.setup_wizard._test_selected_model_connection",
+        lambda *args, **kwargs: (False, False),
+    )
+    monkeypatch.setattr(
+        "flavia.setup_wizard._build_content_catalog",
+        lambda *args, **kwargs: build_calls.append(True),
+    )
+    monkeypatch.setattr(
+        "flavia.setup_wizard._run_summarization",
+        lambda _catalog, _config_dir, _model: summary_calls.append(_model),
+    )
+
+    class FakeAgent:
+        def run(self, task):
+            _ = task
+            config_dir = tmp_path / ".flavia"
+            config_dir.mkdir(exist_ok=True)
+            (config_dir / "agents.yaml").write_text(
+                "main:\n  context: test\n  tools:\n    - read_file\n",
+                encoding="utf-8",
+            )
+            return "done"
+
+    monkeypatch.setattr(
+        "flavia.setup_wizard.create_setup_agent",
+        lambda *args, **kwargs: (FakeAgent(), None),
+    )
+
+    assert _run_full_reconfiguration(settings, tmp_path) is True
+    assert build_calls == []
+    assert summary_calls == []
+
+
+def test_run_full_reconfiguration_can_generate_summaries_after_new_catalog(
+    monkeypatch, tmp_path
+):
+    settings = Settings(default_model="openai:gpt-4o")
+    summary_calls: list[str] = []
+    build_calls: list[bool] = []
+
+    confirm_answers = iter(
+        [
+            True,  # Step 1: Use this model (accept default)
+            True,  # Step 2: Run missing steps (build catalog)
+            True,  # Step 2: Generate summaries with LLM
+            False,  # Step 3: include subagents
+            False,  # Step 4: add guidance
+            True,  # Accept configuration
+        ]
+    )
+
+    monkeypatch.setattr(
+        "flavia.setup_wizard.safe_confirm", lambda *args, **kwargs: next(confirm_answers)
+    )
+    monkeypatch.setattr("flavia.setup_wizard._show_agents_preview", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "flavia.setup_wizard._test_selected_model_connection",
+        lambda *args, **kwargs: (False, False),
+    )
+
+    class FakeCatalog:
+        files = {}
+
+    monkeypatch.setattr(
+        "flavia.setup_wizard._build_content_catalog",
+        lambda *args, **kwargs: (build_calls.append(True), FakeCatalog())[1],
+    )
+    monkeypatch.setattr(
+        "flavia.setup_wizard._run_summarization",
+        lambda _catalog, _config_dir, _model: summary_calls.append(_model),
+    )
+
+    class FakeAgent:
+        def run(self, task):
+            _ = task
+            config_dir = tmp_path / ".flavia"
+            config_dir.mkdir(exist_ok=True)
+            (config_dir / "agents.yaml").write_text(
+                "main:\n  context: test\n  tools:\n    - read_file\n",
+                encoding="utf-8",
+            )
+            return "done"
+
+    monkeypatch.setattr(
+        "flavia.setup_wizard.create_setup_agent",
+        lambda *args, **kwargs: (FakeAgent(), None),
+    )
+
+    assert _run_full_reconfiguration(settings, tmp_path) is True
+    assert build_calls == [True]
+    assert summary_calls == ["openai:gpt-4o"]
+
+
+def test_run_full_reconfiguration_rebuild_fallback_without_questionary(monkeypatch, tmp_path):
+    settings = Settings(default_model="openai:gpt-4o")
+    build_calls: list[bool] = []
+
+    # Make preparation appear complete
+    pdf_path = tmp_path / "papers" / "nested.pdf"
+    pdf_path.parent.mkdir(parents=True)
+    pdf_path.write_text("dummy", encoding="utf-8")
+    converted_md = tmp_path / ".converted" / "papers" / "nested.md"
+    converted_md.parent.mkdir(parents=True)
+    converted_md.write_text("# nested", encoding="utf-8")
+
+    config_dir = tmp_path / ".flavia"
+    config_dir.mkdir(exist_ok=True)
+    (config_dir / "content_catalog.json").write_text("{}", encoding="utf-8")
+
+    class FakeCatalog:
+        class _Entry:
+            summary = "ready"
+
+        files = {"papers/nested.pdf": _Entry()}
+
+        def get_files_needing_summary(self):
+            return []
+
+    monkeypatch.setattr(
+        "flavia.content.catalog.ContentCatalog.load",
+        lambda _config_dir: FakeCatalog(),
+    )
+
+    confirm_answers = iter(
+        [
+            True,  # Step 1: Use this model (accept default)
+            True,  # Step 2: All complete -> Rebuild any? yes
+            False,  # Step 3: include subagents
+            False,  # Step 4: add guidance
+            True,  # Accept configuration
+        ]
+    )
+
+    monkeypatch.setattr(
+        "flavia.setup_wizard.safe_confirm", lambda *args, **kwargs: next(confirm_answers)
+    )
+    monkeypatch.setattr("flavia.setup_wizard._show_agents_preview", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "flavia.setup_wizard._test_selected_model_connection",
+        lambda *args, **kwargs: (False, False),
+    )
+    monkeypatch.setattr("flavia.setup_wizard.safe_prompt", lambda *args, **kwargs: "2")
+    monkeypatch.setattr(
+        "flavia.setup_wizard._build_content_catalog",
+        lambda *args, **kwargs: (build_calls.append(True), FakeCatalog())[1],
+    )
+
+    # Force rebuild selection to use fallback path.
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _block_questionary(name, *args, **kwargs):
+        if name == "questionary":
+            raise ImportError("mocked")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _block_questionary)
+
+    class FakeAgent:
+        def run(self, task):
+            _ = task
+            (config_dir / "agents.yaml").write_text(
+                "main:\n  context: test\n  tools:\n    - read_file\n",
+                encoding="utf-8",
+            )
+            return "done"
+
+    monkeypatch.setattr(
+        "flavia.setup_wizard.create_setup_agent",
+        lambda *args, **kwargs: (FakeAgent(), None),
+    )
+
+    assert _run_full_reconfiguration(settings, tmp_path) is True
+    assert build_calls == [True]
 
 
 def test_run_full_reconfiguration_uses_relative_pdf_paths_from_subfolders(monkeypatch, tmp_path):
@@ -584,6 +801,7 @@ def test_run_full_reconfiguration_uses_relative_pdf_paths_from_subfolders(monkey
         [
             True,  # Step 1: Use this model (accept default)
             True,  # Step 2: Run missing steps (convert documents, build catalog)
+            False,  # Step 2: Generate summaries with LLM
             False,  # Step 3: include subagents
             False,  # Step 4: add guidance
             True,  # Accept configuration

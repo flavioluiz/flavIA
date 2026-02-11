@@ -1554,6 +1554,7 @@ def _run_full_reconfiguration_inner(
     has_catalog = catalog_file.exists()
     catalog_file_count = 0
     catalog_summary_count = 0
+    catalog_files_needing_summary = 0
 
     if has_catalog:
         from flavia.content.catalog import ContentCatalog
@@ -1562,6 +1563,7 @@ def _run_full_reconfiguration_inner(
         if existing_catalog:
             catalog_file_count = len(existing_catalog.files)
             catalog_summary_count = sum(1 for e in existing_catalog.files.values() if e.summary)
+            catalog_files_needing_summary = len(existing_catalog.get_files_needing_summary())
             catalog = existing_catalog
 
     # Show preparation status
@@ -1583,9 +1585,11 @@ def _run_full_reconfiguration_inner(
 
     summary_status = "not generated"
     summary_icon = "[yellow]\u2717[/yellow]"
-    if catalog_summary_count > 0:
+    if catalog_files_needing_summary == 0 and catalog_file_count > 0:
         summary_status = f"{catalog_summary_count} files summarized"
         summary_icon = "[green]\u2713[/green]"
+    elif catalog_summary_count > 0 and catalog_file_count > 0:
+        summary_status = f"{catalog_summary_count}/{catalog_file_count} files summarized"
     elif not has_catalog:
         summary_status = "requires catalog"
         summary_icon = "[dim]-[/dim]"
@@ -1598,7 +1602,9 @@ def _run_full_reconfiguration_inner(
     # Determine what needs to be done
     needs_conversion = has_pdfs and not has_converted_docs
     needs_catalog = not has_catalog or catalog_file_count == 0
-    needs_summaries = has_catalog and catalog_summary_count == 0
+    needs_summaries = has_catalog and catalog_files_needing_summary > 0
+    run_catalog_build = False
+    run_summaries = False
 
     if not needs_conversion and not needs_catalog and not needs_summaries:
         # Everything is ready
@@ -1608,28 +1614,59 @@ def _run_full_reconfiguration_inner(
             allow_cancel=True,
         )
         if rebuild:
-            import questionary
+            rebuild_choices: list[str] = []
+            try:
+                import questionary
 
-            rebuild_choices = questionary.checkbox(
-                "Select what to rebuild:",
-                choices=[
-                    questionary.Choice(
-                        f"Documents ({doc_status})",
-                        value="docs",
-                        checked=False,
-                    ),
-                    questionary.Choice(
-                        f"Content catalog ({catalog_status})",
-                        value="catalog",
-                        checked=False,
-                    ),
-                    questionary.Choice(
-                        f"Summaries ({summary_status})",
-                        value="summaries",
-                        checked=False,
-                    ),
-                ],
-            ).ask()
+                rebuild_choices = questionary.checkbox(
+                    "Select what to rebuild:",
+                    choices=[
+                        questionary.Choice(
+                            f"Documents ({doc_status})",
+                            value="docs",
+                            checked=False,
+                        ),
+                        questionary.Choice(
+                            f"Content catalog ({catalog_status})",
+                            value="catalog",
+                            checked=False,
+                        ),
+                        questionary.Choice(
+                            f"Summaries ({summary_status})",
+                            value="summaries",
+                            checked=False,
+                        ),
+                    ],
+                ).ask()
+            except ImportError:
+                console.print("[dim]Tip: install 'questionary' for interactive rebuild selection[/dim]")
+
+                rebuild_options = [
+                    ("docs", f"Documents ({doc_status})"),
+                    ("catalog", f"Content catalog ({catalog_status})"),
+                    ("summaries", f"Summaries ({summary_status})"),
+                ]
+                for i, (_, label) in enumerate(rebuild_options, 1):
+                    console.print(f"  [{i}] {label}")
+
+                selected = safe_prompt(
+                    "Enter numbers to rebuild (comma-separated, or empty for none)",
+                    default="",
+                    allow_cancel=True,
+                ).strip()
+                if selected:
+                    try:
+                        selected_indexes = {
+                            int(value.strip()) - 1 for value in selected.split(",") if value.strip()
+                        }
+                        rebuild_choices = [
+                            key
+                            for i, (key, _) in enumerate(rebuild_options)
+                            if i in selected_indexes
+                        ]
+                    except ValueError:
+                        console.print("[yellow]Invalid input, skipping rebuild.[/yellow]")
+                        rebuild_choices = []
 
             if rebuild_choices is None:
                 raise SetupCancelled()
@@ -1638,9 +1675,9 @@ def _run_full_reconfiguration_inner(
                 convert_pdfs = True
                 pdf_file_refs = _pdf_paths_for_tools(base_dir, pdf_files)
             if "catalog" in rebuild_choices or "docs" in rebuild_choices:
-                needs_catalog = True
+                run_catalog_build = True
             if "summaries" in rebuild_choices:
-                needs_summaries = True
+                run_summaries = True
     else:
         # Some steps need to be done
         missing_parts = []
@@ -1660,9 +1697,21 @@ def _run_full_reconfiguration_inner(
             if needs_conversion:
                 convert_pdfs = True
                 pdf_file_refs = _pdf_paths_for_tools(base_dir, pdf_files)
+            run_catalog_build = needs_catalog or convert_pdfs
+
+            # Keep summary generation as explicit opt-in since it consumes tokens.
+            if needs_summaries or needs_catalog:
+                console.print(
+                    "  (Generating summaries improves context, but uses LLM tokens)"
+                )
+                run_summaries = safe_confirm(
+                    "Generate summaries with LLM?",
+                    default=False,
+                    allow_cancel=True,
+                )
 
     # Execute preparation steps as needed
-    if convert_pdfs or needs_catalog:
+    if run_catalog_build:
         config_dir.mkdir(parents=True, exist_ok=True)
         catalog = _build_content_catalog(
             base_dir,
@@ -1673,7 +1722,7 @@ def _run_full_reconfiguration_inner(
         if catalog:
             console.print(f"[green]Catalog built: {len(catalog.files)} files indexed[/green]")
 
-    if needs_summaries and catalog:
+    if run_summaries and catalog:
         _run_summarization(catalog, config_dir, selected_model)
 
     # 3. Subagent configuration
