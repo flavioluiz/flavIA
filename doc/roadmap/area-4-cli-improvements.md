@@ -104,7 +104,7 @@ Exposed provider management wizards as interactive slash commands:
 
 **Implementation summary**:
 - Added `/provider-setup` — calls `run_provider_wizard(target_dir=settings.base_dir)`
-- Added `/provider-manage [id]` — calls `manage_provider_models(settings, provider_id)`
+- Added `/provider-manage [id]` — calls `manage_provider_models(settings, provider_id, target_dir=settings.base_dir)`
 - Added `/provider-test [id]` — resolves provider, validates API key/model, calls `test_provider_connection()`
 
 After config changes, commands prompt to use `/reset` to reload (same pattern as `/agent_setup`).
@@ -190,11 +190,22 @@ The `/agent` command (Task 4.2) lists agents from all three sources with source 
 
 ---
 
-### Task 4.7 -- Unified Slash Command Help System
+### Task 4.7 -- Unified Slash Command Help System ✓ COMPLETED
 
-**Difficulty**: Easy | **Dependencies**: None
+**Difficulty**: Easy | **Dependencies**: None | **Status**: DONE
 
-Improve the `/help` command from a static text block to a structured, categorized system:
+~~Improve the `/help` command from a static text block to a structured, categorized system:~~
+
+**Implementation summary**:
+
+1. Added command registry and dispatch layer (`register_command`, `dispatch_command`, `get_command_help`, `get_help_listing`) in `src/flavia/interfaces/commands.py`
+2. Replaced static help output with categorized `/help` and detailed `/help <command>` generated from command metadata
+3. Ensured aliases, examples, usage text, and related commands are part of the metadata-driven help output
+
+**Files modified**:
+- `src/flavia/interfaces/commands.py` — registry + metadata + handlers + help generation
+- `src/flavia/interfaces/cli_interface.py` — command dispatch integration
+- `doc/usage.md` — documented unified help and command categories
 
 1. **`/help`** (no args): Show all commands organized by category with one-line descriptions:
    - **Session**: `/reset`, `/quit`

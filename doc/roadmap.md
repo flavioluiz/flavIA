@@ -11,7 +11,7 @@ Planned features and improvements for flavIA, organized by area. Each task inclu
 This roadmap outlines **41 tasks** across **10 major areas** to extend flavIA from a read-only research assistant into a comprehensive, production-ready AI agent system with multimodal processing, write capabilities, external service integration, web & academic research tools, multi-platform deployment, and file delivery through messaging interfaces.
 
 ### Quick Stats
-- **9 Easy tasks** (< 1 day each) — Quick wins for immediate value — **3 completed** ✓
+- **9 Easy tasks** (< 1 day each) — Quick wins for immediate value — **4 completed** ✓
 - **23 Medium tasks** (1-2 days each) — Core feature development
 - **9 Hard tasks** (3+ days each) — Complex integrations requiring careful design
 
@@ -59,8 +59,8 @@ Consolidate commands, eliminate redundancies, add runtime switching, and introdu
 
 - **4.1** ~~Consolidate Info Commands (Easy)~~ — **DONE** ✓ Merged /models into /providers, /tools shows categories + schema, /config shows active settings
 - **4.2** ~~Runtime Agent Switching (Easy)~~ — **DONE** ✓ /agent command to list agents or switch mid-session
-- **4.3** Runtime Model Switching (Easy) — /model command to change models without restart
-- **4.4** In-Session Provider Management (Medium) — /provider-setup, /provider-test from within CLI
+- **4.3** ~~Runtime Model Switching (Easy)~~ — **DONE** ✓ /model command to change models without restart
+- **4.4** ~~In-Session Provider Management (Medium)~~ — **DONE** ✓ /provider-setup, /provider-manage, /provider-test from within CLI
 - **4.5** Standard Default Agent (Medium) — Built-in fallback agent always available
 - **4.6** Global Agent Definitions (Medium) — User-level agents in ~/.config/flavia/agents.yaml
 - **4.7** ~~Unified Help System (Easy)~~ — **DONE** ✓ Structured /help with categories, command registry, and per-command help
@@ -294,7 +294,7 @@ Tasks ordered by difficulty (easy first) and dependency readiness. Each task can
 | 8 | **5.1** Write/Edit file tools | Medium | File Modification |
 | 9 | **1.1** Audio/Video transcription converter | Medium | File Processing |
 | 10 | **1.2** Image description converter | Medium | File Processing |
-| 11 | **4.4** In-session provider & model management | Medium | CLI |
+| 11 | ~~**4.4** In-session provider & model management~~ | ~~Medium~~ | ~~CLI~~ |
 | 12 | **4.5** Standard default agent | Medium | CLI |
 | 13 | **4.8** Expand questionary adoption for prompts | Medium | CLI |
 | 14 | **2.1** Structured agent profiles | Medium | Agents |
