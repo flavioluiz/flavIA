@@ -45,9 +45,9 @@ Capture the `response.usage` object returned by the OpenAI-compatible API after 
 
 ---
 
-### Task 8.2 -- Context Compaction with Confirmation
+### Task 8.2 -- Context Compaction with Confirmation ✅
 
-**Difficulty**: Medium | **Dependencies**: Task 8.1
+**Difficulty**: Medium | **Dependencies**: Task 8.1 | **Status**: Done
 
 When context utilization reaches a configurable threshold, warn the user and offer to compact the conversation. Compaction generates a summary of the conversation history via a dedicated LLM call, then resets the chat with the summary injected as initial context.
 

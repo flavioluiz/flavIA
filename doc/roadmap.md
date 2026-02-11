@@ -12,9 +12,9 @@ This roadmap outlines **41 tasks** across **10 major areas** to extend flavIA fr
 
 ### Quick Stats
 - **9 Easy tasks** (< 1 day each) — Quick wins for immediate value — **4 completed** ✓
-- **23 Medium tasks** (1-2 days each) — Core feature development — **2 completed** ✓
+- **23 Medium tasks** (1-2 days each) — Core feature development — **3 completed** ✓
 - **9 Hard tasks** (3+ days each) — Complex integrations requiring careful design
-- **Total completed so far**: **6 / 41 tasks** ✓
+- **Total completed so far**: **7 / 41 tasks** ✓
 
 ### Strategic Priorities
 1. **Immediate value** (Tasks 4.1-4.8, 8.1): Improve CLI UX and add token tracking
@@ -88,7 +88,7 @@ Connect to email and calendar services with read-autonomous, write-confirmed pat
 Track token usage and automatically summarize conversations approaching context limits.
 
 - **8.1** ~~Token Usage Tracking (Easy)~~ ✅ — Capture response.usage, display utilization in CLI/Telegram
-- **8.2** Compaction with Confirmation (Medium) — Auto-summarize at threshold with user approval
+- **8.2** ~~Compaction with Confirmation (Medium)~~ ✅ — Auto-summarize at threshold with user approval
 - **8.3** Manual /compact Command (Easy) — On-demand conversation summarization
 
 ### [Area 9: Web & Academic Research Tools](roadmap/area-9-web-academic-research-tools.md) (8 tasks)
@@ -299,7 +299,7 @@ Tasks ordered by a pragmatic implementation sequence that balances dependency re
 | 12 | **4.5** Standard default agent | Medium | CLI |
 | 13 | ~~**4.8** Expand questionary adoption for prompts~~ | ~~Medium~~ | ~~CLI~~ |
 | 14 | **2.1** Structured agent profiles | Medium | Agents |
-| 15 | **8.2** Context compaction with confirmation | Medium | Context Management |
+| 15 | ~~**8.2** Context compaction with confirmation~~ | ~~Medium~~ | ~~Context Management~~ |
 | 16 | **3.1** YAML-based bot configuration | Medium | Messaging |
 | 17 | **6.1** LaTeX compilation tool | Medium | Academic Workflow |
 | 18 | **4.6** Global agent definitions | Medium | CLI |

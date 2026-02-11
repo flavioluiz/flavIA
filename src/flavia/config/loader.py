@@ -16,9 +16,9 @@ class ConfigPaths:
     """Discovered configuration paths."""
 
     # Directories
-    local_dir: Optional[Path] = None      # .flavia/ in current directory
-    user_dir: Optional[Path] = None       # ~/.config/flavia/
-    package_dir: Path = DEFAULTS_DIR      # Package defaults
+    local_dir: Optional[Path] = None  # .flavia/ in current directory
+    user_dir: Optional[Path] = None  # ~/.config/flavia/
+    package_dir: Path = DEFAULTS_DIR  # Package defaults
 
     # Specific files (resolved from directories)
     env_file: Optional[Path] = None
@@ -175,6 +175,10 @@ main:
 
   # Model to use (index or full ID)
   # model: 0
+
+  # Context compaction threshold (0.0 to 1.0)
+  # Triggers a compaction warning when context usage reaches this level
+  # compact_threshold: 0.9
 
   # Access permissions (optional - defaults to full base_dir access)
   # permissions:

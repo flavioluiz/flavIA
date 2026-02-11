@@ -650,6 +650,47 @@ def _display_token_usage(agent: RecursiveAgent) -> None:
     )
 
 
+def _prompt_compaction(agent: RecursiveAgent) -> bool:
+    """Check if compaction is needed and prompt user for confirmation.
+
+    Returns True if compaction was performed, False otherwise.
+    """
+    if not agent.needs_compaction:
+        return False
+
+    pct = agent.context_utilization * 100
+    prompt_tokens = agent.last_prompt_tokens
+    max_tokens = agent.max_context_tokens
+
+    console.print(
+        f"\n[bold red]\u26a0 Context usage at {pct:.0f}% "
+        f"({prompt_tokens:,}/{max_tokens:,} tokens). "
+        f"Compact conversation? \\[y/N][/bold red] ",
+        end="",
+    )
+
+    try:
+        answer = input().strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        console.print()
+        return False
+
+    if answer in ("y", "yes"):
+        console.print("[dim]Compacting conversation...[/dim]")
+        try:
+            summary = agent.compact_conversation()
+            console.print("[green]Conversation compacted.[/green]")
+            new_pct = agent.context_utilization * 100
+            new_prompt = agent.last_prompt_tokens
+            console.print(f"[dim]New context: {new_prompt:,}/{max_tokens:,} ({new_pct:.1f}%)[/dim]")
+            return True
+        except Exception as e:
+            console.print(f"[red]Compaction failed: {e}[/red]")
+            return False
+
+    return False
+
+
 def run_cli(settings: Settings) -> None:
     """Run the interactive CLI."""
     global _COMPLETION_SETTINGS
@@ -701,6 +742,7 @@ def run_cli(settings: Settings) -> None:
                 console.print(f"[bold blue]{_build_agent_prefix(ctx.agent)}[/bold blue] ", end="")
                 console.print(Markdown(response))
                 _display_token_usage(ctx.agent)
+                _prompt_compaction(ctx.agent)
                 _append_chat_log(ctx.chat_log_file, "assistant", response, model_ref=active_model)
             except KeyboardInterrupt:
                 console.print("\n[yellow]Interrupted[/yellow]")

@@ -134,6 +134,109 @@ class BaseAgent(ABC):
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
 
+    _COMPACTION_PROMPT = (
+        "You are summarizing a conversation to preserve context for continuation.\n"
+        "Summarize the following conversation between a user and an AI assistant.\n"
+        "Your summary must preserve:\n"
+        "- All key decisions made\n"
+        "- Important facts, numbers, and references mentioned\n"
+        "- Any ongoing tasks or open questions\n"
+        "- File paths, code snippets, or document references discussed\n"
+        "- The user's goals and preferences expressed\n"
+        "\n"
+        "Be concise but comprehensive. The summary will be used to continue the conversation\n"
+        "with full context. Output only the summary, no preamble."
+    )
+
+    def compact_conversation(self) -> str:
+        """Compact the conversation by summarizing its history.
+
+        Sends the current conversation (excluding system prompt) to the LLM
+        with a compaction prompt, then resets the conversation and injects
+        the summary as initial context.
+
+        Returns:
+            The generated summary text.
+        """
+        # Collect conversation messages (skip system prompt at index 0)
+        conversation_messages = self.messages[1:]
+        if not conversation_messages:
+            return ""
+
+        # Build a temporary message list for the summarisation call
+        compaction_messages: list[dict[str, Any]] = [
+            {"role": "system", "content": self._COMPACTION_PROMPT},
+        ]
+
+        # Serialize the conversation into a single user message for the LLM
+        conversation_text = self._serialize_messages_for_compaction(conversation_messages)
+        compaction_messages.append({"role": "user", "content": conversation_text})
+
+        # Temporarily remove tool schemas so the compaction call is plain text
+        saved_tool_schemas = self.tool_schemas
+        self.tool_schemas = []
+        try:
+            summary_response = self._call_llm(compaction_messages)
+        finally:
+            self.tool_schemas = saved_tool_schemas
+
+        summary = summary_response.content or ""
+
+        # Reset conversation to system prompt only
+        self.reset()
+
+        # Inject the summary as initial context
+        self.messages.append(
+            {
+                "role": "user",
+                "content": f"[Conversation summary from compaction]: {summary}",
+            }
+        )
+        self.messages.append(
+            {
+                "role": "assistant",
+                "content": (
+                    "Understood, I have the context from our previous conversation. "
+                    "How can I continue helping you?"
+                ),
+            }
+        )
+
+        return summary
+
+    @staticmethod
+    def _serialize_messages_for_compaction(messages: list[dict[str, Any]]) -> str:
+        """Serialize conversation messages into a readable text block.
+
+        Tool-call and tool-result messages are formatted for clarity so the
+        summariser can understand the conversation flow.
+        """
+        lines: list[str] = []
+        for msg in messages:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+
+            if role == "user":
+                lines.append(f"User: {content}")
+            elif role == "assistant":
+                text_parts = []
+                if content:
+                    text_parts.append(content)
+                tool_calls = msg.get("tool_calls")
+                if tool_calls:
+                    for tc in tool_calls:
+                        fn = tc.get("function", {})
+                        text_parts.append(
+                            f"[Called tool {fn.get('name', '?')}({fn.get('arguments', '')})]"
+                        )
+                lines.append(f"Assistant: {' '.join(text_parts)}")
+            elif role == "tool":
+                tool_id = msg.get("tool_call_id", "?")
+                lines.append(f"Tool result ({tool_id}): {content}")
+            else:
+                lines.append(f"{role}: {content}")
+        return "\n".join(lines)
+
     @property
     def context_utilization(self) -> float:
         """Context window utilization as a ratio (0.0 to 1.0).
@@ -145,6 +248,16 @@ class BaseAgent(ABC):
             return 0.0
         return self.last_prompt_tokens / self.max_context_tokens
 
+    @property
+    def needs_compaction(self) -> bool:
+        """Whether context utilization has reached the compaction threshold.
+
+        Returns ``True`` when ``context_utilization >= compact_threshold``
+        (from the agent profile).  The interface layer should check this
+        after each ``run()`` call and offer compaction to the user.
+        """
+        return self.context_utilization >= self.profile.compact_threshold
+
     def _update_token_usage(self, usage: Any) -> None:
         """Update token usage counters from an API response ``usage`` object.
 
@@ -152,6 +265,7 @@ class BaseAgent(ABC):
             usage: The ``response.usage`` object returned by the OpenAI SDK.
                    May be ``None`` if the provider does not include usage data.
         """
+
         def _coerce_token_count(value: Any) -> int:
             """Convert provider token values to safe non-negative ints."""
             try:

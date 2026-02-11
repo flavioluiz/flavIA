@@ -21,6 +21,20 @@ def _build_token_footer(agent: RecursiveAgent) -> str:
     return f"\n\n\U0001f4ca Context: {prompt_tokens:,}/{max_tokens:,} ({pct:.1f}%)"
 
 
+def _build_compaction_warning(agent: RecursiveAgent) -> str:
+    """Build compaction warning text when context is near capacity.
+
+    Returns an empty string if compaction is not needed.
+    """
+    if not agent.needs_compaction:
+        return ""
+    pct = agent.context_utilization * 100
+    return (
+        f"\n\n\u26a0 Context usage at {pct:.0f}%. "
+        "Reply /compact to summarize and continue, or keep chatting."
+    )
+
+
 def _configure_logging() -> None:
     """Configure logging for Telegram bot runtime."""
     logging.basicConfig(
@@ -104,7 +118,8 @@ class TelegramBot:
             "/start - Show welcome message and your IDs\n"
             "/help - Show this help\n"
             "/whoami - Show your Telegram user/chat IDs\n"
-            "/reset - Reset your conversation context\n\n"
+            "/reset - Reset your conversation context\n"
+            "/compact - Summarize and compact conversation context\n\n"
             "Capabilities:\n"
             "- Reading and analyzing files\n"
             "- Searching content\n"
@@ -195,6 +210,49 @@ class TelegramBot:
 
         await update.message.reply_text(self._build_help_text())
 
+    async def _compact_command(self, update, context) -> None:
+        """Handle /compact command -- compact the conversation context."""
+        self._log_event(update, "command:/compact")
+        user_id = update.effective_user.id
+
+        if not self._is_authorized(user_id):
+            return
+
+        if user_id not in self.agents:
+            await update.message.reply_text("No active conversation to compact.")
+            return
+
+        agent = self.agents[user_id]
+        before_pct = agent.context_utilization * 100
+        before_tokens = agent.last_prompt_tokens
+        max_tokens = agent.max_context_tokens
+
+        await update.message.chat.send_action("typing")
+
+        try:
+            summary = agent.compact_conversation()
+            if not summary:
+                await update.message.reply_text("Nothing to compact (conversation is empty).")
+                return
+
+            after_pct = agent.context_utilization * 100
+            after_tokens = agent.last_prompt_tokens
+
+            reply = (
+                "\u2705 Conversation compacted.\n\n"
+                f"Before: {before_tokens:,}/{max_tokens:,} ({before_pct:.0f}%)\n"
+                f"After: {after_tokens:,}/{max_tokens:,} ({after_pct:.1f}%)"
+            )
+            await update.message.reply_text(reply)
+            self._log_event(
+                update,
+                "compact",
+                f"before={before_pct:.0f}% after={after_pct:.1f}%",
+            )
+        except Exception as e:
+            self._log_event(update, "compact:error", str(e)[:200])
+            await update.message.reply_text(f"Compaction failed: {str(e)[:200]}")
+
     async def _handle_message(self, update, context) -> None:
         """Handle regular text messages."""
         user_id = update.effective_user.id
@@ -222,6 +280,7 @@ class TelegramBot:
             agent = self._get_or_create_agent(user_id)
             response = agent.run(user_message)
             response += _build_token_footer(agent)
+            response += _build_compaction_warning(agent)
             self._log_event(
                 update,
                 "message:answered",
@@ -275,6 +334,7 @@ class TelegramBot:
         app.add_handler(self.CommandHandler("start", self._start_command))
         app.add_handler(self.CommandHandler("reset", self._reset_command))
         app.add_handler(self.CommandHandler("help", self._help_command))
+        app.add_handler(self.CommandHandler("compact", self._compact_command))
         app.add_handler(self.CommandHandler("whoami", self._whoami_command))
         app.add_handler(
             self.MessageHandler(self.filters.TEXT & ~self.filters.COMMAND, self._handle_message)

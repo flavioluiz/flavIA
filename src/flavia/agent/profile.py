@@ -100,19 +100,24 @@ class AgentProfile:
     subagents: dict[str, Any] = field(default_factory=dict)
     name: str = "agent"
     max_depth: int = 3
+    compact_threshold: float = 0.9
     permissions: AgentPermissions = field(default_factory=lambda: AgentPermissions())
 
     @classmethod
-    def from_config(cls, config: dict[str, Any], parent: Optional["AgentProfile"] = None) -> "AgentProfile":
+    def from_config(
+        cls, config: dict[str, Any], parent: Optional["AgentProfile"] = None
+    ) -> "AgentProfile":
         """Create profile from configuration dict."""
         if parent:
             base_dir = parent.base_dir
             model = parent.model
             max_depth = parent.max_depth
+            compact_threshold = parent.compact_threshold
         else:
             base_dir = Path.cwd()
             model = "hf:moonshotai/Kimi-K2.5"
             max_depth = 3
+            compact_threshold = 0.9
 
         if "path" in config:
             path = Path(config["path"])
@@ -126,6 +131,9 @@ class AgentProfile:
 
         if "max_depth" in config:
             max_depth = config["max_depth"]
+
+        if "compact_threshold" in config:
+            compact_threshold = float(config["compact_threshold"])
 
         # Parse permissions with inheritance
         if "permissions" in config:
@@ -145,6 +153,7 @@ class AgentProfile:
             subagents=config.get("subagents", {}),
             name=config.get("name", "agent"),
             max_depth=max_depth,
+            compact_threshold=compact_threshold,
             permissions=permissions,
         )
 
@@ -168,6 +177,7 @@ class AgentProfile:
             "subagents": self.subagents,
             "name": self.name,
             "max_depth": self.max_depth,
+            "compact_threshold": self.compact_threshold,
         }
         perm_dict = self.permissions.to_dict(self.base_dir)
         if perm_dict:
