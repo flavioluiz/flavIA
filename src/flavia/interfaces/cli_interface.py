@@ -14,7 +14,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 
 from flavia.agent import AgentProfile, RecursiveAgent
-from flavia.config import Settings, load_settings, reset_settings
+from flavia.config import ProviderConfig, Settings, load_settings, reset_settings
 
 console = Console()
 
@@ -141,7 +141,11 @@ def _build_agent_prefix(agent: RecursiveAgent) -> str:
 def _display_current_model(agent: RecursiveAgent, settings: Settings, console: Console) -> None:
     """Display current active model information."""
     model_ref = _get_agent_model_ref(agent)
-    provider_config, model_id = settings.resolve_model_with_provider(settings.default_model)
+    resolved = _resolve_model_reference(settings, model_ref)
+    if resolved is None:
+        provider_config, model_id = settings.resolve_model_with_provider(model_ref)
+    else:
+        provider_config, model_id, _ = resolved
 
     console.print("\n[bold]Current Model:[/bold]")
     console.print("-" * 60)
@@ -170,17 +174,40 @@ def _display_current_model(agent: RecursiveAgent, settings: Settings, console: C
 
 def _models_are_equivalent(settings: Settings, current_ref: str, new_ref: str | int) -> bool:
     """Check if two model references point to the same model."""
-    # Resolve both to provider:model_id format
-    current_provider, current_model_id = settings.resolve_model_with_provider(current_ref)
-    new_provider, new_model_id = settings.resolve_model_with_provider(new_ref)
+    current_resolved = _resolve_model_reference(settings, current_ref)
+    new_resolved = _resolve_model_reference(settings, new_ref)
 
-    # Both must have valid providers
-    if current_provider is None or new_provider is None:
+    if current_resolved is None or new_resolved is None:
         return False
 
-    # Compare provider ID and model ID
-    return (current_provider.id == new_provider.id and
-            current_model_id == new_model_id)
+    current_provider, current_model_id, _ = current_resolved
+    new_provider, new_model_id, _ = new_resolved
+
+    if current_provider is None or new_provider is None:
+        return current_model_id == new_model_id
+
+    return current_provider.id == new_provider.id and current_model_id == new_model_id
+
+
+def _resolve_model_reference(
+    settings: Settings, model_ref: str | int
+) -> tuple[ProviderConfig | None, str, str] | None:
+    """Resolve a model reference and ensure it exists."""
+    if settings.providers.providers:
+        provider, model = settings.providers.resolve_model(model_ref)
+        if provider is None or model is None:
+            return None
+        model_id = model.id
+        return provider, model_id, f"{provider.id}:{model_id}"
+
+    if isinstance(model_ref, int):
+        model = settings.get_model_by_index(model_ref)
+        if model is None:
+            return None
+        return None, model.id, model.id
+
+    model_id = settings.resolve_model(model_ref)
+    return None, model_id, str(model_id)
 
 
 def _choose_loading_message(current: str = "") -> str:
@@ -289,12 +316,15 @@ def _run_agent_with_feedback(agent: RecursiveAgent, user_input: str) -> str:
         _clear_terminal_line()
 
 
-def create_agent_from_settings(settings: Settings) -> RecursiveAgent:
+def create_agent_from_settings(
+    settings: Settings, model_override: str | int | None = None
+) -> RecursiveAgent:
     """Create an agent from settings and optional agents.yaml config.
 
     Respects:
     - settings.active_agent: use a subagent config as the main agent
     - settings.subagents_enabled: when False, strips subagents and spawn tools
+    - model_override: when provided, forces the runtime model for the returned agent
     """
     if "main" in settings.agents_config:
         main_config = settings.agents_config["main"]
@@ -338,6 +368,8 @@ def create_agent_from_settings(settings: Settings) -> RecursiveAgent:
         )
 
     # Apply settings overrides
+    if model_override is not None:
+        profile.model = model_override
     profile.max_depth = settings.max_depth
 
     # When subagents are disabled, strip spawn tools and subagent definitions
@@ -377,7 +409,11 @@ def _resolve_agent_model_ref(
     available_agents: Optional[dict[str, dict]] = None,
 ) -> str | int:
     """Resolve the model reference that would be used by a specific agent."""
-    available = available_agents if available_agents is not None else _get_available_agents(settings)
+    available = (
+        available_agents
+        if available_agents is not None
+        else _get_available_agents(settings)
+    )
     main_config = available.get("main", {})
     main_model = (
         main_config.get("model", settings.default_model)
@@ -527,7 +563,10 @@ def run_cli(settings: Settings) -> None:
                     continue
 
                 elif command == "/tools" or command.startswith("/tools "):
-                    from flavia.display import display_tools, display_tool_schema
+                    from flavia.display import (
+                        display_tool_schema,
+                        display_tools,
+                    )
 
                     # Check if a specific tool was requested
                     parts = user_input.split(maxsplit=1)
@@ -577,20 +616,23 @@ def run_cli(settings: Settings) -> None:
                     # Check if already using this model
                     current_model_ref = _get_agent_model_ref(agent)
                     if _models_are_equivalent(settings, current_model_ref, model_ref):
-                        console.print(f"[yellow]Already using model '{current_model_ref}'.[/yellow]")
+                        console.print(
+                            f"[yellow]Already using model '{current_model_ref}'.[/yellow]"
+                        )
                         continue
 
-                    # Resolve and validate model exists
-                    provider, model_id = settings.resolve_model_with_provider(model_ref)
+                    resolved_model = _resolve_model_reference(settings, model_ref)
 
                     # Check if model was found
-                    if provider is None:
+                    if resolved_model is None:
                         console.print(f"[red]Model '{model_arg}' not found.[/red]")
                         console.print("Use [cyan]/model list[/cyan] to see available models.")
                         continue
 
+                    provider, _, resolved_model_ref = resolved_model
+
                     # Validate provider has API key
-                    if not provider.api_key:
+                    if provider is not None and not provider.api_key:
                         console.print(
                             f"[red]Cannot switch to '{model_arg}': API key not configured "
                             f"for provider '{provider.id}'.[/red]"
@@ -609,10 +651,13 @@ def run_cli(settings: Settings) -> None:
 
                     # Update settings and recreate agent
                     previous_model = settings.default_model
-                    settings.default_model = model_ref
+                    settings.default_model = resolved_model_ref
 
                     try:
-                        agent = create_agent_from_settings(settings)
+                        agent = create_agent_from_settings(
+                            settings,
+                            model_override=resolved_model_ref,
+                        )
                     except Exception as e:
                         # Rollback on failure
                         settings.default_model = previous_model
@@ -620,9 +665,9 @@ def run_cli(settings: Settings) -> None:
                         continue
 
                     # Success
-                    new_model_ref = f"{provider.id}:{model_id}"
                     console.print(
-                        f"[green]Switched to model '{new_model_ref}'. Conversation reset.[/green]"
+                        f"[green]Switched to model '{resolved_model_ref}'. "
+                        "Conversation reset.[/green]"
                     )
                     _print_active_model_hint(agent, settings)
                     continue
@@ -672,7 +717,9 @@ def run_cli(settings: Settings) -> None:
                             agent = create_agent_from_settings(settings)
                         except Exception as e:
                             settings.active_agent = previous_active_agent
-                            console.print(f"[red]Failed to switch to agent '{agent_name}': {e}[/red]")
+                            console.print(
+                                f"[red]Failed to switch to agent '{agent_name}': {e}[/red]"
+                            )
                             continue
 
                         console.print(

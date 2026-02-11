@@ -284,9 +284,9 @@ Tasks ordered by difficulty (easy first) and dependency readiness. Each task can
 
 | Order | Task | Difficulty | Area |
 |-------|------|------------|------|
-| 1 | ~~**4.1** Consolidate info commands~~ | ~~Easy~~ | ~~CLI~~ | ✓ DONE |
-| 2 | **4.2** Runtime agent switching in CLI | Easy | CLI |
-| 3 | **4.3** Runtime model switching in CLI | Easy | CLI |
+| 1 | ~~**4.1** Consolidate info commands~~ | ~~Easy~~ | ~~CLI~~ |
+| 2 | ~~**4.2** Runtime agent switching in CLI~~ | ~~Easy~~ | ~~CLI~~ |
+| 3 | ~~**4.3** Runtime model switching in CLI~~ | ~~Easy~~ | ~~CLI~~ |
 | 4 | **4.7** Unified slash command help system | Easy | CLI |
 | 5 | **1.3** Word/Office document converter | Easy | File Processing |
 | 6 | **8.1** Token usage tracking & display | Easy | Context Management |

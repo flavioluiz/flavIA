@@ -51,6 +51,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **Runtime model switching edge cases**:
+  - `/model` now rejects invalid model references (including out-of-range indexes) instead of silently falling back
+  - `/model` now applies the selected model at runtime even when `agents.yaml` defines a fixed `main.model`
+  - `/model` details now reflect the actual active agent model
 - **Setup robustness during conversion**: Conversion failures in individual binary documents during `--init` no longer abort the setup flow.
 - **Duplicate catalog entries**: Converted PDF files no longer appear as separate entries in the content catalog alongside their original PDFs.
 - **Better error diagnostics**: Failed LLM calls are now properly logged with context, making debugging easier.

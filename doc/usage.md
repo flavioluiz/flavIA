@@ -93,6 +93,9 @@ Inside a chat session, the following commands are available:
 | `/agent_setup` | Configure agents (quick model change, revise, or full rebuild) |
 | `/agent` | List available agents with configurations |
 | `/agent <name>` | Switch to a different agent (resets conversation) |
+| `/model` | Show the current active model |
+| `/model <ref>` | Switch model by index, model ID, or `provider:model_id` (resets conversation) |
+| `/model list` | Quick alias for `/providers` |
 | `/catalog` | Browse content catalog (overview, search, summaries, online sources) |
 | `/providers` | List configured providers with indexed models |
 | `/tools` | List available tools by category |
