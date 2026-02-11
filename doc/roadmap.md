@@ -8,15 +8,15 @@ Planned features and improvements for flavIA, organized by area. Each task inclu
 
 ## 📋 Executive Summary
 
-This roadmap outlines **37 tasks** across **9 major areas** to extend flavIA from a read-only research assistant into a comprehensive, production-ready AI agent system with multimodal processing, write capabilities, external service integration, web & academic research tools, and multi-platform deployment.
+This roadmap outlines **38 tasks** across **9 major areas** to extend flavIA from a read-only research assistant into a comprehensive, production-ready AI agent system with multimodal processing, write capabilities, external service integration, web & academic research tools, and multi-platform deployment.
 
 ### Quick Stats
 - **8 Easy tasks** (< 1 day each) — Quick wins for immediate value — **2 completed** ✓
-- **20 Medium tasks** (1-2 days each) — Core feature development
+- **21 Medium tasks** (1-2 days each) — Core feature development
 - **9 Hard tasks** (3+ days each) — Complex integrations requiring careful design
 
 ### Strategic Priorities
-1. **Immediate value** (Tasks 4.1-4.7, 8.1): Improve CLI UX and add token tracking
+1. **Immediate value** (Tasks 4.1-4.8, 8.1): Improve CLI UX and add token tracking
 2. **Core capabilities** (Tasks 5.1, 1.1-1.3): Enable file writing and expand content processing
 3. **Academic workflows** (Tasks 6.1-6.2): LaTeX compilation and script execution
 4. **Production readiness** (Tasks 3.1-3.6, 8.2-8.3): Multi-platform bots and context management
@@ -53,7 +53,7 @@ Transform Telegram integration into a multi-platform bot framework.
 - **3.5** WhatsApp Integration (Hard) — WhatsApp Business API or third-party bridge
 - **3.6** Web API Interface (Medium) — HTTP/WebSocket API for custom frontends
 
-### [Area 4: CLI Improvements](#area-4-cli-improvements) (7 tasks)
+### [Area 4: CLI Improvements](#area-4-cli-improvements) (8 tasks)
 Consolidate commands, eliminate redundancies, add runtime switching, and introduce global agents.
 
 - **4.1** ~~Consolidate Info Commands (Easy)~~ — **DONE** ✓ Merged /models into /providers, /tools shows categories + schema, /config shows active settings
@@ -63,6 +63,7 @@ Consolidate commands, eliminate redundancies, add runtime switching, and introdu
 - **4.5** Standard Default Agent (Medium) — Built-in fallback agent always available
 - **4.6** Global Agent Definitions (Medium) — User-level agents in ~/.config/flavia/agents.yaml
 - **4.7** Unified Help System (Easy) — Structured /help with categories and command registry
+- **4.8** Expand questionary Adoption (Medium) — Interactive CLI prompts with autocomplete, file paths, and menus
 
 ### [Area 5: File Modification Tools](#area-5-file-modification-tools) (1 task)
 Enable write capabilities using the existing permission infrastructure.
@@ -104,15 +105,16 @@ Comprehensive web and academic search toolkit for literature reviews, deep resea
 
 ## 🎯 Implementation Roadmap Overview
 
-### Phase 1: Foundation & Quick Wins (Tasks 4.1-4.7, 8.1, 1.3)
-**Timeline**: 1-2 weeks | **Effort**: 7 Easy + 1 Medium = ~5-7 days
+### Phase 1: Foundation & Quick Wins (Tasks 4.1-4.8, 8.1, 1.3)
+**Timeline**: 1-2 weeks | **Effort**: 7 Easy + 2 Medium = ~7-9 days
 
-Improve CLI usability, add token tracking, and expand file processing to Office docs. All tasks are independent and can be implemented in parallel.
+Improve CLI usability, add token tracking, expand file processing to Office docs, and enhance interactive prompts with questionary. All tasks are independent and can be implemented in parallel.
 
 **Deliverables**:
 - Unified, consistent CLI commands with better help
 - Real-time token usage visibility in CLI and Telegram
 - Support for .docx, .xlsx, .pptx files
+- Interactive prompts with autocomplete, file paths, and menus
 
 ### Phase 2: Core Write Capabilities (Tasks 5.1, 6.1)
 **Timeline**: 1 week | **Effort**: 2 Medium = ~3-4 days
@@ -700,6 +702,163 @@ Improve the `/help` command from a static text block to a structured, categorize
 
 **Key files to modify**:
 - `interfaces/cli_interface.py` -- implement command registry, update `/help` handler, refactor `run_cli()` dispatch
+
+### Task 4.8 -- Expand questionary Adoption for Interactive Prompts
+
+**Difficulty**: Medium | **Dependencies**: Task 4.7 (command registry)
+
+flavIA's interactive CLI currently uses plain `input()` for all user prompts (via `safe_prompt()`/`safe_confirm()` in `prompt_utils.py`), with `questionary.checkbox()` used only in 2 places. The `questionary` library (already a dependency) provides a rich set of interactive prompts that significantly improve UX: autocomplete, file path selection with tab completion, single/multi-select menus, password masking, and more.
+
+This task expands `questionary` adoption across all interactive CLI prompts, making the interface more discoverable, efficient, and consistent. The implementation targets 7 specific areas while maintaining backward compatibility for non-TTY environments.
+
+**Important decision -- No InquirerPy**: After evaluating alternatives, `questionary` should remain the sole interactive prompt library. InquirerPy (`inquirerpy`) is abandoned (last release June 2022, dev status Pre-Alpha, only supports Python 3.8-3.10), while `questionary` is actively maintained (last release August 2025, 19,200+ projects depend on it, supports Python 3.9-3.13). All functionality needed is already available in questionary; fuzzy search can be added later with `iterfzf` if needed.
+
+**questionary prompt types available** (from official docs, all usable in flavIA):
+
+| Prompt Type | Description | Current flavIA use | Target for expansion |
+|---|---|---|---|
+| `questionary.text()` | Free text input | ❌ (uses `input()`) | Optional for text fields where advanced features needed |
+| `questionary.password()` | Hidden text input | ❌ (uses `getpass`) | API keys, passwords, tokens |
+| `questionary.path()` | File/directory path with tab completion | ❌ | PDF selection in setup, catalog add source, file operations |
+| `questionary.confirm()` | Yes/no | ❌ (uses `safe_confirm()`) | Replace simple confirmations |
+| `questionary.select()` | Pick one from list (arrow keys, shortcuts) | ❌ | Numbered lists → menu selection |
+| `questionary.rawselect()` | Pick one by number | ❌ | Alternative for numeric selection |
+| `questionary.checkbox()` | Multi-select with space toggle | ✅ (2 places) | Potential expansion for batch operations |
+| `questionary.autocomplete()` | Free text with suggestions (`match_middle`, `ignore_case`) | ❌ | Slash commands, agent names, file search |
+| `questionary.press_any_key_to_continue()` | Wait for keypress | ❌ | Pause before long outputs |
+
+**7 specific implementations**:
+
+1. **Slash command autocomplete** (`questionary.autocomplete()`):
+   - Detect when user input starts with `/` and show available slash commands with suggestions
+   - Filter as user types, support `match_middle=True` for easier matching
+   - After selection, trigger the corresponding command handler
+   - Integration with the command registry from Task 4.7
+
+2. **Agent name autocomplete**:
+   - `/agent <tab>` shows all available agent names (built-in standard, global, project-level)
+   - Filter as user types with substring matching
+   - After selection, switch to the agent
+
+3. **File path autocomplete** (`questionary.path()`):
+   - Replace plain `input()` for all file path entry points
+   - **Setup wizard**: PDF source file selection (supports `file_filter=["*.pdf"]`, `only_files=True`)
+   - **Catalog browser**: Add source files/directories with tab completion
+   - **Config management**: Paths to config files, agent YAMLs, etc.
+   - Supports multi-column view, custom `get_paths` callback, `only_directories=True` for directory selection
+
+4. **Model/provider selection** (`questionary.select()`):
+   - Replace the manual numbered list + `input()` pattern used in `_select_model_for_setup()` and provider wizard
+   - Show available models in an arrow-key navigable menu
+   - Include metadata (provider name, context size, rate limits) in the selection
+   - Support keyboard shortcuts (e.g., `1`, `2`, `3`) for power users
+
+5. **Setup wizard menus**:
+   - Mode selection: `[Quick] Full mode with AI-generated agents` vs `[Revise] Revise existing config` vs `[Full] Full manual setup`
+   - Config choice: `[1] Simple minimal config` vs `[2] AI-assisted analysis` vs `[3] Advanced with all options`
+   - Catalog menu options (add, scan, search, remove)
+   - Use `questionary.select()` for cleaner UX than numbered lists
+
+6. **Catalog browser menus**:
+   - Replace `console.input()` menu navigation with `questionary.select()`
+   - File search with `questionary.autocomplete()` for catalog file names
+   - More discoverable than numeric menu choices
+
+7. **Password/API key entry** (`questionary.password()`):
+   - Replace `getpass.getpass()` for API keys and passwords
+   - During provider setup wizard: prompt for API keys with masking
+   - Email/password for external services ( Tasks 7.1, 7.2)
+   - `questionary.password()` integrates better with prompt_toolkit's styling than `getpass`
+
+**Architecture decisions**:
+
+1. **questionary as sole library**: Keep questionary, do NOT add InquirerPy. Document rationale in roadmap (active vs abandoned, Python version support, feature parity).
+
+2. **Fallback for non-TTY**: Maintain plain `input()` or `console.input()` fallback when:
+   - `stdin` is not a TTY (e.g., piping from a file: `cat script.txt | flavia`)
+   - `questionary` import fails (edge case)
+   - User explicitly opts out (optional `--no-interactive` flag)
+   - Detection: `sys.stdin.isatty()` or check for `InquirerPy-compatible` environment
+
+3. **Migration path from readline to prompt_toolkit history**:
+   - Current: `readline` imports and config loaded but never fully configured (no `completer` or specific `bind` for tab completion)
+   - questionary uses `prompt_toolkit` which has its own history mechanism (`PromptSession` with `history` parameter)
+   - Plan: Gradually migrate to `prompt_toolkit.PromptSession` for the main chat loop
+   - Until Task 4.8 is complete, keep existing `readline` config for backward compatibility
+   - The migration can happen incrementally: first wrap `questionary` calls, then replace the main chat `input()` loop with `prompt_toolkit.PromptSession`
+
+4. **Role of `prompt_utils.py` after migration**:
+   - Option A: Convert `prompt_utils.py` to thin wrappers over questionary, keeping API for backward compatibility with existing code
+   - Option B: Directly use questionary in most places, keep `prompt_utils.py` only for non-TTY fallback and special cases
+   - Recommendation: Option B -- simpler, fewer abstraction layers, questionary API is already excellent
+   - The `safe_prompt_with_style()` and `safe_confirm_with_style()` functions can be removed (questionary handles styling natively)
+
+5. **Testing impact**:
+   - Current tests that mock `input()` need to be updated for questionary prompts
+   - questionary prompts are typically tested with `pytest-monkeypatch` or by providing answers via a callback
+   - Example: `questionary.select(...).ask_async()` can be mocked with `pytest-mock` or by providing `Input` sequence
+   - Add utility test helpers in `tests/helpers/` for common prompt patterns
+   - Consider using `pytest-interactive` for manual testing verification
+
+6. **What can be removed/simplified**:
+   - Manual numbered-list pattern (e.g., `print("[1] Option 1\n[2] Option 2")` then `input("Select: ")`) → replaced by `questionary.select()`
+   - `safe_prompt_with_style()` and `safe_confirm_with_style()` (style is built into questionary)
+   - Some `readline` config (prompt_toolkit handles history and completion)
+   - Custom validation functions that replicate questionary's built-in `validate` parameter
+
+**Dependencies impact**:
+
+- **No new dependencies**: `questionary>=2.0.0` is already in `pyproject.toml`
+- questionary pulls in `prompt_toolkit` as a required dependency (already present)
+- If fuzzy search is needed later: consider `iterfzf` or `pyfzf` as lightweight optional extras
+- No changes to `pyproject.toml` needed for this task
+
+**Implementation order** (within Task 4.8):
+
+1. **Phase 1 -- Command autocomplete** (highest value, relatively simple):
+   - Integrate `questionary.autocomplete()` with the command registry from Task 4.7
+   - Detect `/` prefix in main chat loop
+   - Test with existing `/agent`, `/reset`, `/quit` commands
+
+2. **Phase 2 -- Replace numbered menus with `questionary.select()`**:
+   - Setup wizard mode selection, config choice, catalog menu
+   - Model/provider selection wizards
+   - Immediate UX improvement with minimal risk
+
+3. **Phase 3 -- File path autocomplete**:
+   - Replace file path inputs with `questionary.path()`
+   - Setup wizard PDF selection, catalog add source
+   - Add `file_filter` and `only_directories` as appropriate
+
+4. **Phase 4 -- Agent name autocomplete**:
+   - `/agent` command with `questionary.autocomplete()` showing available agents
+   - Filter from built-in, global, and project-level agents
+
+5. **Phase 5 -- Password masked input**:
+   - Replace `getpass` with `questionary.password()`
+   - Provider setup wizard API key entry
+   - Services setup (email, calendar) in future tasks
+
+6. **Phase 6 -- Non-TTY fallback**:
+   - Implement `is_interactive()` check for TTY detection
+   - Fallback to `input()`/`console.input()` when not interactive
+   - Add `--no-interactive` flag if needed
+
+7. **Phase 7 -- Cleanup**:
+   - Remove obsolete functions (`safe_prompt_with_style()`, numbered-list helpers)
+   - Update tests to work with questionary prompts
+   - Document the migration for contributors
+
+**Key files to modify**:
+- `src/flavia/interfaces/cli_interface.py` -- main chat loop, command dispatch, slash commands
+- `src/flavia/setup/prompt_utils.py` -- simplify/refactor wrappers, add non-TTY fallback
+- `src/flavia/setup_wizard.py` -- replace numbered menus with `questionary.select()`, file path selection with `questionary.path()`
+- `src/flavia/setup/provider_wizard.py` -- model selection with `questionary.select()`, password entry with `questionary.password()`
+- `src/flavia/interfaces/catalog_command.py` -- replace `console.input()` menus with questionary
+- `tests/**/*test*.py` -- update mock patterns for questionary prompts
+- `pyproject.toml` -- no changes (questionary already present)
+
+**New dependencies**: None (questionary already a dependency).
 
 ---
 
@@ -1595,7 +1754,8 @@ Task 4.2 (Runtime Agent Switching) ─┐
 Task 4.3 (Runtime Model Switching)  ├── Task 4.6 (Global Agents)
 Task 4.5 (Standard Default Agent)   │     also depends on Task 2.1
 Task 4.7 (Unified Help System)      │
-                                     │
+Task 4.8 (Expand questionary) ──────┘     depends on Task 4.7
+                                    │
 Task 2.1 (Structured Profiles) ─────┘
 
 Area 5 -- File Modification:
@@ -1646,30 +1806,31 @@ Tasks ordered by difficulty (easy first) and dependency readiness. Each task can
 | 10 | **1.2** Image description converter | Medium | File Processing |
 | 11 | **4.4** In-session provider & model management | Medium | CLI |
 | 12 | **4.5** Standard default agent | Medium | CLI |
-| 13 | **2.1** Structured agent profiles | Medium | Agents |
-| 14 | **8.2** Context compaction with confirmation | Medium | Context Management |
-| 15 | **3.1** YAML-based bot configuration | Medium | Messaging |
-| 16 | **6.1** LaTeX compilation tool | Medium | Academic Workflow |
-| 17 | **4.6** Global agent definitions | Medium | CLI |
-| 18 | **2.2** CLI agent management commands | Medium | Agents |
-| 19 | **3.2** Per-conversation agent binding | Medium | Messaging |
-| 20 | **3.3** Multi-bot support | Medium | Messaging |
-| 21 | **1.5** Online source converters (YouTube/Web) | Medium | File Processing |
-| 22 | **3.6** Web API interface | Medium | Messaging |
-| 23 | **1.4** OCR + LaTeX equation support | Hard | File Processing |
-| 24 | **3.4** Abstract messaging interface | Hard | Messaging |
-| 25 | **2.3** Meta-agent for agent generation | Hard | Agents |
-| 26 | **6.2** Sandboxed script execution (Python/MATLAB) | Hard | Academic Workflow |
-| 27 | **7.1** Email integration (IMAP/SMTP) | Hard | External Services |
-| 28 | **7.2** Google Calendar integration | Hard | External Services |
-| 29 | **3.5** WhatsApp integration | Hard | Messaging |
-| 30 | **9.3** DOI metadata resolution | Easy | Web & Academic Research |
-| 31 | **9.1** Web search engine | Medium | Web & Academic Research |
-| 32 | **9.2** Academic database search | Medium | Web & Academic Research |
-| 33 | **9.4** Scopus integration | Medium | Web & Academic Research |
-| 34 | **9.7** BibTeX reference management | Medium | Web & Academic Research |
-| 35 | **9.8** Research session management | Medium | Web & Academic Research |
-| 36 | **9.5** Article download & content integration | Hard | Web & Academic Research |
-| 37 | **9.6** CAPES/academic network publisher access | Hard | Web & Academic Research |
+| 13 | **4.8** Expand questionary adoption for prompts | Medium | CLI |
+| 14 | **2.1** Structured agent profiles | Medium | Agents |
+| 15 | **8.2** Context compaction with confirmation | Medium | Context Management |
+| 16 | **3.1** YAML-based bot configuration | Medium | Messaging |
+| 17 | **6.1** LaTeX compilation tool | Medium | Academic Workflow |
+| 18 | **4.6** Global agent definitions | Medium | CLI |
+| 19 | **2.2** CLI agent management commands | Medium | Agents |
+| 20 | **3.2** Per-conversation agent binding | Medium | Messaging |
+| 21 | **3.3** Multi-bot support | Medium | Messaging |
+| 22 | **1.5** Online source converters (YouTube/Web) | Medium | File Processing |
+| 23 | **3.6** Web API interface | Medium | Messaging |
+| 24 | **1.4** OCR + LaTeX equation support | Hard | File Processing |
+| 25 | **3.4** Abstract messaging interface | Hard | Messaging |
+| 26 | **2.3** Meta-agent for agent generation | Hard | Agents |
+| 27 | **6.2** Sandboxed script execution (Python/MATLAB) | Hard | Academic Workflow |
+| 28 | **7.1** Email integration (IMAP/SMTP) | Hard | External Services |
+| 29 | **7.2** Google Calendar integration | Hard | External Services |
+| 30 | **3.5** WhatsApp integration | Hard | Messaging |
+| 31 | **9.3** DOI metadata resolution | Easy | Web & Academic Research |
+| 32 | **9.1** Web search engine | Medium | Web & Academic Research |
+| 33 | **9.2** Academic database search | Medium | Web & Academic Research |
+| 34 | **9.4** Scopus integration | Medium | Web & Academic Research |
+| 35 | **9.7** BibTeX reference management | Medium | Web & Academic Research |
+| 36 | **9.8** Research session management | Medium | Web & Academic Research |
+| 37 | **9.5** Article download & content integration | Hard | Web & Academic Research |
+| 38 | **9.6** CAPES/academic network publisher access | Hard | Web & Academic Research |
 
 This order is a suggestion. Tasks can be implemented in any order that respects the dependency graph above.
