@@ -29,6 +29,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Real-time Tool Status Display**: The CLI now shows which tool the agent is currently executing during processing:
+  - Status line updates in real-time (e.g., "Reading config.yaml", "Searching 'TODO'", "Querying catalog")
+  - Sub-agents display with indentation to show nesting depth
+  - Verbose mode (`-v`) shows detailed tool arguments
+  - Falls back to loading messages when waiting for LLM response
+  - New `src/flavia/agent/status.py` module with `ToolStatus`, `StatusPhase`, and formatting utilities
 - **Interactive Prompts with questionary (Task 4.8)**: Replaced plain `input()` and numbered menus with `questionary` interactive prompts throughout the CLI:
   - New wrapper functions in `prompt_utils.py`: `q_select()`, `q_autocomplete()`, `q_path()`, `q_password()`, `q_confirm()`, `q_checkbox()`
   - All wrappers include automatic non-TTY fallback for scripts and CI environments

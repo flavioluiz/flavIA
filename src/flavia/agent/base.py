@@ -12,6 +12,7 @@ from flavia.tools import registry
 
 from .context import AgentContext, build_system_prompt, build_tools_description
 from .profile import AgentProfile
+from .status import StatusCallback, ToolStatus
 
 
 class BaseAgent(ABC):
@@ -52,6 +53,9 @@ class BaseAgent(ABC):
         self.compaction_warning_pending: bool = False
         self.compaction_warning_prompt_tokens: int = 0
         self.max_context_tokens: int = self._resolve_max_context_tokens()
+
+        # Status callback for real-time tool status updates
+        self.status_callback: Optional[StatusCallback] = None
         (
             self.profile.compact_threshold,
             self.profile.compact_threshold_source,
@@ -592,3 +596,14 @@ class BaseAgent(ABC):
         """Log a message if verbose mode is enabled."""
         if self.settings.verbose:
             print(f"[{self.context.agent_id}] {message}")
+
+    def _notify_status(self, status: ToolStatus) -> None:
+        """Notify status callback about current execution state.
+
+        Silently ignores any errors to avoid breaking agent execution.
+        """
+        if self.status_callback:
+            try:
+                self.status_callback(status)
+            except Exception:
+                pass  # Never break execution due to status notification

@@ -4,6 +4,7 @@ from .profile import AgentProfile
 from .context import AgentContext, build_system_prompt
 from .base import BaseAgent
 from .recursive import RecursiveAgent
+from .status import StatusCallback, StatusPhase, ToolStatus
 
 __all__ = [
     "AgentProfile",
@@ -11,4 +12,7 @@ __all__ = [
     "build_system_prompt",
     "BaseAgent",
     "RecursiveAgent",
+    "StatusCallback",
+    "StatusPhase",
+    "ToolStatus",
 ]

@@ -14,7 +14,7 @@ from typing import Optional
 from rich.console import Console
 from rich.markdown import Markdown
 
-from flavia.agent import AgentProfile, RecursiveAgent
+from flavia.agent import AgentProfile, RecursiveAgent, StatusPhase, ToolStatus
 from flavia.config import ProviderConfig, Settings
 from flavia.interfaces.commands import CommandContext, dispatch_command, list_commands
 
@@ -53,6 +53,42 @@ def _build_loading_line(message: str, step: int, model_ref: str = "") -> str:
     dots = LOADING_DOTS[step % len(LOADING_DOTS)]
     prefix = f"Agent [{model_ref}]" if model_ref else "Agent"
     return f"{prefix}: {message} {dots}"
+
+
+def _build_tool_status_line(
+    status: ToolStatus,
+    step: int,
+    model_ref: str = "",
+    verbose: bool = False,
+) -> str:
+    """Build a status line for tool execution.
+
+    Args:
+        status: Current tool status.
+        step: Animation step for dots.
+        model_ref: Model reference for display.
+        verbose: Whether to show detailed arguments.
+
+    Returns:
+        Formatted status line string.
+    """
+    dots = LOADING_DOTS[step % len(LOADING_DOTS)]
+    prefix = f"Agent [{model_ref}]" if model_ref else "Agent"
+
+    # Indent for sub-agents
+    if status.depth > 0:
+        prefix = f"{'  ' * status.depth}{prefix}"
+
+    if verbose and status.args:
+        # Verbose: show tool name with arguments
+        args_str = ", ".join(
+            f"{k}={repr(v)[:30]}" for k, v in list(status.args.items())[:3]
+        )
+        display = f"{status.tool_name}({args_str})"
+    else:
+        display = status.tool_display or status.tool_name or "Working"
+
+    return f"{prefix}: {display} {dots}"
 
 
 def _history_paths(base_dir: Path) -> tuple[Path, Path]:
@@ -452,16 +488,78 @@ def _run_loading_animation(stop_event: threading.Event, model_ref: str) -> None:
             break
 
 
-def _run_agent_with_feedback(agent: RecursiveAgent, user_input: str) -> str:
-    """Run agent with visual processing feedback."""
+def _run_status_animation(
+    stop_event: threading.Event,
+    model_ref: str,
+    status_holder: list[Optional[ToolStatus]],
+    verbose: bool = False,
+) -> None:
+    """Render status animation with tool status updates.
+
+    Shows tool-specific status when available, falls back to loading messages.
+
+    Args:
+        stop_event: Event to signal animation stop.
+        model_ref: Model reference for display.
+        status_holder: Single-element list holding current ToolStatus.
+        verbose: Whether to show detailed tool arguments.
+    """
+    step = 0
+    fallback_message = _choose_loading_message()
+    next_message_step = random.randint(14, 24)
+
+    while not stop_event.is_set():
+        current_status = status_holder[0] if status_holder else None
+
+        if current_status and current_status.phase == StatusPhase.EXECUTING_TOOL:
+            line = _build_tool_status_line(current_status, step, model_ref, verbose)
+        else:
+            line = _build_loading_line(fallback_message, step, model_ref)
+
+        output = console.file
+        output.write("\r\033[2K" + line)
+        output.flush()
+
+        step += 1
+        if step % next_message_step == 0:
+            fallback_message = _choose_loading_message(fallback_message)
+            next_message_step = random.randint(14, 24)
+
+        # Faster refresh for tool status updates (0.25s vs 0.35s)
+        if stop_event.wait(0.25):
+            break
+
+
+def _run_agent_with_feedback(
+    agent: RecursiveAgent, user_input: str, verbose: bool = False
+) -> str:
+    """Run agent with visual processing feedback.
+
+    Args:
+        agent: The agent to run.
+        user_input: User's input message.
+        verbose: Whether to show detailed tool arguments in status.
+
+    Returns:
+        Agent's response string.
+    """
     if not _supports_wait_feedback():
         return agent.run(user_input)
 
     stop_event = threading.Event()
     model_ref = _get_agent_model_ref(agent)
+
+    # Thread-safe container for status updates
+    status_holder: list[Optional[ToolStatus]] = [None]
+
+    def update_status(status: ToolStatus) -> None:
+        status_holder[0] = status
+
+    agent.status_callback = update_status
+
     animation_thread = threading.Thread(
-        target=_run_loading_animation,
-        args=(stop_event, model_ref),
+        target=_run_status_animation,
+        args=(stop_event, model_ref, status_holder, verbose),
         daemon=True,
     )
     animation_thread.start()
@@ -470,6 +568,7 @@ def _run_agent_with_feedback(agent: RecursiveAgent, user_input: str) -> str:
         with _suppress_terminal_input():
             return agent.run(user_input)
     finally:
+        agent.status_callback = None
         stop_event.set()
         animation_thread.join(timeout=1.0)
         _clear_terminal_line()
@@ -745,7 +844,7 @@ def run_cli(settings: Settings) -> None:
                 active_model = _get_agent_model_ref(ctx.agent)
                 _append_prompt_history(user_input, ctx.history_file, ctx.history_enabled)
                 _append_chat_log(ctx.chat_log_file, "user", user_input, model_ref=active_model)
-                response = _run_agent_with_feedback(ctx.agent, user_input)
+                response = _run_agent_with_feedback(ctx.agent, user_input, ctx.settings.verbose)
                 console.print(f"[bold blue]{_build_agent_prefix(ctx.agent)}[/bold blue] ", end="")
                 console.print(Markdown(response))
                 _display_token_usage(ctx.agent)

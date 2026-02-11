@@ -99,6 +99,7 @@ def test_spawn_dynamic_inherits_parent_permissions(monkeypatch, tmp_path):
     agent.context = AgentContext(agent_id="main", current_depth=0, max_depth=3, base_dir=tmp_path)
     agent.settings = object()
     agent.log = lambda _msg: None
+    agent.status_callback = None
 
     result = RecursiveAgent._spawn_dynamic(agent, task="tarefa", context="contexto")
 

@@ -8,6 +8,7 @@ from flavia.config import Settings
 
 from .base import BaseAgent
 from .profile import AgentProfile
+from .status import ToolStatus
 
 
 class RecursiveAgent(BaseAgent):
@@ -39,6 +40,9 @@ class RecursiveAgent(BaseAgent):
         while iterations < self.MAX_ITERATIONS:
             iterations += 1
 
+            self._notify_status(
+                ToolStatus.waiting_llm(self.context.agent_id, self.context.current_depth)
+            )
             response = self._call_llm(self.messages)
             self.messages.append(self._assistant_message_to_dict(response))
             if self.needs_compaction:
@@ -87,6 +91,11 @@ class RecursiveAgent(BaseAgent):
 
             self.log(f"Tool: {name}({args})")
 
+            self._notify_status(
+                ToolStatus.executing_tool(
+                    name, args, self.context.agent_id, self.context.current_depth
+                )
+            )
             result = self._execute_tool(name, args)
 
             if result.startswith("__SPAWN_AGENT__:"):
@@ -228,6 +237,7 @@ class RecursiveAgent(BaseAgent):
             depth=self.context.current_depth + 1,
             parent_id=self.context.agent_id,
         )
+        child.status_callback = self.status_callback
 
         try:
             result = child.run(task)
@@ -268,6 +278,7 @@ class RecursiveAgent(BaseAgent):
             depth=self.context.current_depth + 1,
             parent_id=self.context.agent_id,
         )
+        child.status_callback = self.status_callback
 
         try:
             result = child.run(task)

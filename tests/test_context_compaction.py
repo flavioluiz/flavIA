@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from flavia.agent.context import AgentContext
 from flavia.agent.profile import AgentProfile
 from flavia.agent.recursive import RecursiveAgent
 from flavia.config.providers import ProviderConfig, ModelConfig as ProviderModelConfig
@@ -80,6 +81,11 @@ def _make_agent(
     agent.compaction_warning_pending = False
     agent.compaction_warning_prompt_tokens = 0
     agent.tool_schemas = []
+
+    # Context for status notifications
+    agent.context = AgentContext(agent_id="main", current_depth=0, max_depth=3)
+    agent.status_callback = None
+
     return agent
 
 
