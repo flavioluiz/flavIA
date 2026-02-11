@@ -11,7 +11,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
-from flavia.setup.prompt_utils import safe_confirm, safe_prompt
+from flavia.setup.prompt_utils import SetupCancelled, safe_confirm, safe_prompt
 
 if TYPE_CHECKING:
     from flavia.content.catalog import ContentCatalog
@@ -303,8 +303,20 @@ def _collect_model_choices(settings) -> tuple[list[dict[str, Any]], str]:
     return choices, choices[0]["ref"]
 
 
-def _select_model_for_setup(settings) -> str:
-    """Select model/provider to use during setup."""
+def _select_model_for_setup(settings, allow_cancel: bool = False) -> str:
+    """
+    Select model/provider to use during setup.
+
+    Shows the default model and asks user to confirm or choose another.
+    Single-step interaction (no redundant confirmations).
+
+    Args:
+        settings: Application settings
+        allow_cancel: If True, raise SetupCancelled on Ctrl+C
+
+    Returns:
+        Selected model reference string
+    """
     choices, default_ref = _collect_model_choices(settings)
     default_choice = next(
         (choice for choice in choices if choice["ref"] == default_ref), choices[0]
@@ -315,34 +327,42 @@ def _select_model_for_setup(settings) -> str:
         else default_choice["model_id"]
     )
 
-    console.print(f"\n[bold]Use default model/provider?[/bold]\n  [cyan]{default_label}[/cyan]")
-    if safe_confirm("Use this model?", default=True):
-        return default_ref
+    console.print(f"  Model: [cyan]{default_label}[/cyan]")
 
-    console.print("\n[bold]Select model/provider for initial setup:[/bold]")
-    table = Table(show_header=False, box=None, padding=(0, 2))
-    for i, choice in enumerate(choices, 1):
-        default_marker = " [default]" if choice["ref"] == default_ref else ""
-        provider_label = choice["provider"]
-        table.add_row(
-            f"  [{i}]",
-            f"{provider_label} / {choice['name']}{default_marker}",
-            f"[dim]{choice['ref']}[/dim]",
+    if not safe_confirm(
+        "Use this model or choose another?",
+        default=True,
+        allow_cancel=allow_cancel,
+    ):
+        # Show numbered list of all available models
+        console.print("\n[bold]Available models:[/bold]")
+        table = Table(show_header=False, box=None, padding=(0, 2))
+        for i, choice in enumerate(choices, 1):
+            default_marker = " [default]" if choice["ref"] == default_ref else ""
+            provider_label = choice["provider"]
+            table.add_row(
+                f"  [{i}]",
+                f"{provider_label} / {choice['name']}{default_marker}",
+                f"[dim]{choice['ref']}[/dim]",
+            )
+        console.print(table)
+
+        default_index = next(
+            (i + 1 for i, choice in enumerate(choices) if choice["ref"] == default_ref),
+            1,
         )
-    console.print(table)
+        selection = safe_prompt(
+            "Enter number", default=str(default_index), allow_cancel=allow_cancel
+        )
+        try:
+            idx = int(selection) - 1
+            if 0 <= idx < len(choices):
+                return choices[idx]["ref"]
+        except ValueError:
+            pass
 
-    default_index = next(
-        (i + 1 for i, choice in enumerate(choices) if choice["ref"] == default_ref), 1
-    )
-    selection = safe_prompt("Enter number", default=str(default_index))
-    try:
-        idx = int(selection) - 1
-        if 0 <= idx < len(choices):
-            return choices[idx]["ref"]
-    except ValueError:
-        pass
+        console.print("[yellow]Invalid selection, using default.[/yellow]")
 
-    console.print("[yellow]Invalid selection, using default.[/yellow]")
     return default_ref
 
 
@@ -650,7 +670,9 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
             ext_counts[ext] = ext_counts.get(ext, 0) + 1
 
         ext_summary = ", ".join(f"{count} {ext.upper()}" for ext, count in ext_counts.items())
-        console.print(f"\n[bold]Found {len(binary_docs)} binary document(s) ({ext_summary}):[/bold]")
+        console.print(
+            f"\n[bold]Found {len(binary_docs)} binary document(s) ({ext_summary}):[/bold]"
+        )
 
         table = Table(show_header=False, box=None, padding=(0, 2))
         for doc in binary_docs[:10]:  # Show first 10
@@ -673,7 +695,9 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
     if catalog:
         files_needing_summary = catalog.get_files_needing_summary()
         if files_needing_summary:
-            console.print(f"\n[bold]Generate LLM summaries for {len(files_needing_summary)} file(s)?[/bold]")
+            console.print(
+                f"\n[bold]Generate LLM summaries for {len(files_needing_summary)} file(s)?[/bold]"
+            )
             console.print("  (Improves AI understanding of your content, but uses LLM tokens)")
             generate_summaries = safe_confirm("Generate summaries?", default=False)
 
@@ -720,17 +744,18 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
     )
 
 
-def _ask_user_guidance() -> str:
+def _ask_user_guidance(allow_cancel: bool = False) -> str:
     """Ask the user for optional setup guidance for the LLM."""
     console.print("[bold]Do you want to add brief guidance for agent creation?[/bold]")
     console.print("  (e.g., preferred style, focus areas, sub-agents, constraints)")
-    wants_guidance = safe_confirm("Add guidance?", default=False)
+    wants_guidance = safe_confirm("Add guidance?", default=False, allow_cancel=allow_cancel)
     if not wants_guidance:
         return ""
 
     guidance = safe_prompt(
         "Enter your guidance (single line, optional)",
         default="",
+        allow_cancel=allow_cancel,
     ).strip()
     if guidance:
         console.print("[dim]Guidance noted and will be used for agent generation.[/dim]")
@@ -875,7 +900,9 @@ def _run_summarization(
             summarized += 1
             # Show progress every 5 files
             if summarized % 5 == 0:
-                console.print(f"  [dim]Summarized {summarized}/{len(files_needing_summary)}...[/dim]")
+                console.print(
+                    f"  [dim]Summarized {summarized}/{len(files_needing_summary)}...[/dim]"
+                )
 
     console.print(f"[dim]  {summarized} file(s) summarized[/dim]")
 
@@ -1287,17 +1314,21 @@ def _print_success(config_dir: Path, has_pdfs: bool = False):
     )
 
 
-
-
 def _approve_subagents(agents_file: Path) -> Optional[list[str]]:
     """
-    Show proposed subagents and let user approve/reject each one.
+    Show proposed subagents with interactive checkboxes for batch approval.
+
+    Uses questionary.checkbox for interactive selection. All subagents
+    start checked; the user can uncheck those they want to remove.
 
     Args:
         agents_file: Path to agents.yaml
 
     Returns:
         List of approved subagent names, or None if no subagents or error
+
+    Raises:
+        SetupCancelled: If user presses Ctrl+C
     """
     try:
         with open(agents_file, "r", encoding="utf-8") as f:
@@ -1311,36 +1342,76 @@ def _approve_subagents(agents_file: Path) -> Optional[list[str]]:
         console.print("[dim]No subagents found in configuration.[/dim]")
         return []
 
-    console.print(f"The AI proposed [cyan]{len(subagents)}[/cyan] subagent(s). Review each one:\n")
+    console.print(f"The AI proposed [cyan]{len(subagents)}[/cyan] subagent(s).\n")
 
-    approved = []
+    # Show details of each subagent before the checkbox
     for name, sub_config in subagents.items():
         if not isinstance(sub_config, dict):
             continue
-
-        # Display subagent info
-        console.print(f"[bold cyan]{name}[/bold cyan]")
         context = sub_config.get("context", "(no description)")
-        console.print(f"  Purpose: {context}")
-
         tools = sub_config.get("tools", [])
+        tool_str = ""
         if isinstance(tools, (list, tuple)) and tools:
-            tool_labels = ", ".join(str(tool) for tool in tools)
-            console.print(f"  Tools: [dim]{tool_labels}[/dim]")
-
-        model = sub_config.get("model")
-        if model:
-            console.print(f"  Model: [dim]{model}[/dim]")
-
-        console.print()
-
-        # Ask for approval
-        include = safe_confirm(f"Include '{name}'?", default=True)
-        if include:
-            approved.append(name)
+            tool_str = f"  Tools: {', '.join(str(t) for t in tools)}"
+        console.print(f"  [bold cyan]{name}[/bold cyan] - {context}")
+        if tool_str:
+            console.print(f"  {tool_str}")
 
     console.print()
-    return approved
+
+    # Build checkbox choices (all checked by default)
+    try:
+        import questionary
+
+        choices = [
+            questionary.Choice(
+                title=f"{name} - {sub_config.get('context', '(no description)')[:60]}",
+                value=name,
+                checked=True,
+            )
+            for name, sub_config in subagents.items()
+            if isinstance(sub_config, dict)
+        ]
+
+        approved = questionary.checkbox(
+            "Select subagents to include (space to toggle, enter to confirm):",
+            choices=choices,
+        ).ask()
+
+        if approved is None:
+            # User pressed Ctrl+C
+            raise SetupCancelled()
+
+        return approved
+
+    except ImportError:
+        # Fallback: batch approval without questionary
+        console.print("[dim]Tip: install 'questionary' for interactive checkboxes[/dim]\n")
+
+        accept_all = safe_confirm("Accept all subagents?", default=True, allow_cancel=True)
+        if accept_all:
+            return [name for name, sub_config in subagents.items() if isinstance(sub_config, dict)]
+
+        # Ask which to remove
+        names = [name for name, sub_config in subagents.items() if isinstance(sub_config, dict)]
+        for i, name in enumerate(names, 1):
+            console.print(f"  [{i}] {name}")
+
+        to_remove = safe_prompt(
+            "Enter numbers to remove (comma-separated, or empty to keep all)",
+            default="",
+            allow_cancel=True,
+        ).strip()
+
+        if not to_remove:
+            return names
+
+        try:
+            remove_indices = {int(x.strip()) - 1 for x in to_remove.split(",")}
+            return [name for i, name in enumerate(names) if i not in remove_indices]
+        except ValueError:
+            console.print("[yellow]Invalid input, keeping all subagents.[/yellow]")
+            return names
 
 
 def _update_config_with_approved_subagents(agents_file: Path, approved: list[str]) -> bool:
@@ -1368,9 +1439,7 @@ def _update_config_with_approved_subagents(agents_file: Path, approved: list[str
 
         # Filter to keep only approved subagents
         filtered_subagents = {
-            name: sub_config
-            for name, sub_config in subagents.items()
-            if name in approved
+            name: sub_config for name, sub_config in subagents.items() if name in approved
         }
 
         main["subagents"] = filtered_subagents
@@ -1406,111 +1475,234 @@ def _run_full_reconfiguration(settings, base_dir: Path) -> bool:
     - LLM analysis
     - Iterative revision
 
+    Changes are only saved when the user accepts the final configuration.
+    Pressing Ctrl+C at any point cancels without saving.
+
     Returns:
         True if successful
     """
     config_dir = base_dir / ".flavia"
+    agents_file = config_dir / "agents.yaml"
 
-    console.print("\n[bold blue]Full Agent Reconfiguration[/bold blue]\n")
+    console.print("\n[bold blue]Full Agent Reconfiguration[/bold blue]")
+    console.print("[dim](Press Ctrl+C at any time to cancel without saving)[/dim]\n")
 
-    # Check if agents.yaml exists
-    if (config_dir / "agents.yaml").exists():
-        console.print("[yellow]agents.yaml already exists.[/yellow]")
-        if not safe_confirm("Overwrite?", default=False):
-            return False
+    # Backup existing agents.yaml (to restore on cancel)
+    original_agents_content: Optional[str] = None
+    if agents_file.exists():
+        try:
+            original_agents_content = agents_file.read_text(encoding="utf-8")
+        except Exception:
+            pass
+
+    try:
+        return _run_full_reconfiguration_inner(
+            settings, base_dir, config_dir, agents_file, original_agents_content
+        )
+    except SetupCancelled:
+        console.print("\n[yellow]Setup cancelled. No changes saved.[/yellow]")
+        # Restore original agents.yaml if it existed
+        if original_agents_content is not None:
+            try:
+                agents_file.write_text(original_agents_content, encoding="utf-8")
+            except Exception:
+                pass
+        elif agents_file.exists():
+            # The file was created during setup but didn't exist before
+            try:
+                agents_file.unlink()
+            except Exception:
+                pass
+        return False
+
+
+def _run_full_reconfiguration_inner(
+    settings,
+    base_dir: Path,
+    config_dir: Path,
+    agents_file: Path,
+    original_agents_content: Optional[str],
+) -> bool:
+    """Inner implementation of full reconfiguration (wrapped by cancel handler)."""
 
     # 1. Model selection for setup
     console.print("\n[bold]Step 1: Model Selection[/bold]")
-    console.print("Choose which model to use for analyzing your project and creating the configuration.")
+    console.print("Choose which model to use for analyzing your project.")
 
-    use_custom_model = safe_confirm("Use a specific model for setup (instead of default)?", default=False)
+    selected_model = _select_model_for_setup(settings, allow_cancel=True)
 
-    if use_custom_model:
-        selected_model = _select_model_for_setup(settings)
-        if not selected_model:
-            console.print("[yellow]Using default model.[/yellow]")
-            selected_model = settings.default_model
+    # Test connection
+    attempted, success = _test_selected_model_connection(settings, selected_model)
+    if attempted and not success:
+        console.print("[red]Model connection test failed. Aborting.[/red]")
+        return False
 
-        # Test connection
-        attempted, success = _test_selected_model_connection(settings, selected_model)
-        if attempted and not success:
-            console.print("[red]Model connection test failed. Aborting.[/red]")
-            return False
-    else:
-        selected_model = settings.default_model
-        console.print(f"[dim]Using default model: {selected_model}[/dim]")
+    # 2. Preparation Status (Documents, Catalog, Summaries)
+    console.print("\n[bold]Step 2: Preparation[/bold]")
 
-    # 2. PDF detection and conversion
-    console.print("\n[bold]Step 2: Document Conversion[/bold]")
     pdf_files = find_pdf_files(base_dir)
     convert_pdfs = False
     pdf_file_refs = None
-
-    if pdf_files:
-        converted_dir = base_dir / CONVERTED_DIR_NAME
-        if converted_dir.exists() and list(converted_dir.rglob("*.md")):
-            console.print(f"[dim]Found existing converted documents in {CONVERTED_DIR_NAME}/[/dim]")
-        else:
-            console.print(f"[dim]Found {len(pdf_files)} PDF file(s)[/dim]")
-            convert_pdfs = safe_confirm("Convert PDFs to text first?", default=True)
-            if convert_pdfs:
-                pdf_file_refs = _pdf_paths_for_tools(base_dir, pdf_files)
-    else:
-        console.print("[dim]No PDF files found.[/dim]")
-
-    # 3. Catalog build/refresh
-    console.print("\n[bold]Step 3: Content Catalog[/bold]")
-    console.print("The content catalog indexes all files in your project for faster search.")
-
-    build_catalog_choice = safe_confirm("Build/refresh content catalog?", default=True)
-
     catalog = None
-    if build_catalog_choice:
+
+    # Detect current state of each preparation step
+    converted_dir = base_dir / CONVERTED_DIR_NAME
+    has_converted_docs = converted_dir.exists() and bool(list(converted_dir.rglob("*.md")))
+    has_pdfs = bool(pdf_files)
+
+    catalog_file = config_dir / "content_catalog.json"
+    has_catalog = catalog_file.exists()
+    catalog_file_count = 0
+    catalog_summary_count = 0
+
+    if has_catalog:
+        from flavia.content.catalog import ContentCatalog
+
+        existing_catalog = ContentCatalog.load(config_dir)
+        if existing_catalog:
+            catalog_file_count = len(existing_catalog.files)
+            catalog_summary_count = sum(1 for e in existing_catalog.files.values() if e.summary)
+            catalog = existing_catalog
+
+    # Show preparation status
+    doc_status = "no PDFs found"
+    doc_icon = "[dim]-[/dim]"
+    if has_pdfs and has_converted_docs:
+        converted_count = len(list(converted_dir.rglob("*.md")))
+        doc_status = f"{converted_count} PDFs converted"
+        doc_icon = "[green]\u2713[/green]"
+    elif has_pdfs:
+        doc_status = f"{len(pdf_files)} PDFs found, not converted"
+        doc_icon = "[yellow]\u2717[/yellow]"
+
+    catalog_status = "not built"
+    catalog_icon = "[yellow]\u2717[/yellow]"
+    if has_catalog and catalog_file_count > 0:
+        catalog_status = f"{catalog_file_count} files indexed"
+        catalog_icon = "[green]\u2713[/green]"
+
+    summary_status = "not generated"
+    summary_icon = "[yellow]\u2717[/yellow]"
+    if catalog_summary_count > 0:
+        summary_status = f"{catalog_summary_count} files summarized"
+        summary_icon = "[green]\u2713[/green]"
+    elif not has_catalog:
+        summary_status = "requires catalog"
+        summary_icon = "[dim]-[/dim]"
+
+    console.print(f"  {doc_icon} Documents:       {doc_status}")
+    console.print(f"  {catalog_icon} Content catalog: {catalog_status}")
+    console.print(f"  {summary_icon} Summaries:       {summary_status}")
+    console.print()
+
+    # Determine what needs to be done
+    needs_conversion = has_pdfs and not has_converted_docs
+    needs_catalog = not has_catalog or catalog_file_count == 0
+    needs_summaries = has_catalog and catalog_summary_count == 0
+
+    if not needs_conversion and not needs_catalog and not needs_summaries:
+        # Everything is ready
+        rebuild = safe_confirm(
+            "All preparation steps are complete. Rebuild any?",
+            default=False,
+            allow_cancel=True,
+        )
+        if rebuild:
+            import questionary
+
+            rebuild_choices = questionary.checkbox(
+                "Select what to rebuild:",
+                choices=[
+                    questionary.Choice(
+                        f"Documents ({doc_status})",
+                        value="docs",
+                        checked=False,
+                    ),
+                    questionary.Choice(
+                        f"Content catalog ({catalog_status})",
+                        value="catalog",
+                        checked=False,
+                    ),
+                    questionary.Choice(
+                        f"Summaries ({summary_status})",
+                        value="summaries",
+                        checked=False,
+                    ),
+                ],
+            ).ask()
+
+            if rebuild_choices is None:
+                raise SetupCancelled()
+
+            if "docs" in rebuild_choices and has_pdfs:
+                convert_pdfs = True
+                pdf_file_refs = _pdf_paths_for_tools(base_dir, pdf_files)
+            if "catalog" in rebuild_choices or "docs" in rebuild_choices:
+                needs_catalog = True
+            if "summaries" in rebuild_choices:
+                needs_summaries = True
+    else:
+        # Some steps need to be done
+        missing_parts = []
+        if needs_conversion:
+            missing_parts.append("convert documents")
+        if needs_catalog:
+            missing_parts.append("build catalog")
+        if needs_summaries:
+            missing_parts.append("generate summaries")
+
+        run_prep = safe_confirm(
+            f"Run missing steps ({', '.join(missing_parts)})?",
+            default=True,
+            allow_cancel=True,
+        )
+        if run_prep:
+            if needs_conversion:
+                convert_pdfs = True
+                pdf_file_refs = _pdf_paths_for_tools(base_dir, pdf_files)
+
+    # Execute preparation steps as needed
+    if convert_pdfs or needs_catalog:
         config_dir.mkdir(parents=True, exist_ok=True)
         catalog = _build_content_catalog(
             base_dir,
             config_dir,
             convert_docs=convert_pdfs,
-            binary_docs=pdf_files,
+            binary_docs=pdf_files if convert_pdfs else None,
         )
         if catalog:
             console.print(f"[green]Catalog built: {len(catalog.files)} files indexed[/green]")
 
-    # 4. Summary generation
-    generate_summaries = False
-    if catalog and build_catalog_choice:
-        console.print("\n[bold]Step 4: Summary Generation[/bold]")
-        console.print("Generate AI summaries of files for better context (uses tokens).")
+    if needs_summaries and catalog:
+        _run_summarization(catalog, config_dir, selected_model)
 
-        generate_summaries = safe_confirm("Generate summaries with LLM?", default=False)
-        if generate_summaries:
-            _run_summarization(catalog, config_dir, selected_model)
-
-    # 5. Subagent configuration
-    console.print("\n[bold]Step 5: Subagent Configuration[/bold]")
+    # 3. Subagent configuration
+    console.print("\n[bold]Step 3: Subagent Configuration[/bold]")
     console.print("Subagents are specialized assistants (e.g., summarizer, explainer).")
 
-    include_subagents = safe_confirm("Include specialized subagents?", default=False)
+    include_subagents = safe_confirm(
+        "Include specialized subagents?", default=False, allow_cancel=True
+    )
     subagent_approval_mode = include_subagents  # Flag for approval UI
 
-    # 6. User guidance
-    console.print("\n[bold]Step 6: Project Guidance (Optional)[/bold]")
-    user_guidance = _ask_user_guidance()
+    # 4. User guidance
+    console.print("\n[bold]Step 4: Project Guidance (Optional)[/bold]")
+    user_guidance = _ask_user_guidance(allow_cancel=True)
 
-    # 7. Create setup agent
+    # 5. Create setup agent
     agent, error = create_setup_agent(
         base_dir,
         include_pdf_tool=convert_pdfs,
         pdf_files=pdf_file_refs,
-        model_override=selected_model if use_custom_model else None,
+        model_override=selected_model,
     )
 
     if error:
         console.print(f"[red]{error}[/red]")
         return False
 
-    # 8. Iterative analysis and generation
-    console.print("\n[bold]Step 7: Analyzing Project[/bold]\n")
+    # 6. Iterative analysis and generation
+    console.print("\n[bold]Step 5: Analyzing Project[/bold]\n")
 
     config_dir.mkdir(parents=True, exist_ok=True)
     agents_file = config_dir / "agents.yaml"
@@ -1566,7 +1758,7 @@ def _run_full_reconfiguration(settings, base_dir: Path) -> bool:
                     console.print("[green]Removed all subagents[/green]")
 
         # Ask for confirmation or revision
-        satisfied = safe_confirm("\nAccept this configuration?", default=True)
+        satisfied = safe_confirm("\nAccept this configuration?", default=True, allow_cancel=True)
 
         if satisfied:
             # Ensure all agents have models
@@ -1579,9 +1771,11 @@ def _run_full_reconfiguration(settings, base_dir: Path) -> bool:
         # Ask for revision feedback
         if revision < MAX_SETUP_REVISIONS - 1:
             console.print(f"\n[dim]Revision {revision + 1}/{MAX_SETUP_REVISIONS}[/dim]")
-            feedback = safe_prompt("What would you like to change?").strip()
+            feedback = safe_prompt("What would you like to change?", allow_cancel=True).strip()
             if not feedback:
-                console.print("[yellow]No feedback provided. Using previous configuration.[/yellow]")
+                console.print(
+                    "[yellow]No feedback provided. Using previous configuration.[/yellow]"
+                )
                 _ensure_agent_models(agents_file, str(selected_model))
                 return True
             revision_notes.append(feedback)
@@ -1593,22 +1787,207 @@ def _run_full_reconfiguration(settings, base_dir: Path) -> bool:
     return False
 
 
+def _run_agent_revision(settings, base_dir: Path) -> bool:
+    """
+    Modify existing agents.yaml with LLM assistance.
+
+    Loads the current configuration, shows it to the user, and allows
+    iterative text-free modifications via LLM. Changes are only saved
+    when the user accepts the final configuration.
+
+    Returns:
+        True if successful
+    """
+    config_dir = base_dir / ".flavia"
+    agents_file = config_dir / "agents.yaml"
+
+    if not agents_file.exists():
+        console.print("[yellow]No agents.yaml found. Use 'Full' mode to create one.[/yellow]")
+        return False
+
+    console.print("\n[bold blue]Agent Revision[/bold blue]")
+    console.print("[dim](Press Ctrl+C at any time to cancel without saving)[/dim]\n")
+
+    # Backup original
+    try:
+        original_content = agents_file.read_text(encoding="utf-8")
+    except Exception as e:
+        console.print(f"[red]Could not read agents.yaml: {e}[/red]")
+        return False
+
+    try:
+        return _run_agent_revision_inner(
+            settings, base_dir, config_dir, agents_file, original_content
+        )
+    except SetupCancelled:
+        console.print("\n[yellow]Revision cancelled. No changes saved.[/yellow]")
+        # Restore original
+        try:
+            agents_file.write_text(original_content, encoding="utf-8")
+        except Exception:
+            pass
+        return False
+
+
+def _run_agent_revision_inner(
+    settings,
+    base_dir: Path,
+    config_dir: Path,
+    agents_file: Path,
+    original_content: str,
+) -> bool:
+    """Inner implementation of agent revision (wrapped by cancel handler)."""
+
+    # Show current configuration
+    console.print("[bold]Current Configuration:[/bold]\n")
+    _show_agents_preview(agents_file)
+
+    # Model selection
+    console.print("\n[bold]Model for revision:[/bold]")
+    selected_model = _select_model_for_setup(settings, allow_cancel=True)
+
+    # Test connection
+    attempted, success = _test_selected_model_connection(settings, selected_model)
+    if attempted and not success:
+        console.print("[red]Model connection test failed. Aborting.[/red]")
+        return False
+
+    # Load catalog if available (for context)
+    catalog = None
+    catalog_file = config_dir / "content_catalog.json"
+    if catalog_file.exists():
+        from flavia.content.catalog import ContentCatalog
+
+        catalog = ContentCatalog.load(config_dir)
+
+    # Create setup agent
+    agent, error = create_setup_agent(
+        base_dir,
+        include_pdf_tool=False,
+        pdf_files=None,
+        model_override=selected_model,
+    )
+
+    if error:
+        console.print(f"[red]{error}[/red]")
+        return False
+
+    config_dir.mkdir(parents=True, exist_ok=True)
+
+    for revision in range(MAX_SETUP_REVISIONS):
+        # Ask what to change
+        console.print()
+        feedback = safe_prompt("What would you like to change?", allow_cancel=True).strip()
+
+        if not feedback:
+            console.print("[yellow]No changes requested. Keeping current configuration.[/yellow]")
+            return True
+
+        # Build revision task with current config as context
+        current_config = agents_file.read_text(encoding="utf-8")
+        task = _build_revision_task(
+            current_config=current_config,
+            selected_model=selected_model,
+            feedback=feedback,
+            catalog=catalog,
+        )
+
+        # Delete current file so the tool can recreate it
+        if agents_file.exists():
+            agents_file.unlink()
+
+        # Execute revision
+        try:
+            response = agent.run(task)
+            console.print(Markdown(response))
+        except Exception as e:
+            console.print(f"[red]Error during revision: {e}[/red]")
+            # Restore original on error
+            agents_file.write_text(original_content, encoding="utf-8")
+            return False
+
+        # Check if agents.yaml was created
+        if not agents_file.exists():
+            console.print("[red]agents.yaml was not created. Restoring original.[/red]")
+            agents_file.write_text(original_content, encoding="utf-8")
+            if revision < MAX_SETUP_REVISIONS - 1:
+                continue
+            else:
+                return False
+
+        # Preview revised config
+        console.print("\n[bold]Revised Configuration:[/bold]\n")
+        _show_agents_preview(agents_file)
+
+        # Accept or continue revising
+        satisfied = safe_confirm("\nAccept this configuration?", default=True, allow_cancel=True)
+
+        if satisfied:
+            _ensure_agent_models(agents_file, str(selected_model))
+            console.print("\n[green]Configuration saved![/green]")
+            console.print("[yellow]Use /reset to load the new configuration.[/yellow]")
+            return True
+
+        if revision >= MAX_SETUP_REVISIONS - 1:
+            console.print("[yellow]Max revisions reached. Using last configuration.[/yellow]")
+            _ensure_agent_models(agents_file, str(selected_model))
+            return True
+
+        console.print(f"\n[dim]Revision {revision + 1}/{MAX_SETUP_REVISIONS}[/dim]")
+
+    return False
+
+
+def _build_revision_task(
+    current_config: str,
+    selected_model: str,
+    feedback: str,
+    catalog: Optional[Any] = None,
+) -> str:
+    """Build a revision task that includes the current config and user feedback."""
+    parts = [
+        "You are revising an existing agents.yaml configuration. "
+        "The user wants to modify the current setup. "
+        "Read the current configuration below, apply the requested changes, "
+        "and use create_agents_config to write the updated file.\n\n"
+        f"CURRENT agents.yaml:\n```yaml\n{current_config}\n```",
+        (
+            "The generated main agent must explicitly set "
+            f"model to '{selected_model}' in agents.yaml."
+        ),
+        f"User requested changes:\n{feedback}",
+    ]
+
+    # Include catalog context if available
+    if catalog:
+        try:
+            context_summary = catalog.generate_context_summary(max_length=2000)
+            if context_summary:
+                parts.append(f"Project content catalog summary:\n\n{context_summary}")
+        except Exception:
+            pass
+
+    return "\n\n".join(parts)
+
+
 def run_agent_setup_command(settings, base_dir: Path) -> bool:
     """
-    Unified agent setup command with two modes:
-    1. Quick model change (legacy /agents behavior)
-    2. Full reconfiguration (legacy /setup + --init features)
+    Unified agent setup command with three modes:
+    1. Quick model change
+    2. Revise existing agents with LLM assistance
+    3. Full reconfiguration from scratch
 
     Returns:
         True if successful
     """
     console.print("\n[bold blue]Agent Setup[/bold blue]\n")
     console.print("Choose setup mode:\n")
-    console.print("  [1] Quick: Change models for existing agents")
-    console.print("  [2] Full: Reconfigure agents completely (with LLM analysis)")
+    console.print("  [1] Quick:  Change models for existing agents")
+    console.print("  [2] Revise: Modify current agents with LLM assistance")
+    console.print("  [3] Full:   Delete current agents and start fresh")
     console.print()
 
-    choice = safe_prompt("Select mode (1 or 2)", default="1").strip()
+    choice = safe_prompt("Select mode (1-3)", default="1").strip()
 
     if choice == "1":
         # Quick mode: just change models
@@ -1617,7 +1996,11 @@ def run_agent_setup_command(settings, base_dir: Path) -> bool:
         return manage_agent_models(settings, base_dir)
 
     elif choice == "2":
-        # Full mode: complete reconfiguration
+        # Revise mode: modify existing agents with LLM
+        return _run_agent_revision(settings, base_dir)
+
+    elif choice == "3":
+        # Full mode: complete reconfiguration from scratch
         return _run_full_reconfiguration(settings, base_dir)
 
     else:

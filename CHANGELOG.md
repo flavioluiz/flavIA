@@ -16,8 +16,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - CLI flags (`--list-providers`, `--list-tools`, `--config`) output clean plain text without ANSI codes when piped
 - **Unified agent setup commands**: Replaced separate `/setup` and `/agents` flows with `/agent_setup`:
   - **Quick mode**: update models for existing agents/subagents
-  - **Full mode**: complete reconfiguration (model selection, optional conversion/catalog/summaries, optional subagents, revision loop)
-  - Added interactive subagent approval (approve/reject each proposed subagent before saving)
+  - **Revise mode** (new): modify existing agents via LLM text-free prompts — loads current config, accepts change descriptions, iterates until satisfied
+  - **Full mode**: complete reconfiguration:
+    - Simplified Step 1: single model selection (no redundant confirmation)
+    - Steps 2/3/4 merged into "Preparation" status panel showing ✓/✗ for documents, catalog, summaries; skips completed steps
+    - Ctrl+C at any point cancels without saving (restores original `agents.yaml`)
+    - "Overwrite?" moved to end — save only on final acceptance
+    - Batch subagent approval via interactive checkboxes (`questionary`) with fallback to numbered list
+    - Support for rebuild selection when all preparation steps are complete
 - **Init wizard flow refactor**: `flavia --init` now builds the content catalog before AI analysis, supports optional LLM summaries during setup, and asks explicitly whether specialized subagents should be included.
 - **Converted PDF directory changed from `converted/` to `.converted/`**: PDF files converted to text are now stored in a hidden directory `.converted/` instead of `converted/`. This prevents converted files from being indexed as separate entries in the content catalog, avoiding duplicates. The catalog now links the original PDF to its converted text version.
 

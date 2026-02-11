@@ -102,23 +102,26 @@ Inside a chat session, the following commands are available:
 
 ## `/agent_setup` - Configure Agents
 
-Unified command for agent configuration with two modes:
+Unified command for agent configuration with three modes:
 
 **Mode 1: Quick** - Change models for existing agents
 - Lists all agents (main + subagents)
 - Allows changing the model for each agent
 - No regeneration of agent configurations
 
-**Mode 2: Full** - Complete agent reconfiguration with LLM analysis
-- Model selection for setup analysis
-- Convert PDFs to text (optional)
-- Build/refresh content catalog (optional)
-- Generate file summaries (optional)
-- Choose whether to include specialized subagents
-- Provide optional guidance for the AI
-- LLM analyzes your project and generates agents.yaml
-- Interactive subagent approval (approve/reject each proposed subagent)
-- Iterative refinement with up to 5 revisions
+**Mode 2: Revise** - Modify existing agents with LLM assistance (new)
+- Loads and previews current `agents.yaml`
+- Accepts natural language descriptions of changes ("add a quiz-making subagent")
+- LLM applies modifications iteratively
+- Changes saved only when you accept; Ctrl+C cancels without saving
+
+**Mode 3: Full** - Complete agent reconfiguration with LLM analysis
+- Simplified Step 1: single model selection (no redundant confirmation)
+- Steps 2/3/4 merged into "Preparation" status panel showing ✓/✗ for documents, catalog, summaries; skips completed steps
+- Batch subagent approval via interactive checkboxes
+- Ctrl+C at any point cancels without saving (restores original `agents.yaml`)
+- "Overwrite?" moved to end — save only on final acceptance
+- Support for rebuild selection when all preparation steps are complete
 
 ### Workflow example (Full Mode)
 
@@ -127,24 +130,45 @@ Inside a chat session:
 ```
 You: /agent_setup
 Agent: Choose setup mode:
-  [1] Quick: Change models for existing agents
-  [2] Full: Reconfigure agents completely (with LLM analysis)
-You: 2
+  [1] Quick:  Change models for existing agents
+  [2] Revise: Modify current agents with LLM assistance
+  [3] Full:   Reconfigure agents completely (with LLM analysis)
+You: 3
 
-[Step 1] Select model for setup analysis (default or custom)
-[Step 2] Convert PDFs to text? (yes/no)
-[Step 3] Build content catalog? (yes/no)
-[Step 4] Generate summaries? (yes/no)
-[Step 5] Include subagents? (yes/no)
-[Step 6] Add guidance for agent creation? (optional)
-[Step 7] Analyzing project...
-[Step 8] Preview generated agents.yaml
-[Step 8b] Subagent approval interface (if enabled):
-         - summarizer? [Y/n] → Yes
-         - explainer? [Y/n] → Yes
-         - quiz_maker? [Y/n] → No
-[Step 9] Accept configuration? (yes/no)
-         If no: provide feedback for revision (up to 5 attempts)
+[Step 1] Model Selection
+  Model: openai:gpt-4o
+  Use this model or choose another? [Y/n] → Y
+
+[Step 2] Preparation
+  ✓ Documents:       12 PDFs converted
+  ✓ Content catalog: 48 files indexed
+  ✗ Summaries:       not generated
+  All preparation steps are complete. Rebuild any?
+
+[Step 3] Subagent Configuration
+  Include specialized subagents? [Y/n] → Y
+
+[Step 4] Project Guidance (Optional)
+  Add guidance? [Y/n] → n
+
+[Step 5] Analyzing Project...
+  [AI generates agents.yaml]
+
+Generated Configuration:
+  [Preview of main agent and subagents]
+
+Subagent Approval
+  The AI proposed 3 subagent(s):
+    summarizer - Summarize long documents and extract key points
+    explainer - Explain complex concepts in simple terms
+    quiz_maker - Create quizzes for studying
+
+Select subagents to include (space to toggle, enter to confirm):
+  [ ] summarizer
+  [x] explainer
+  [x] quiz_maker
+
+Accept this configuration? [Y/n] → Y
 
 Configuration saved! Use /reset to load.
 ```
