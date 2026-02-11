@@ -87,7 +87,7 @@ Connect to email and calendar services with read-autonomous, write-confirmed pat
 ### [Area 8: Context Window Management & Compaction](roadmap/area-8-context-window-management.md) (3 tasks)
 Track token usage and automatically summarize conversations approaching context limits.
 
-- **8.1** Token Usage Tracking (Easy) — Capture response.usage, display utilization in CLI/Telegram
+- **8.1** ~~Token Usage Tracking (Easy)~~ ✅ — Capture response.usage, display utilization in CLI/Telegram
 - **8.2** Compaction with Confirmation (Medium) — Auto-summarize at threshold with user approval
 - **8.3** Manual /compact Command (Easy) — On-demand conversation summarization
 
@@ -290,7 +290,7 @@ Tasks ordered by a pragmatic implementation sequence that balances dependency re
 | 3 | ~~**4.3** Runtime model switching in CLI~~ | ~~Easy~~ | ~~CLI~~ |
 | 4 | ~~**4.7** Unified slash command help system~~ | ~~Easy~~ | ~~CLI~~ |
 | 5 | **1.3** Word/Office document converter | Easy | File Processing |
-| 6 | **8.1** Token usage tracking & display | Easy | Context Management |
+| 6 | ~~**8.1** Token usage tracking & display~~ | ~~Easy~~ | ~~Context Management~~ |
 | 7 | **8.3** Manual /compact slash command | Easy | Context Management |
 | 8 | **5.1** Write/Edit file tools | Medium | File Modification |
 | 9 | **1.1** Audio/Video transcription converter | Medium | File Processing |

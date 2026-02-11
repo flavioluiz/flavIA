@@ -6,9 +6,9 @@ This area introduces token usage tracking, context window monitoring, and a comp
 
 ---
 
-### Task 8.1 -- Token Usage Tracking & Display
+### Task 8.1 -- Token Usage Tracking & Display ✅
 
-**Difficulty**: Easy | **Dependencies**: None
+**Difficulty**: Easy | **Dependencies**: None | **Status**: Done
 
 Capture the `response.usage` object returned by the OpenAI-compatible API after each LLM call, and expose the model's `max_tokens` to the agent so it can compute context utilization.
 

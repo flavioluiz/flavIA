@@ -43,6 +43,14 @@ class BaseAgent(ABC):
 
         self.tool_schemas = self._build_tool_schemas()
         self.messages: list[dict[str, Any]] = []
+
+        # Token usage tracking
+        self.last_prompt_tokens: int = 0
+        self.last_completion_tokens: int = 0
+        self.total_prompt_tokens: int = 0
+        self.total_completion_tokens: int = 0
+        self.max_context_tokens: int = self._resolve_max_context_tokens()
+
         self._init_system_prompt()
 
     def _build_tool_schemas(self) -> list[dict[str, Any]]:
@@ -53,6 +61,19 @@ class BaseAgent(ABC):
             models=self.settings.models,
             subagents=self.profile.subagents,
         )
+
+    def _resolve_max_context_tokens(self) -> int:
+        """Resolve max context window size from provider model config.
+
+        Returns the ``max_tokens`` value defined in the provider's model
+        configuration.  Falls back to 128 000 when the provider or model
+        entry is unavailable (e.g. legacy / env-var only setups).
+        """
+        if self.provider:
+            model_config = self.provider.get_model_by_id(self.model_id)
+            if model_config and model_config.max_tokens:
+                return model_config.max_tokens
+        return 128_000
 
     def _create_openai_client(self, provider: Optional[ProviderConfig] = None) -> OpenAI:
         """
@@ -91,7 +112,9 @@ class BaseAgent(ABC):
             # Compatibility fallback for environments where OpenAI SDK and httpx versions mismatch.
             # Remove default_headers for httpx.Client fallback if present
             http_kwargs = {k: v for k, v in kwargs.items() if k != "default_headers"}
-            return OpenAI(**http_kwargs, http_client=httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)))
+            return OpenAI(
+                **http_kwargs, http_client=httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0))
+            )
 
     def _init_system_prompt(self) -> None:
         """Initialize the system prompt."""
@@ -106,6 +129,35 @@ class BaseAgent(ABC):
     def reset(self) -> None:
         """Reset agent state for new conversation."""
         self._init_system_prompt()
+        self.last_prompt_tokens = 0
+        self.last_completion_tokens = 0
+        self.total_prompt_tokens = 0
+        self.total_completion_tokens = 0
+
+    @property
+    def context_utilization(self) -> float:
+        """Context window utilization as a ratio (0.0 to 1.0).
+
+        Computed as ``last_prompt_tokens / max_context_tokens``.  Returns
+        0.0 when ``max_context_tokens`` is zero or negative.
+        """
+        if self.max_context_tokens <= 0:
+            return 0.0
+        return self.last_prompt_tokens / self.max_context_tokens
+
+    def _update_token_usage(self, usage: Any) -> None:
+        """Update token usage counters from an API response ``usage`` object.
+
+        Args:
+            usage: The ``response.usage`` object returned by the OpenAI SDK.
+                   May be ``None`` if the provider does not include usage data.
+        """
+        if usage is None:
+            return
+        self.last_prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+        self.last_completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+        self.total_prompt_tokens += self.last_prompt_tokens
+        self.total_completion_tokens += self.last_completion_tokens
 
     def _call_llm(self, messages: list[dict[str, Any]]) -> Any:
         """Call the LLM with messages."""
@@ -125,13 +177,12 @@ class BaseAgent(ABC):
             else "SYNTHETIC_API_KEY"
         )
         base_url_hint = (
-            "the provider API base URL in providers.yaml"
-            if self.provider
-            else "API_BASE_URL"
+            "the provider API base URL in providers.yaml" if self.provider else "API_BASE_URL"
         )
 
         try:
             response = self.client.chat.completions.create(**kwargs)
+            self._update_token_usage(response.usage)
             return response.choices[0].message
         except AuthenticationError as e:
             raise RuntimeError(
@@ -150,8 +201,7 @@ class BaseAgent(ABC):
             ) from e
         except APIStatusError as e:
             raise RuntimeError(
-                f"API error from provider '{provider_hint}' "
-                f"(status {e.status_code}): {e.message}"
+                f"API error from provider '{provider_hint}' (status {e.status_code}): {e.message}"
             ) from e
 
     def _assistant_message_to_dict(self, message: Any) -> dict[str, Any]:
@@ -166,14 +216,16 @@ class BaseAgent(ABC):
             normalized_calls = []
             for call in tool_calls:
                 fn = getattr(call, "function", None)
-                normalized_calls.append({
-                    "id": call.id,
-                    "type": "function",
-                    "function": {
-                        "name": fn.name if fn else "",
-                        "arguments": fn.arguments if fn else "{}",
-                    },
-                })
+                normalized_calls.append(
+                    {
+                        "id": call.id,
+                        "type": "function",
+                        "function": {
+                            "name": fn.name if fn else "",
+                            "arguments": fn.arguments if fn else "{}",
+                        },
+                    }
+                )
             msg["tool_calls"] = normalized_calls
 
         return msg
@@ -199,11 +251,13 @@ class BaseAgent(ABC):
             result = self._execute_tool(name, args)
             result = self._handle_spawn_result(result, name, args)
 
-            results.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": result,
-            })
+            results.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": result,
+                }
+            )
 
         return results
 

@@ -194,7 +194,9 @@ def _command_completion_candidates(
     cmd = parts[0]
 
     if cmd == "/agent" and settings is not None:
-        return sorted(name for name in _get_available_agents(settings).keys() if name.startswith(text))
+        return sorted(
+            name for name in _get_available_agents(settings).keys() if name.startswith(text)
+        )
 
     if cmd in {"/provider-manage", "/provider-test"} and settings is not None:
         providers = settings.providers.providers.keys()
@@ -566,9 +568,7 @@ def _resolve_agent_model_ref(
 ) -> str | int:
     """Resolve the model reference that would be used by a specific agent."""
     available = (
-        available_agents
-        if available_agents is not None
-        else _get_available_agents(settings)
+        available_agents if available_agents is not None else _get_available_agents(settings)
     )
     main_config = available.get("main", {})
     main_model = (
@@ -622,6 +622,32 @@ def _print_active_model_hint(agent: RecursiveAgent, settings: Optional[Settings]
     console.print(f"[dim]{''.join(parts)}[/dim]\n")
 
 
+def _display_token_usage(agent: RecursiveAgent) -> None:
+    """Display compact token usage line with color coding after agent response.
+
+    Format: ``[tokens: 12,450 / 128,000 (9.7%) | response: 850 tokens]``
+
+    Color coding based on context utilization:
+    - green: < 70%
+    - yellow: 70-89%
+    - red: >= 90%
+    """
+    prompt_tokens = agent.last_prompt_tokens
+    max_tokens = agent.max_context_tokens
+    completion_tokens = agent.last_completion_tokens
+    pct = agent.context_utilization * 100
+
+    if pct >= 90:
+        color = "red"
+    elif pct >= 70:
+        color = "yellow"
+    else:
+        color = "green"
+
+    console.print(
+        f"[dim][{color}]\\[tokens: {prompt_tokens:,} / {max_tokens:,} "
+        f"({pct:.1f}%) | response: {completion_tokens:,} tokens][/{color}][/dim]"
+    )
 
 
 def run_cli(settings: Settings) -> None:
@@ -674,6 +700,7 @@ def run_cli(settings: Settings) -> None:
                 response = _run_agent_with_feedback(ctx.agent, user_input)
                 console.print(f"[bold blue]{_build_agent_prefix(ctx.agent)}[/bold blue] ", end="")
                 console.print(Markdown(response))
+                _display_token_usage(ctx.agent)
                 _append_chat_log(ctx.chat_log_file, "assistant", response, model_ref=active_model)
             except KeyboardInterrupt:
                 console.print("\n[yellow]Interrupted[/yellow]")

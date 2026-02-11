@@ -8,6 +8,19 @@ from flavia.agent import RecursiveAgent, AgentProfile
 logger = logging.getLogger(__name__)
 
 
+def _build_token_footer(agent: RecursiveAgent) -> str:
+    """Build compact token usage footer for Telegram messages.
+
+    Example output::
+
+        📊 Context: 12,450/128,000 (9.7%)
+    """
+    prompt_tokens = agent.last_prompt_tokens
+    max_tokens = agent.max_context_tokens
+    pct = agent.context_utilization * 100
+    return f"\n\n\U0001f4ca Context: {prompt_tokens:,}/{max_tokens:,} ({pct:.1f}%)"
+
+
 def _configure_logging() -> None:
     """Configure logging for Telegram bot runtime."""
     logging.basicConfig(
@@ -34,6 +47,7 @@ class TelegramBot:
                 MessageHandler,
                 filters,
             )
+
             self.telegram_available = True
             self.Update = Update
             self.Application = Application
@@ -103,7 +117,7 @@ class TelegramBot:
         normalized = " ".join((text or "").split())
         if len(normalized) <= max_len:
             return normalized
-        return normalized[:max_len - 3] + "..."
+        return normalized[: max_len - 3] + "..."
 
     def _log_event(self, update, action: str, extra: str = "") -> None:
         """Log basic Telegram event details to terminal."""
@@ -152,8 +166,7 @@ class TelegramBot:
             return
 
         await update.message.reply_text(
-            self._build_help_text()
-            + "\n\n"
+            self._build_help_text() + "\n\n"
             f"Your User ID: {user_id}\n"
             f"Your Chat ID: {chat_id}\n\n"
             "Use TELEGRAM_ALLOWED_USER_IDS to whitelist specific users."
@@ -191,9 +204,7 @@ class TelegramBot:
             chat_id = update.effective_chat.id if update.effective_chat else None
             self._log_event(update, "blocked", "unauthorized user")
             await update.message.reply_text(
-                "You are not authorized.\n"
-                f"User ID: {user_id}\n"
-                f"Chat ID: {chat_id}"
+                f"You are not authorized.\nUser ID: {user_id}\nChat ID: {chat_id}"
             )
             return
 
@@ -203,13 +214,14 @@ class TelegramBot:
         self._log_event(
             update,
             "message:received",
-            f"text=\"{self._message_preview(user_message)}\"",
+            f'text="{self._message_preview(user_message)}"',
         )
         await update.message.chat.send_action("typing")
 
         try:
             agent = self._get_or_create_agent(user_id)
             response = agent.run(user_message)
+            response += _build_token_footer(agent)
             self._log_event(
                 update,
                 "message:answered",
@@ -217,7 +229,7 @@ class TelegramBot:
             )
 
             if len(response) > 4000:
-                chunks = [response[i:i+4000] for i in range(0, len(response), 4000)]
+                chunks = [response[i : i + 4000] for i in range(0, len(response), 4000)]
                 for chunk in chunks:
                     await update.message.reply_text(chunk)
             else:
@@ -264,10 +276,9 @@ class TelegramBot:
         app.add_handler(self.CommandHandler("reset", self._reset_command))
         app.add_handler(self.CommandHandler("help", self._help_command))
         app.add_handler(self.CommandHandler("whoami", self._whoami_command))
-        app.add_handler(self.MessageHandler(
-            self.filters.TEXT & ~self.filters.COMMAND,
-            self._handle_message
-        ))
+        app.add_handler(
+            self.MessageHandler(self.filters.TEXT & ~self.filters.COMMAND, self._handle_message)
+        )
 
         logger.info("Bot running. Press Ctrl+C to stop.")
         app.run_polling(allowed_updates=["message"])
