@@ -166,6 +166,32 @@ class ContentCatalog:
     # Query
     # ------------------------------------------------------------------
 
+    def _read_converted_content(self, entry: FileEntry) -> str:
+        """
+        Read the content of a converted file for text search.
+
+        Args:
+            entry: FileEntry with converted_to path
+
+        Returns:
+            Content of the converted file, or empty string on error.
+        """
+        if not entry.converted_to:
+            return ""
+
+        converted_path = self.base_dir / entry.converted_to
+        if not converted_path.exists():
+            return ""
+
+        try:
+            # Limit to first 100KB to avoid memory issues with huge files
+            content = converted_path.read_text(encoding="utf-8")
+            if len(content) > 100_000:
+                content = content[:100_000]
+            return content
+        except (OSError, UnicodeDecodeError):
+            return ""
+
     def query(
         self,
         name: Optional[str] = None,
@@ -176,6 +202,7 @@ class ContentCatalog:
         has_conversion: Optional[bool] = None,
         status: Optional[str] = None,
         text_search: Optional[str] = None,
+        search_converted_content: bool = True,
         limit: int = 50,
     ) -> list[FileEntry]:
         """
@@ -189,7 +216,9 @@ class ContentCatalog:
             has_summary: Filter by whether summary exists
             has_conversion: Filter by whether converted_to exists
             status: "current", "new", "modified", "missing"
-            text_search: Substring search in path + summary + tags
+            text_search: Substring search in path + summary + tags + converted content
+            search_converted_content: If True, also search within converted file content
+                (default: True). This enables finding information inside converted PDFs.
             limit: Max results to return
 
         Returns:
@@ -228,6 +257,11 @@ class ContentCatalog:
                     searchable += " " + entry.summary.lower()
                 if entry.tags:
                     searchable += " " + " ".join(entry.tags).lower()
+                # Also search in converted content if enabled and available
+                if search_converted_content and entry.converted_to:
+                    converted_content = self._read_converted_content(entry)
+                    if converted_content:
+                        searchable += " " + converted_content.lower()
                 if search_lower not in searchable:
                     continue
 
@@ -458,6 +492,15 @@ class ContentCatalog:
             lines.append("\nFile summaries:")
             for entry in sorted(summarized, key=lambda e: e.path)[:20]:
                 lines.append(f"  - {entry.path}: {entry.summary}")
+
+        # Add note about converted files if any exist
+        if stats["with_conversion"] > 0:
+            lines.append(
+                f"\nNote: {stats['with_conversion']} document(s) have been converted to text "
+                "in the .converted/ folder. Use query_catalog with text_search to find "
+                "information inside these documents, or use read_file on the converted_to "
+                "path shown in query results to read the full extracted text."
+            )
 
         result = "\n".join(lines)
         if len(result) > max_length:

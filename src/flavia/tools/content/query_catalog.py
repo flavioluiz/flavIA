@@ -53,7 +53,13 @@ class QueryCatalogTool(BaseTool):
                 ToolParameter(
                     name="text_search",
                     type="string",
-                    description="Free text search in file paths, summaries, and tags",
+                    description="Free text search in file paths, summaries, tags, AND converted document content (e.g., text extracted from PDFs)",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="search_converted_content",
+                    type="boolean",
+                    description="When using text_search, also search inside converted document content (default: true). Disable for faster metadata-only searches.",
                     required=False,
                 ),
                 ToolParameter(
@@ -94,6 +100,9 @@ class QueryCatalogTool(BaseTool):
         for key in ("name", "extension", "file_type", "category", "text_search"):
             if key in args and args[key]:
                 query_kwargs[key] = args[key]
+        # Handle boolean parameter (default True)
+        if "search_converted_content" in args:
+            query_kwargs["search_converted_content"] = args["search_converted_content"]
 
         results = catalog.query(**query_kwargs)
 

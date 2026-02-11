@@ -463,6 +463,49 @@ class TestContentCatalog:
         results = catalog.query(text_search="navier")
         assert len(results) == 1
 
+    def test_query_text_search_in_converted_content(self, tmp_path):
+        """Query text search matches in converted file content."""
+        # Create a binary document entry (simulating a PDF)
+        (tmp_path / "paper.pdf").write_bytes(b"%PDF-1.4")
+
+        # Create the converted file in .converted/
+        converted_dir = tmp_path / ".converted"
+        converted_dir.mkdir()
+        (converted_dir / "paper.md").write_text(
+            "# Research Paper\n\n"
+            "This paper discusses the unique phenomenon of quantum entanglement "
+            "and its implications for faster-than-light communication."
+        )
+
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+        # Set the converted_to field (normally done by conversion process)
+        catalog.files["paper.pdf"].converted_to = ".converted/paper.md"
+
+        # Search for term only present in converted content
+        results = catalog.query(text_search="quantum entanglement")
+        assert len(results) == 1
+        assert results[0].name == "paper.pdf"
+
+        # Search should not find if search_converted_content is disabled
+        results_no_content = catalog.query(
+            text_search="quantum entanglement", search_converted_content=False
+        )
+        assert len(results_no_content) == 0
+
+    def test_query_text_search_converted_content_nonexistent_file(self, tmp_path):
+        """Query gracefully handles missing converted files."""
+        (tmp_path / "paper.pdf").write_bytes(b"%PDF-1.4")
+
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+        # Set converted_to to a file that doesn't exist
+        catalog.files["paper.pdf"].converted_to = ".converted/nonexistent.md"
+
+        # Should not crash, just not find results
+        results = catalog.query(text_search="anything")
+        assert len(results) == 0
+
     def test_query_limit(self, tmp_path):
         """Query respects limit parameter."""
         for i in range(10):
@@ -521,6 +564,31 @@ class TestContentCatalog:
 
         summary = catalog.generate_context_summary(max_length=100)
         assert len(summary) <= 100
+
+    def test_generate_context_summary_includes_conversion_note(self, tmp_path):
+        """Context summary includes note about converted files when present."""
+        (tmp_path / "paper.pdf").write_bytes(b"%PDF-1.4")
+
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+        # Simulate a converted file
+        catalog.files["paper.pdf"].converted_to = ".converted/paper.md"
+
+        summary = catalog.generate_context_summary(max_length=5000)
+        assert "converted" in summary.lower()
+        assert ".converted" in summary
+        assert "query_catalog" in summary
+
+    def test_generate_context_summary_no_conversion_note_when_none(self, tmp_path):
+        """Context summary does not include conversion note when no conversions exist."""
+        (tmp_path / "code.py").write_text("code")
+
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+
+        summary = catalog.generate_context_summary()
+        # Should not mention .converted folder since there are no conversions
+        assert ".converted" not in summary
 
 
 # ---------------------------------------------------------------------------
