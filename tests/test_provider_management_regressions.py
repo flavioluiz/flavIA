@@ -248,8 +248,9 @@ def test_run_provider_wizard_redirects_to_manage_for_configured_provider(monkeyp
     )
     manage_called: dict[str, object] = {}
 
-    def _mock_manage_provider_models(_settings, provider_id):
+    def _mock_manage_provider_models(_settings, provider_id, target_dir=None):
         manage_called["provider_id"] = provider_id
+        manage_called["target_dir"] = target_dir
         return True
 
     monkeypatch.setattr("flavia.setup.provider_wizard._load_settings_for_target_dir", lambda _target_dir: settings)
@@ -264,6 +265,32 @@ def test_run_provider_wizard_redirects_to_manage_for_configured_provider(monkeyp
 
     assert run_provider_wizard(tmp_path) is True
     assert manage_called["provider_id"] == "openai"
+    assert manage_called["target_dir"] == tmp_path.resolve()
+
+
+def test_manage_provider_models_forwards_target_dir_to_save(monkeypatch, tmp_path):
+    settings = _build_settings([ModelConfig(id="gpt-4o", name="GPT-4o", default=True)])
+    target_dir = tmp_path / "workspace"
+    target_dir.mkdir()
+    captured: dict[str, object] = {}
+
+    def _fake_save_changes(_settings, provider_id, provider, changes=None, target_dir=None):
+        _ = _settings
+        _ = provider
+        _ = changes
+        captured["provider_id"] = provider_id
+        captured["target_dir"] = target_dir
+        return True
+
+    monkeypatch.setattr("flavia.setup.provider_wizard.safe_prompt", lambda *args, **kwargs: "s")
+    monkeypatch.setattr(
+        "flavia.setup.provider_wizard._save_provider_changes",
+        _fake_save_changes,
+    )
+
+    assert manage_provider_models(settings, "openai", target_dir=target_dir) is True
+    assert captured["provider_id"] == "openai"
+    assert captured["target_dir"] == target_dir
 
 
 def test_manage_provider_save_without_header_edits_preserves_header_placeholders(monkeypatch, tmp_path):

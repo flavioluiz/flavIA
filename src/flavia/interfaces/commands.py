@@ -743,7 +743,11 @@ def cmd_provider_manage(ctx: CommandContext, args: str) -> bool:
     from flavia.setup.provider_wizard import manage_provider_models
 
     provider_id = args.strip() if args.strip() else None
-    success = manage_provider_models(ctx.settings, provider_id)
+    success = manage_provider_models(
+        ctx.settings,
+        provider_id,
+        target_dir=ctx.settings.base_dir,
+    )
     if success:
         ctx.console.print("[dim]Use /reset to reload configuration.[/dim]")
     return True

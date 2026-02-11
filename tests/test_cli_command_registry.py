@@ -2,6 +2,8 @@
 
 import pytest
 
+from flavia.config.providers import ModelConfig, ProviderConfig, ProviderRegistry
+from flavia.config.settings import Settings
 from flavia.interfaces.commands import (
     COMMAND_REGISTRY,
     CommandContext,
@@ -35,7 +37,6 @@ class _DummyAgent:
 def _make_test_context(settings=None, agent=None, console=None):
     """Create a CommandContext for testing."""
     from pathlib import Path
-    from flavia.config.settings import Settings
 
     return CommandContext(
         settings=settings or Settings(base_dir=Path("/tmp")),
@@ -48,6 +49,29 @@ def _make_test_context(settings=None, agent=None, console=None):
     )
 
 
+def _make_provider_settings(
+    provider_id: str = "openai",
+    api_key: str = "test-key",
+    api_key_env_var: str | None = None,
+    with_model: bool = True,
+) -> Settings:
+    models = [ModelConfig(id="gpt-4o", name="GPT-4o", default=True)] if with_model else []
+    provider = ProviderConfig(
+        id=provider_id,
+        name=provider_id.title(),
+        api_base_url=f"https://{provider_id}.example/v1",
+        api_key=api_key,
+        api_key_env_var=api_key_env_var,
+        models=models,
+    )
+    return Settings(
+        providers=ProviderRegistry(
+            providers={provider_id: provider},
+            default_provider_id=provider_id,
+        )
+    )
+
+
 # =============================================================================
 # Command Registry Tests
 # =============================================================================
@@ -56,7 +80,8 @@ def _make_test_context(settings=None, agent=None, console=None):
 def test_command_registry_contains_expected_commands():
     """Verify all expected commands are registered."""
     expected = {"/quit", "/exit", "/q", "/reset", "/help", "/agent_setup",
-                "/agent", "/model", "/providers", "/tools", "/config", "/catalog"}
+                "/agent", "/model", "/providers", "/tools", "/config", "/catalog",
+                "/provider-setup", "/provider-manage", "/provider-test"}
     registered = set(COMMAND_REGISTRY.keys())
     assert expected.issubset(registered), f"Missing: {expected - registered}"
 
@@ -187,6 +212,102 @@ def test_dispatch_no_arg_command_with_args_is_unknown():
     assert not any("Goodbye" in line for line in console.printed)
 
 
+def test_dispatch_provider_setup_runs_wizard_with_base_dir(monkeypatch, tmp_path):
+    """Provider setup command should run wizard for the active session base_dir."""
+    console = _DummyConsole()
+    settings = Settings(base_dir=tmp_path)
+    ctx = _make_test_context(settings=settings, console=console)
+    captured: dict[str, object] = {}
+
+    def _fake_run_provider_wizard(target_dir=None):
+        captured["target_dir"] = target_dir
+        return True
+
+    monkeypatch.setattr(
+        "flavia.setup.provider_wizard.run_provider_wizard",
+        _fake_run_provider_wizard,
+    )
+
+    result = dispatch_command(ctx, "/provider-setup")
+
+    assert result is True
+    assert captured["target_dir"] == tmp_path
+    assert any("Use /reset to reload configuration." in line for line in console.printed)
+
+
+def test_dispatch_provider_manage_passes_provider_id_and_base_dir(monkeypatch, tmp_path):
+    """Provider manage command should forward provider_id and target_dir."""
+    console = _DummyConsole()
+    settings = Settings(base_dir=tmp_path)
+    ctx = _make_test_context(settings=settings, console=console)
+    captured: dict[str, object] = {}
+
+    def _fake_manage_provider_models(_settings, provider_id, target_dir=None):
+        captured["provider_id"] = provider_id
+        captured["target_dir"] = target_dir
+        return True
+
+    monkeypatch.setattr(
+        "flavia.setup.provider_wizard.manage_provider_models",
+        _fake_manage_provider_models,
+    )
+
+    result = dispatch_command(ctx, "/provider-manage openai")
+
+    assert result is True
+    assert captured["provider_id"] == "openai"
+    assert captured["target_dir"] == tmp_path
+    assert any("Use /reset to reload configuration." in line for line in console.printed)
+
+
+def test_dispatch_provider_test_reports_unknown_provider():
+    """Unknown provider IDs should show available provider list."""
+    console = _DummyConsole()
+    settings = _make_provider_settings(provider_id="openai")
+    ctx = _make_test_context(settings=settings, console=console)
+
+    result = dispatch_command(ctx, "/provider-test missing")
+
+    assert result is True
+    assert any("Provider 'missing' not found." in line for line in console.printed)
+    assert any("Available: openai" in line for line in console.printed)
+
+
+def test_dispatch_provider_test_requires_default_provider():
+    """Without args, /provider-test should require a default provider."""
+    console = _DummyConsole()
+    settings = Settings()
+    ctx = _make_test_context(settings=settings, console=console)
+
+    result = dispatch_command(ctx, "/provider-test")
+
+    assert result is True
+    assert any("No default provider configured." in line for line in console.printed)
+
+
+def test_dispatch_provider_test_calls_connection_test(monkeypatch):
+    """Provider test command should call provider_wizard.test_provider_connection."""
+    console = _DummyConsole()
+    settings = _make_provider_settings(provider_id="openai")
+    ctx = _make_test_context(settings=settings, console=console)
+    calls: list[tuple[str, str, str, dict | None]] = []
+
+    def _fake_test_provider_connection(api_key, api_base_url, model_id, headers=None):
+        calls.append((api_key, api_base_url, model_id, headers))
+        return True, "ok"
+
+    monkeypatch.setattr(
+        "flavia.setup.provider_wizard.test_provider_connection",
+        _fake_test_provider_connection,
+    )
+
+    result = dispatch_command(ctx, "/provider-test openai")
+
+    assert result is True
+    assert calls == [("test-key", "https://openai.example/v1", "gpt-4o", None)]
+    assert any("SUCCESS" in line and "ok" in line for line in console.printed)
+
+
 # =============================================================================
 # Help System Tests
 # =============================================================================
@@ -212,6 +333,9 @@ def test_get_help_listing_includes_commands():
     assert "/model" in help_text
     assert "/agent" in help_text
     assert "/providers" in help_text
+    assert "/provider-setup" in help_text
+    assert "/provider-manage" in help_text
+    assert "/provider-test" in help_text
     assert "/tools" in help_text
     assert "/config" in help_text
 

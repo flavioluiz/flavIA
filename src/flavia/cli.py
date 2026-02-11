@@ -632,7 +632,11 @@ def main() -> int:
         from flavia.setup.provider_wizard import manage_provider_models
 
         provider_id = args.manage_provider if args.manage_provider else None
-        success = manage_provider_models(settings, provider_id)
+        success = manage_provider_models(
+            settings,
+            provider_id,
+            target_dir=settings.base_dir,
+        )
         return 0 if success else 1
 
     # Check API key for the model that will actually be used by the main agent.

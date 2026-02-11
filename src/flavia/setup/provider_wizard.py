@@ -839,7 +839,7 @@ def run_provider_wizard(target_dir: Optional[Path] = None) -> bool:
             f"\n[dim]Provider '{existing_provider.name}' is already configured. "
             f"Opening management interface...[/dim]"
         )
-        return manage_provider_models(settings, selected_provider_id)
+        return manage_provider_models(settings, selected_provider_id, target_dir=target_dir)
 
     if selection_kind == "custom":
         # Custom provider
@@ -1035,13 +1035,18 @@ def list_providers(settings) -> None:
     display_providers(settings, console=console, use_rich=True)
 
 
-def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
+def manage_provider_models(
+    settings,
+    provider_id: Optional[str] = None,
+    target_dir: Optional[Path] = None,
+) -> bool:
     """
     Manage models for a configured provider.
 
     Args:
         settings: Current settings
         provider_id: Provider ID to manage (prompts if not provided)
+        target_dir: Base directory used for local config resolution
 
     Returns:
         True if changes were saved
@@ -1317,11 +1322,21 @@ def manage_provider_models(settings, provider_id: Optional[str] = None) -> bool:
                 f"Delete provider '{provider.name}' completely?",
                 default=False,
             ):
-                return _delete_provider(settings, provider_id)
+                if target_dir is None:
+                    return _delete_provider(settings, provider_id)
+                return _delete_provider(settings, provider_id, target_dir=target_dir)
 
         elif choice == "s":
             # Save changes
-            return _save_provider_changes(settings, provider_id, provider, changes)
+            if target_dir is None:
+                return _save_provider_changes(settings, provider_id, provider, changes)
+            return _save_provider_changes(
+                settings,
+                provider_id,
+                provider,
+                changes,
+                target_dir=target_dir,
+            )
 
         elif choice == "q":
             console.print("[yellow]Changes discarded.[/yellow]")
@@ -1414,19 +1429,18 @@ def _fetch_models_for_provider(provider) -> list[dict]:
     return selected
 
 
-def _find_provider_raw_config(provider_id: str) -> Optional[dict[str, Any]]:
+def _find_provider_raw_config(
+    provider_id: str,
+    target_dir: Optional[Path] = None,
+) -> Optional[dict[str, Any]]:
     """Find raw provider config in local, global, or package providers.yaml."""
-    from flavia.config.loader import get_config_paths
+    from flavia.config.loader import DEFAULTS_DIR
 
-    paths = get_config_paths()
-    candidates: list[Path] = []
-
-    if paths.local_dir:
-        candidates.append(paths.local_dir / "providers.yaml")
-    if paths.user_dir:
-        candidates.append(paths.user_dir / "providers.yaml")
-    if paths.package_dir:
-        candidates.append(paths.package_dir / "providers.yaml")
+    candidates: list[Path] = [
+        _providers_file_for_location("local", target_dir=target_dir),
+        _providers_file_for_location("global"),
+        DEFAULTS_DIR / "providers.yaml",
+    ]
 
     seen: set[Path] = set()
     for file_path in candidates:
@@ -1458,14 +1472,19 @@ def _build_api_key_reference(provider_id: str, provider, raw_provider: Optional[
     return f"${{{_guess_api_key_env_var(provider_id)}}}"
 
 
-def _delete_provider(settings, provider_id: str) -> bool:
+def _delete_provider(
+    settings,
+    provider_id: str,
+    target_dir: Optional[Path] = None,
+) -> bool:
     """Delete a provider from configuration."""
     _ = settings
     location = _select_location(
         provider_id=provider_id,
+        target_dir=target_dir,
         title=f"Where should provider '{provider_id}' be deleted from?",
     )
-    providers_file = _providers_file_for_location(location)
+    providers_file = _providers_file_for_location(location, target_dir=target_dir)
 
     if not providers_file.exists():
         console.print(f"[red]Config file not found: {providers_file}[/red]")
@@ -1505,7 +1524,13 @@ def _delete_provider(settings, provider_id: str) -> bool:
     return True
 
 
-def _save_provider_changes(settings, provider_id: str, provider, changes: Optional[dict] = None) -> bool:
+def _save_provider_changes(
+    settings,
+    provider_id: str,
+    provider,
+    changes: Optional[dict] = None,
+    target_dir: Optional[Path] = None,
+) -> bool:
     """Save provider changes to config file.
 
     Args:
@@ -1532,9 +1557,10 @@ def _save_provider_changes(settings, provider_id: str, provider, changes: Option
 
     location = _select_location(
         provider_id=provider_id,  # Use original ID for finding existing config
+        target_dir=target_dir,
         title=f"Where should changes for provider '{effective_id}' be saved?",
     )
-    providers_file = _providers_file_for_location(location)
+    providers_file = _providers_file_for_location(location, target_dir=target_dir)
     providers_file.parent.mkdir(parents=True, exist_ok=True)
 
     console.print(f"[dim]Target file: {providers_file}[/dim]")
@@ -1586,7 +1612,7 @@ def _save_provider_changes(settings, provider_id: str, provider, changes: Option
     provider_data['models'] = models_data
 
     # Get raw provider config for preserving unexpanded values (API key, headers)
-    raw_provider = _find_provider_raw_config(provider_id)
+    raw_provider = _find_provider_raw_config(provider_id, target_dir=target_dir)
 
     # Handle API key
     if changes and changes.get('api_key_config'):
