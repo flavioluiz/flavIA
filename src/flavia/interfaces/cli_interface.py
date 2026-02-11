@@ -14,7 +14,8 @@ from rich.console import Console
 from rich.markdown import Markdown
 
 from flavia.agent import AgentProfile, RecursiveAgent
-from flavia.config import ProviderConfig, Settings, load_settings, reset_settings
+from flavia.config import ProviderConfig, Settings
+from flavia.interfaces.commands import CommandContext, dispatch_command
 
 console = Console()
 
@@ -465,37 +466,6 @@ def _print_active_model_hint(agent: RecursiveAgent, settings: Optional[Settings]
     console.print(f"[dim]{''.join(parts)}[/dim]\n")
 
 
-def print_help() -> None:
-    """Print help message."""
-    help_text = """
-**Commands:**
-- `/help` - Show this message
-- `/reset` - Reset conversation
-- `/agent_setup` - Configure agents (quick model change, revise, or full rebuild)
-- `/agent` - List available agents
-- `/agent <name>` - Switch to agent (resets conversation)
-- `/model` - Show current active model
-- `/model <ref>` - Switch to model (by index, id, or provider:id)
-- `/model list` - List all available models (alias for /providers)
-- `/catalog` - Browse content catalog
-- `/quit` - Exit
-- `/providers` - List configured providers and models
-- `/tools` - List available tools by category
-- `/tools <name>` - Show tool schema and parameters
-- `/config` - Show config paths and active settings
-
-**Tips:**
-- Run `flavia --init` to create initial config
-- Run `flavia --setup-provider` to configure providers
-- Use `/agent_setup` to change models, revise, or fully reconfigure agents
-
-**CLI flags:**
-- `--no-subagents` - Disable sub-agent spawning
-- `--agent NAME` - Use a subagent as the main agent
-- `--depth N` - Set max recursion depth
-- `--parallel-workers N` - Max parallel sub-agents
-"""
-    console.print(Markdown(help_text))
 
 
 def run_cli(settings: Settings) -> None:
@@ -512,244 +482,45 @@ def run_cli(settings: Settings) -> None:
     agent = create_agent_from_settings(settings)
     _print_active_model_hint(agent, settings)
 
+    # Create command context for dispatch
+    ctx = CommandContext(
+        settings=settings,
+        agent=agent,
+        console=console,
+        history_file=history_file,
+        chat_log_file=chat_log_file,
+        history_enabled=history_enabled,
+        create_agent=create_agent_from_settings,
+    )
+
     while True:
         try:
-            user_input = _read_user_input(history_enabled, settings.active_agent).strip()
+            user_input = _read_user_input(ctx.history_enabled, ctx.settings.active_agent).strip()
 
             if not user_input:
                 continue
 
             if user_input.startswith("/"):
-                command = user_input.lower()
-
-                if command in ("/quit", "/exit", "/q"):
-                    console.print("[yellow]Goodbye![/yellow]")
+                # Dispatch to command registry
+                should_continue = dispatch_command(ctx, user_input)
+                if not should_continue:
                     break
+                continue
 
-                elif command == "/help":
-                    print_help()
-                    continue
-
-                elif command == "/reset":
-                    # Reload settings in case config changed
-                    reset_settings()
-                    new_settings = load_settings()
-                    new_settings.verbose = settings.verbose
-                    # Preserve runtime-only flags across reset
-                    new_settings.subagents_enabled = settings.subagents_enabled
-                    new_settings.active_agent = settings.active_agent
-                    new_settings.parallel_workers = settings.parallel_workers
-                    settings = new_settings
-                    history_file, chat_log_file = _history_paths(settings.base_dir)
-                    history_enabled = _configure_prompt_history(history_file)
-
-                    agent = create_agent_from_settings(settings)
-                    console.print("[yellow]Conversation reset and config reloaded.[/yellow]")
-                    _print_active_model_hint(agent, settings)
-                    continue
-
-                elif command == "/agent_setup":
-                    from flavia.setup_wizard import run_agent_setup_command
-
-                    success = run_agent_setup_command(settings, settings.base_dir)
-                    if success:
-                        console.print("[dim]Use /reset to load new configuration.[/dim]")
-                    continue
-
-                elif command == "/providers":
-                    from flavia.display import display_providers
-
-                    display_providers(settings, console=console, use_rich=True)
-                    continue
-
-                elif command == "/tools" or command.startswith("/tools "):
-                    from flavia.display import (
-                        display_tool_schema,
-                        display_tools,
-                    )
-
-                    # Check if a specific tool was requested
-                    parts = user_input.split(maxsplit=1)
-                    if len(parts) > 1:
-                        tool_name = parts[1].strip()
-                        display_tool_schema(tool_name, console=console, use_rich=True)
-                    else:
-                        display_tools(console=console, use_rich=True)
-                    continue
-
-                elif command == "/config":
-                    from flavia.display import display_config
-
-                    display_config(settings, console=console, use_rich=True)
-                    continue
-
-                elif command == "/catalog":
-                    from flavia.interfaces.catalog_command import run_catalog_command
-
-                    run_catalog_command(settings)
-                    continue
-
-                elif command == "/model" or command.startswith("/model "):
-                    parts = user_input.split(maxsplit=1)
-
-                    if len(parts) == 1:
-                        # No argument: show current model
-                        _display_current_model(agent, settings, console)
-                        continue
-
-                    model_arg = parts[1].strip()
-
-                    # Handle "/model list" as alias for "/providers"
-                    if model_arg.lower() == "list":
-                        from flavia.display import display_providers
-                        display_providers(settings, console=console, use_rich=True)
-                        continue
-
-                    # Switch to specified model
-                    # Try to parse as int (index reference)
-                    try:
-                        model_ref = int(model_arg)
-                    except ValueError:
-                        # Keep as string (model_id or provider:model_id)
-                        model_ref = model_arg
-
-                    # Check if already using this model
-                    current_model_ref = _get_agent_model_ref(agent)
-                    if _models_are_equivalent(settings, current_model_ref, model_ref):
-                        console.print(
-                            f"[yellow]Already using model '{current_model_ref}'.[/yellow]"
-                        )
-                        continue
-
-                    resolved_model = _resolve_model_reference(settings, model_ref)
-
-                    # Check if model was found
-                    if resolved_model is None:
-                        console.print(f"[red]Model '{model_arg}' not found.[/red]")
-                        console.print("Use [cyan]/model list[/cyan] to see available models.")
-                        continue
-
-                    provider, _, resolved_model_ref = resolved_model
-
-                    # Validate provider has API key
-                    if provider is not None and not provider.api_key:
-                        console.print(
-                            f"[red]Cannot switch to '{model_arg}': API key not configured "
-                            f"for provider '{provider.id}'.[/red]"
-                        )
-                        if provider.api_key_env_var:
-                            console.print(
-                                f"[dim]Set {provider.api_key_env_var}, run /reset, and try "
-                                f"again.[/dim]"
-                            )
-                        else:
-                            console.print(
-                                "[dim]Run 'flavia --setup-provider', run /reset, and try "
-                                "again.[/dim]"
-                            )
-                        continue
-
-                    # Update settings and recreate agent
-                    previous_model = settings.default_model
-                    settings.default_model = resolved_model_ref
-
-                    try:
-                        agent = create_agent_from_settings(
-                            settings,
-                            model_override=resolved_model_ref,
-                        )
-                    except Exception as e:
-                        # Rollback on failure
-                        settings.default_model = previous_model
-                        console.print(f"[red]Failed to switch to model '{model_arg}': {e}[/red]")
-                        continue
-
-                    # Success
-                    console.print(
-                        f"[green]Switched to model '{resolved_model_ref}'. "
-                        "Conversation reset.[/green]"
-                    )
-                    _print_active_model_hint(agent, settings)
-                    continue
-
-                elif command == "/agent" or command.startswith("/agent "):
-                    parts = user_input.split(maxsplit=1)
-                    if len(parts) > 1:
-                        # Switch to specified agent
-                        agent_name = parts[1].strip()
-                        current = settings.active_agent or "main"
-
-                        if agent_name == current:
-                            console.print(f"[yellow]Already using agent '{agent_name}'.[/yellow]")
-                            continue
-
-                        # Validate agent exists
-                        available = _get_available_agents(settings)
-                        if agent_name not in available:
-                            console.print(f"[red]Agent '{agent_name}' not found.[/red]")
-                            console.print(f"Available: {', '.join(available.keys()) or '(none)'}")
-                            continue
-
-                        # Validate provider auth for target agent model before switching
-                        target_model_ref = _resolve_agent_model_ref(settings, agent_name, available)
-                        provider, _ = settings.resolve_model_with_provider(target_model_ref)
-                        if provider is not None and not provider.api_key:
-                            console.print(
-                                f"[red]Cannot switch to '{agent_name}': API key not configured "
-                                f"for provider '{provider.id}'.[/red]"
-                            )
-                            if provider.api_key_env_var:
-                                console.print(
-                                    f"[dim]Set {provider.api_key_env_var}, run /reset, and try "
-                                    f"again.[/dim]"
-                                )
-                            else:
-                                console.print(
-                                    "[dim]Run 'flavia --setup-provider', run /reset, and try "
-                                    "again.[/dim]"
-                                )
-                            continue
-
-                        # Update settings and create new agent
-                        previous_active_agent = settings.active_agent
-                        settings.active_agent = None if agent_name == "main" else agent_name
-                        try:
-                            agent = create_agent_from_settings(settings)
-                        except Exception as e:
-                            settings.active_agent = previous_active_agent
-                            console.print(
-                                f"[red]Failed to switch to agent '{agent_name}': {e}[/red]"
-                            )
-                            continue
-
-                        console.print(
-                            f"[green]Switched to agent '{agent_name}'. Conversation reset.[/green]"
-                        )
-                        _print_active_model_hint(agent, settings)
-                    else:
-                        # List available agents
-                        from flavia.display import display_agents
-
-                        display_agents(settings, console=console, use_rich=True)
-                    continue
-
-                else:
-                    console.print(f"[red]Unknown command: {command}[/red]")
-                    continue
-
+            # Regular message: send to agent
             try:
-                active_model = _get_agent_model_ref(agent)
-                _append_prompt_history(user_input, history_file, history_enabled)
-                _append_chat_log(chat_log_file, "user", user_input, model_ref=active_model)
-                response = _run_agent_with_feedback(agent, user_input)
-                console.print(f"[bold blue]{_build_agent_prefix(agent)}[/bold blue] ", end="")
+                active_model = _get_agent_model_ref(ctx.agent)
+                _append_prompt_history(user_input, ctx.history_file, ctx.history_enabled)
+                _append_chat_log(ctx.chat_log_file, "user", user_input, model_ref=active_model)
+                response = _run_agent_with_feedback(ctx.agent, user_input)
+                console.print(f"[bold blue]{_build_agent_prefix(ctx.agent)}[/bold blue] ", end="")
                 console.print(Markdown(response))
-                _append_chat_log(chat_log_file, "assistant", response, model_ref=active_model)
+                _append_chat_log(ctx.chat_log_file, "assistant", response, model_ref=active_model)
             except KeyboardInterrupt:
                 console.print("\n[yellow]Interrupted[/yellow]")
             except Exception as e:
                 console.print(f"[red]Error: {e}[/red]")
-                if settings.verbose:
+                if ctx.settings.verbose:
                     import traceback
 
                     traceback.print_exc()

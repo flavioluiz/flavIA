@@ -88,7 +88,8 @@ Inside a chat session, the following commands are available:
 
 | Command | Description |
 |---------|-------------|
-| `/help` | Show help |
+| `/help` | Show all commands organized by category |
+| `/help <command>` | Show detailed help for a specific command (usage, examples, related commands) |
 | `/reset` | Reset conversation and reload configuration |
 | `/agent_setup` | Configure agents (quick model change, revise, or full rebuild) |
 | `/agent` | List available agents with configurations |
@@ -102,6 +103,24 @@ Inside a chat session, the following commands are available:
 | `/tools <name>` | Show tool schema and parameters |
 | `/config` | Show configuration paths and active settings |
 | `/quit` | Exit session (aliases: `/exit`, `/q`) |
+
+### Help System Details
+
+The unified help system organizes commands into logical categories:
+
+- **Session**: `/quit`, `/reset`
+- **Agents**: `/agent`, `/agent_setup`
+- **Models & Providers**: `/model`, `/providers`
+- **Information**: `/tools`, `/config`, `/catalog`, `/help`
+
+Use `/help` without arguments to see all commands with one-line descriptions grouped by category. Use `/help <command>` for detailed help including usage patterns, examples, and related commands:
+
+```bash
+/help              # Show all commands
+/help model        # Detailed help for /model
+/help agent        # Detailed help for /agent
+/help help         # Meta: help about the help system!
+```
 
 ## `/agent_setup` - Configure Agents
 

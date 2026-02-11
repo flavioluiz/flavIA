@@ -11,7 +11,7 @@ Planned features and improvements for flavIA, organized by area. Each task inclu
 This roadmap outlines **41 tasks** across **10 major areas** to extend flavIA from a read-only research assistant into a comprehensive, production-ready AI agent system with multimodal processing, write capabilities, external service integration, web & academic research tools, multi-platform deployment, and file delivery through messaging interfaces.
 
 ### Quick Stats
-- **9 Easy tasks** (< 1 day each) — Quick wins for immediate value — **2 completed** ✓
+- **9 Easy tasks** (< 1 day each) — Quick wins for immediate value — **3 completed** ✓
 - **23 Medium tasks** (1-2 days each) — Core feature development
 - **9 Hard tasks** (3+ days each) — Complex integrations requiring careful design
 
@@ -63,7 +63,7 @@ Consolidate commands, eliminate redundancies, add runtime switching, and introdu
 - **4.4** In-Session Provider Management (Medium) — /provider-setup, /provider-test from within CLI
 - **4.5** Standard Default Agent (Medium) — Built-in fallback agent always available
 - **4.6** Global Agent Definitions (Medium) — User-level agents in ~/.config/flavia/agents.yaml
-- **4.7** Unified Help System (Easy) — Structured /help with categories and command registry
+- **4.7** ~~Unified Help System (Easy)~~ — **DONE** ✓ Structured /help with categories, command registry, and per-command help
 - **4.8** Expand questionary Adoption (Medium) — Interactive CLI prompts with autocomplete, file paths, and menus
 
 ### [Area 5: File Modification Tools](roadmap/area-5-file-modification-tools.md) (1 task)
@@ -287,7 +287,7 @@ Tasks ordered by difficulty (easy first) and dependency readiness. Each task can
 | 1 | ~~**4.1** Consolidate info commands~~ | ~~Easy~~ | ~~CLI~~ |
 | 2 | ~~**4.2** Runtime agent switching in CLI~~ | ~~Easy~~ | ~~CLI~~ |
 | 3 | ~~**4.3** Runtime model switching in CLI~~ | ~~Easy~~ | ~~CLI~~ |
-| 4 | **4.7** Unified slash command help system | Easy | CLI |
+| 4 | ~~**4.7** Unified slash command help system~~ | ~~Easy~~ | ~~CLI~~ |
 | 5 | **1.3** Word/Office document converter | Easy | File Processing |
 | 6 | **8.1** Token usage tracking & display | Easy | Context Management |
 | 7 | **8.3** Manual /compact slash command | Easy | Context Management |
