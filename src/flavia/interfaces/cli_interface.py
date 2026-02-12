@@ -1057,6 +1057,10 @@ def _run_status_animation(
             if event.phase == StatusPhase.AGENT_COMPLETED:
                 task_line = f"__COMPLETED__{task_line}"
             tasks = agent_tasks[agent_id]
+            # Deduplicate consecutive identical spawn lines (LLM retries
+            # can emit the same spawn_agent call multiple times)
+            if "Spawning" in task_line and tasks and tasks[-1] == task_line:
+                continue
             tasks.append(task_line)
 
         # Trim each agent's task list based on configured limits
@@ -1106,8 +1110,23 @@ def _run_status_animation(
 
         return tree
 
-    # Use Rich Live for automatic cursor management and cleanup
-    with Live(build_status_tree(), console=console, refresh_per_second=4, transient=True) as live:
+    def build_final_tree() -> Tree:
+        """Build a final summary tree (no footer, suitable for persistent display)."""
+        tree = Tree(f"[bold cyan]Agent [{model_ref}][/bold cyan]")
+        root_agents = []
+        for agent_id in agent_order:
+            parent = _get_parent_agent_id(agent_id)
+            if parent is None or parent not in agent_tasks:
+                root_agents.append(agent_id)
+        for agent_id in root_agents:
+            _render_agent_live(agent_id, tree)
+        return tree
+
+    # Use Rich Live for automatic cursor management and cleanup.
+    # transient=False keeps the last frame on screen — we render a clean
+    # final tree before exiting so there is no need for a separate summary
+    # print (which previously caused the "Agent" header to appear twice).
+    with Live(build_status_tree(), console=console, refresh_per_second=4, transient=False) as live:
         while not stop_event.is_set():
             # Pause status rendering while a write-confirmation prompt is active
             if not _confirmation_pause_event.wait(timeout=0.05):
@@ -1120,6 +1139,10 @@ def _run_status_animation(
             # Check for stop with 0.25s interval
             if stop_event.wait(0.25):
                 break
+
+        # Render one final clean frame (no animated footer) so the
+        # persistent Live output is the completed summary.
+        live.update(build_final_tree())
 
 
 def _run_agent_with_feedback(
@@ -1201,8 +1224,6 @@ def _run_agent_with_feedback(
         if interrupted:
             # Show what was completed and what was interrupted
             _render_interrupted_summary(animation_state)
-        else:
-            _render_completed_summary(animation_state)
 
 
 def _prompt_continue_after_max_iterations(limit: int) -> bool:
