@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **LaTeX Compilation Tool (Task 6.1)**: New `compile_latex` tool in `tools/academic/` for compiling `.tex` files into PDFs:
+  - Supports `pdflatex`, `xelatex`, `lualatex`, and `latexmk` compilers
+  - Automatic multiple compilation passes (configurable, 1-5)
+  - Optional `bibtex`/`biber` bibliography processing (auto-detects `biblatex` vs `natbib`)
+  - Parses `.log` files to extract meaningful errors, warnings, and bad-box reports
+  - Cleans auxiliary files (`.aux`, `.log`, `.out`, `.toc`, etc.) after successful compilation
+  - Enforces write permissions on output directory via existing permission system
+  - Detects compiler availability at registration time with clear error messages if missing
+  - Configurable via `agents.yaml` under `latex:` key (compiler, passes, bibtex, clean_aux)
+  - Supports dry-run mode
+  - New `tools/academic/` submodule auto-registered in tool registry
+
 ### Changed
 
 - **Write confirmation callback compatibility hardening**:

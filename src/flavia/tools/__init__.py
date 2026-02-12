@@ -13,6 +13,7 @@ from . import read
 from . import spawn
 from . import content
 from . import write
+from . import academic
 
 __all__ = [
     "BaseTool",
