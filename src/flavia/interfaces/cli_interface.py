@@ -883,15 +883,34 @@ def _render_interrupted_summary(state: _AnimationState) -> None:
 
     tree = Tree(f"[bold cyan]Agent [{state.model_ref}][/bold cyan] [yellow](interrupted)[/yellow]")
 
-    # Find root agents (those with no parent or parent is "main")
+    # Find root agents (those with no parent in our tracked agents)
     root_agents = []
     for agent_id in state.agent_order:
         parent = _get_parent_agent_id(agent_id)
-        if parent is None or parent == "main" or parent not in state.agent_tasks:
+        if parent is None or parent not in state.agent_tasks:
             root_agents.append(agent_id)
 
     for agent_id in root_agents:
         _render_agent_branch(state, agent_id, tree, interrupted=True)
+
+    console.print(tree)
+
+
+def _render_completed_summary(state: _AnimationState) -> None:
+    """Render a final summary of all tasks after agent completes successfully."""
+    if not state.agent_order:
+        return
+
+    tree = Tree(f"[bold cyan]Agent [{state.model_ref}][/bold cyan]")
+
+    root_agents = []
+    for agent_id in state.agent_order:
+        parent = _get_parent_agent_id(agent_id)
+        if parent is None or parent not in state.agent_tasks:
+            root_agents.append(agent_id)
+
+    for agent_id in root_agents:
+        _render_agent_branch(state, agent_id, tree, interrupted=False)
 
     console.print(tree)
 
@@ -1061,7 +1080,7 @@ def _run_status_animation(
         root_agents = []
         for agent_id in agent_order:
             parent = _get_parent_agent_id(agent_id)
-            if parent is None or parent == "main" or parent not in agent_tasks:
+            if parent is None or parent not in agent_tasks:
                 root_agents.append(agent_id)
 
         for agent_id in root_agents:
@@ -1174,7 +1193,7 @@ def _run_agent_with_feedback(
             # Show what was completed and what was interrupted
             _render_interrupted_summary(animation_state)
         else:
-            _clear_terminal_line()
+            _render_completed_summary(animation_state)
 
 
 def _prompt_continue_after_max_iterations(limit: int) -> bool:
