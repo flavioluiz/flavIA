@@ -140,8 +140,8 @@ def test_agent_model_ref_uses_provider_prefix():
 def test_continue_after_max_iterations_runs_extra_iterations(monkeypatch):
     calls = []
 
-    def fake_run(agent, user_input, verbose=False, run_kwargs=None):
-        calls.append((agent, user_input, verbose, run_kwargs))
+    def fake_run(agent, user_input, verbose=False, run_kwargs=None, settings=None):
+        calls.append((agent, user_input, verbose, run_kwargs, settings))
         return "Done"
 
     monkeypatch.setattr("flavia.interfaces.cli_interface._run_agent_with_feedback", fake_run)
@@ -278,13 +278,14 @@ def test_run_status_animation_shows_ellipsis_when_agent_history_is_truncated():
             status_events=status_events,
             status_lock=status_lock,
             verbose=False,
+            max_tasks_subagent=5,  # Use 5 to match previous behavior
         )
     finally:
         cli_mod.console = original_console
 
     output = buf.getvalue()
     assert "sub-1:" in output
-    # With base_max_tasks=5 and 1 agent, 10 events => 5 omitted
+    # With max_tasks_subagent=5, 10 events => 5 omitted
     assert "... (5 previous)" in output
     assert "Task 0" not in output
     assert "Task 4" not in output
@@ -292,8 +293,8 @@ def test_run_status_animation_shows_ellipsis_when_agent_history_is_truncated():
     assert "Task 9" in output
 
 
-def test_run_status_animation_reduces_tasks_with_many_agents():
-    """When many sub-agents run in parallel, the per-agent task limit decreases."""
+def test_run_status_animation_respects_configurable_task_limits():
+    """Task limits are now configurable via max_tasks_main and max_tasks_subagent."""
 
     class _StopAfterFirstWait:
         def __init__(self):
@@ -306,7 +307,7 @@ def test_run_status_animation_reduces_tasks_with_many_agents():
             self._stopped = True
             return True
 
-    # 6 sub-agents, each with 5 tasks => limit drops to 2 per agent
+    # 6 sub-agents, each with 5 tasks
     events = []
     for agent_idx in range(1, 7):
         for task_idx in range(5):
@@ -340,6 +341,7 @@ def test_run_status_animation_reduces_tasks_with_many_agents():
             status_events=status_events,
             status_lock=status_lock,
             verbose=False,
+            max_tasks_subagent=2,  # Limit to 2 tasks per subagent
         )
     finally:
         cli_mod.console = original_console
@@ -348,7 +350,7 @@ def test_run_status_animation_reduces_tasks_with_many_agents():
     # All 6 agents should appear
     for i in range(1, 7):
         assert f"sub-{i}:" in output
-    # With 6 agents (>5), max_tasks_per_agent=2; 5 tasks - 2 kept = 3 omitted
+    # With max_tasks_subagent=2, 5 tasks - 2 kept = 3 omitted
     assert "... (3 previous)" in output
     # Only the last 2 tasks per agent should remain
     assert "Agent1-Task0" not in output
@@ -511,3 +513,77 @@ def test_render_interrupted_summary_with_no_tasks():
 
     output = buf.getvalue()
     assert "no tasks started" in output
+
+
+def test_run_status_animation_shows_nested_agents_hierarchically():
+    """Nested subagents appear under their parent agent after spawning."""
+
+    class _StopAfterFirstWait:
+        def __init__(self):
+            self._stopped = False
+
+        def is_set(self):
+            return self._stopped
+
+        def wait(self, _timeout):
+            self._stopped = True
+            return True
+
+    # Parent agent spawns a child
+    events = [
+        ToolStatus(
+            phase=StatusPhase.EXECUTING_TOOL,
+            tool_name="read_file",
+            tool_display="Reading config.yaml",
+            agent_id="main.sub.1",
+            depth=1,
+        ),
+        ToolStatus(
+            phase=StatusPhase.SPAWNING_AGENT,
+            tool_name="spawn_agent",
+            tool_display="Spawning sub-agent",
+            agent_id="main.sub.1",
+            depth=1,
+        ),
+        ToolStatus(
+            phase=StatusPhase.EXECUTING_TOOL,
+            tool_name="search_files",
+            tool_display="Searching documents",
+            agent_id="main.sub.1.sub.1",
+            depth=2,
+        ),
+    ]
+
+    status_holder = [events[-1]]
+    status_events = deque(events, maxlen=MAX_STATUS_EVENTS)
+    status_lock = threading.Lock()
+    stop_event = _StopAfterFirstWait()
+
+    buf = StringIO()
+    test_console = Console(file=buf, no_color=True, width=200, force_terminal=True)
+
+    import flavia.interfaces.cli_interface as cli_mod
+
+    original_console = cli_mod.console
+    cli_mod.console = test_console
+    try:
+        _run_status_animation(
+            stop_event=stop_event,
+            model_ref="test-model",
+            status_holder=status_holder,
+            status_events=status_events,
+            status_lock=status_lock,
+            verbose=False,
+        )
+    finally:
+        cli_mod.console = original_console
+
+    output = buf.getvalue()
+    # Parent agent should appear
+    assert "sub-1:" in output
+    # Child agent should also appear
+    assert "sub-1:" in output
+    # Both tasks should appear
+    assert "Reading config.yaml" in output
+    assert "Spawning sub-agent" in output
+    assert "Searching documents" in output

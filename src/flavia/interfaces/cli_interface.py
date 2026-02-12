@@ -761,9 +761,115 @@ class _AnimationState:
         self.agent_order: list[str] = []
         self.agent_tasks: dict[str, list[str]] = {}
         self.agent_omitted_count: dict[str, int] = {}
+        self.agent_children: dict[str, list[str]] = {}  # parent -> [children]
         self.current_task: Optional[str] = None
         self.current_agent_id: Optional[str] = None
         self.model_ref: str = ""
+
+
+def _get_parent_agent_id(agent_id: str) -> Optional[str]:
+    """Get the parent agent ID from a hierarchical agent ID.
+
+    Examples:
+        "main" -> None
+        "main.sub.1" -> "main"
+        "main.sub.1.sub.2" -> "main.sub.1"
+    """
+    if agent_id == "main" or not agent_id:
+        return None
+
+    parts = agent_id.split(".")
+    if len(parts) <= 1:
+        return None
+
+    # Find the last "sub.N" or "name.N" pattern and return everything before it
+    # e.g., "main.sub.1.sub.2" -> parts = ["main", "sub", "1", "sub", "2"]
+    # parent is "main.sub.1"
+    i = len(parts) - 1
+    while i > 0:
+        if parts[i].isdigit() and i > 0:
+            # Found "name.N" pattern, parent is everything before "name.N"
+            return ".".join(parts[: i - 1]) if i > 1 else parts[0]
+        i -= 1
+
+    return None
+
+
+def _get_agent_depth(agent_id: str) -> int:
+    """Get the nesting depth of an agent (0 for main, 1 for sub.N, 2 for sub.N.sub.M, etc.)."""
+    if agent_id == "main":
+        return 0
+    # Count "sub.N" patterns
+    parts = agent_id.split(".")
+    depth = 0
+    i = 0
+    while i < len(parts):
+        if i + 1 < len(parts) and parts[i + 1].isdigit():
+            depth += 1
+            i += 2
+        else:
+            i += 1
+    return depth
+
+
+def _render_agent_branch(
+    state: _AnimationState,
+    agent_id: str,
+    parent_branch: Tree,
+    interrupted: bool = False,
+) -> None:
+    """Recursively render an agent and its children as nested branches."""
+    label = _agent_label_from_id(agent_id)
+
+    # For nested agents, show just the last part of the label
+    if "." in label:
+        label = label.split(".")[-1]
+
+    branch = parent_branch.add(f"[bold blue]{label}:[/bold blue]")
+
+    omitted_count = state.agent_omitted_count.get(agent_id, 0)
+    if omitted_count > 0:
+        branch.add(f"[dim]... ({omitted_count} previous)[/dim]")
+
+    tasks = state.agent_tasks.get(agent_id, [])
+    children = state.agent_children.get(agent_id, [])
+
+    # Build a map of which task index spawned which child
+    # This is approximate - we assume children appear in order after spawn tasks
+    child_iter = iter(children)
+    current_child: Optional[str] = None
+    try:
+        current_child = next(child_iter)
+    except StopIteration:
+        current_child = None
+
+    for i, task in enumerate(tasks):
+        is_last_task = (i == len(tasks) - 1)
+        is_interrupted_agent = (agent_id == state.current_agent_id)
+        is_spawn_task = "Spawning" in task
+
+        if interrupted and is_last_task and is_interrupted_agent and state.current_task:
+            branch.add(f"[yellow]{task} (interrupted)[/yellow]")
+        elif interrupted:
+            branch.add(f"[green]{task}[/green] [dim]✓[/dim]")
+        else:
+            branch.add(f"[green]{task}[/green]")
+
+        # If this is a spawn task and we have a pending child, render it nested
+        if is_spawn_task and current_child:
+            _render_agent_branch(state, current_child, branch, interrupted)
+            try:
+                current_child = next(child_iter)
+            except StopIteration:
+                current_child = None
+
+    # Render any remaining children that weren't matched to spawn tasks
+    while current_child:
+        _render_agent_branch(state, current_child, branch, interrupted)
+        try:
+            current_child = next(child_iter)
+        except StopIteration:
+            current_child = None
 
 
 def _render_interrupted_summary(state: _AnimationState) -> None:
@@ -774,25 +880,15 @@ def _render_interrupted_summary(state: _AnimationState) -> None:
 
     tree = Tree(f"[bold cyan]Agent [{state.model_ref}][/bold cyan] [yellow](interrupted)[/yellow]")
 
+    # Find root agents (those with no parent or parent is "main")
+    root_agents = []
     for agent_id in state.agent_order:
-        label = _agent_label_from_id(agent_id)
-        branch = tree.add(f"[bold blue]{label}:[/bold blue]")
+        parent = _get_parent_agent_id(agent_id)
+        if parent is None or parent == "main" or parent not in state.agent_tasks:
+            root_agents.append(agent_id)
 
-        omitted_count = state.agent_omitted_count.get(agent_id, 0)
-        if omitted_count > 0:
-            branch.add(f"[dim]... ({omitted_count} previous)[/dim]")
-
-        tasks = state.agent_tasks.get(agent_id, [])
-        for i, task in enumerate(tasks):
-            is_last_task = (i == len(tasks) - 1)
-            is_interrupted_agent = (agent_id == state.current_agent_id)
-
-            if is_last_task and is_interrupted_agent and state.current_task:
-                # This is the task that was interrupted
-                branch.add(f"[yellow]{task} (interrupted)[/yellow]")
-            else:
-                # Completed task
-                branch.add(f"[green]{task}[/green] [dim]✓[/dim]")
+    for agent_id in root_agents:
+        _render_agent_branch(state, agent_id, tree, interrupted=True)
 
     console.print(tree)
 
@@ -805,6 +901,8 @@ def _run_status_animation(
     status_lock: threading.Lock,
     verbose: bool = False,
     animation_state: Optional[_AnimationState] = None,
+    max_tasks_main: int = 5,
+    max_tasks_subagent: int = 3,
 ) -> None:
     """Render status animation with tool status updates using Rich Live display.
 
@@ -820,6 +918,8 @@ def _run_status_animation(
         status_lock: Lock protecting shared status structures.
         verbose: Whether to show detailed tool arguments.
         animation_state: Optional shared state for interrupt handling.
+        max_tasks_main: Max tasks to show for main agent (-1 = unlimited).
+        max_tasks_subagent: Max tasks to show for subagents (-1 = unlimited).
     """
     step = 0
     fallback_message = _choose_loading_message()
@@ -831,7 +931,57 @@ def _run_status_animation(
     agent_order = state.agent_order
     agent_tasks = state.agent_tasks
     agent_omitted_count = state.agent_omitted_count
-    base_max_tasks = 5
+    agent_children = state.agent_children
+
+    def _get_max_tasks_for_agent(agent_id: str) -> int:
+        """Get the max tasks limit for an agent based on its type."""
+        if agent_id == "main":
+            return max_tasks_main
+        return max_tasks_subagent
+
+    def _render_agent_live(agent_id: str, parent_branch: Tree) -> None:
+        """Recursively render an agent and its children as nested branches."""
+        label = _agent_label_from_id(agent_id)
+        # For nested agents, show just the last part of the label
+        if "." in label:
+            label = label.split(".")[-1]
+
+        branch = parent_branch.add(f"[bold blue]{label}:[/bold blue]")
+
+        omitted_count = agent_omitted_count.get(agent_id, 0)
+        if omitted_count > 0:
+            branch.add(f"[dim]... ({omitted_count} previous)[/dim]")
+
+        tasks = agent_tasks.get(agent_id, [])
+        children = agent_children.get(agent_id, [])
+
+        # Build iterator for children to interleave with spawn tasks
+        child_iter = iter(children)
+        current_child: Optional[str] = None
+        try:
+            current_child = next(child_iter)
+        except StopIteration:
+            current_child = None
+
+        for task in tasks:
+            is_spawn_task = "Spawning" in task
+            branch.add(f"[green]{task}[/green]")
+
+            # If this is a spawn task and we have a pending child, render it nested
+            if is_spawn_task and current_child:
+                _render_agent_live(current_child, branch)
+                try:
+                    current_child = next(child_iter)
+                except StopIteration:
+                    current_child = None
+
+        # Render any remaining children
+        while current_child:
+            _render_agent_live(current_child, branch)
+            try:
+                current_child = next(child_iter)
+            except StopIteration:
+                current_child = None
 
     def build_status_tree() -> Tree:
         """Build a Rich Tree representing current agent status."""
@@ -859,29 +1009,33 @@ def _run_status_animation(
         for event in pending_events:
             if event.phase not in (StatusPhase.EXECUTING_TOOL, StatusPhase.SPAWNING_AGENT):
                 continue
-            if event.agent_id not in agent_tasks:
-                agent_tasks[event.agent_id] = []
-                agent_omitted_count[event.agent_id] = 0
-                agent_order.append(event.agent_id)
+
+            agent_id = event.agent_id
+            if agent_id not in agent_tasks:
+                agent_tasks[agent_id] = []
+                agent_omitted_count[agent_id] = 0
+                agent_order.append(agent_id)
+
+                # Track parent-child relationship
+                parent = _get_parent_agent_id(agent_id)
+                if parent and parent in agent_tasks:
+                    if parent not in agent_children:
+                        agent_children[parent] = []
+                    if agent_id not in agent_children[parent]:
+                        agent_children[parent].append(agent_id)
 
             task_line = _build_agent_activity_line(event, step, model_ref, verbose).strip()
-            tasks = agent_tasks[event.agent_id]
+            tasks = agent_tasks[agent_id]
             tasks.append(task_line)
 
-        # Dynamically limit tasks per agent based on agent count
-        num_agents = len(agent_order)
-        if num_agents > 5:
-            max_tasks_per_agent = 2
-        elif num_agents > 3:
-            max_tasks_per_agent = 3
-        else:
-            max_tasks_per_agent = base_max_tasks
-
-        # Trim each agent's task list to the dynamic limit
+        # Trim each agent's task list based on configured limits
         for agent_id in agent_order:
+            max_tasks = _get_max_tasks_for_agent(agent_id)
+            if max_tasks < 0:
+                continue  # Unlimited
             tasks = agent_tasks.get(agent_id, [])
-            if len(tasks) > max_tasks_per_agent:
-                removed = len(tasks) - max_tasks_per_agent
+            if len(tasks) > max_tasks:
+                removed = len(tasks) - max_tasks
                 agent_omitted_count[agent_id] = agent_omitted_count.get(agent_id, 0) + removed
                 del tasks[0:removed]
 
@@ -897,23 +1051,21 @@ def _run_status_animation(
         else:
             footer_text = f"{fallback_message} {dots}"
 
-        # Build the tree
+        # Build the tree with hierarchical structure
         tree = Tree(f"[bold cyan]Agent [{model_ref}][/bold cyan]")
 
+        # Find root agents (those with no parent in our tracked agents)
+        root_agents = []
         for agent_id in agent_order:
-            label = _agent_label_from_id(agent_id)
-            branch = tree.add(f"[bold blue]{label}:[/bold blue]")
-            omitted_count = agent_omitted_count.get(agent_id, 0)
-            if omitted_count > 0:
-                branch.add(f"[dim]... ({omitted_count} previous)[/dim]")
-            for task in agent_tasks.get(agent_id, []):
-                branch.add(f"[green]{task}[/green]")
+            parent = _get_parent_agent_id(agent_id)
+            if parent is None or parent == "main" or parent not in agent_tasks:
+                root_agents.append(agent_id)
 
-        # Add footer as a separate item if there are agents, or show it standalone
-        if agent_order:
-            tree.add(f"[dim]{footer_text}[/dim]")
-        else:
-            tree.add(f"[dim]{footer_text}[/dim]")
+        for agent_id in root_agents:
+            _render_agent_live(agent_id, tree)
+
+        # Add footer
+        tree.add(f"[dim]{footer_text}[/dim]")
 
         # Update step and message rotation
         step += 1
@@ -944,6 +1096,7 @@ def _run_agent_with_feedback(
     user_input: str,
     verbose: bool = False,
     run_kwargs: Optional[dict[str, Any]] = None,
+    settings: Optional[Settings] = None,
 ) -> str:
     """Run agent with visual processing feedback.
 
@@ -952,6 +1105,7 @@ def _run_agent_with_feedback(
         user_input: User's input message.
         verbose: Whether to show detailed tool arguments in status.
         run_kwargs: Optional extra kwargs forwarded to ``agent.run()``.
+        settings: Optional settings for status display configuration.
 
     Returns:
         Agent's response string.
@@ -965,6 +1119,10 @@ def _run_agent_with_feedback(
 
     stop_event = threading.Event()
     model_ref = _get_agent_model_ref(agent)
+
+    # Get task limits from settings or use defaults
+    max_tasks_main = settings.status_max_tasks_main if settings else 5
+    max_tasks_subagent = settings.status_max_tasks_subagent if settings else 3
 
     # Thread-safe container for status updates
     status_holder: list[Optional[ToolStatus]] = [None]
@@ -991,6 +1149,8 @@ def _run_agent_with_feedback(
             status_lock,
             verbose,
             animation_state,
+            max_tasks_main,
+            max_tasks_subagent,
         ),
         daemon=True,
     )
@@ -1012,9 +1172,6 @@ def _run_agent_with_feedback(
             _render_interrupted_summary(animation_state)
         else:
             _clear_terminal_line()
-        stop_event.set()
-        animation_thread.join(timeout=1.0)
-        _clear_terminal_line()
 
 
 def _prompt_continue_after_max_iterations(limit: int) -> bool:
@@ -1036,6 +1193,7 @@ def _continue_after_max_iterations(
     agent: RecursiveAgent,
     response: str,
     verbose: bool = False,
+    settings: Optional[Settings] = None,
 ) -> str:
     """Optionally continue agent execution when max iterations is reached."""
     current_response = response
@@ -1053,6 +1211,7 @@ def _continue_after_max_iterations(
             "",
             verbose,
             run_kwargs={"continue_from_current": True, "max_iterations": limit},
+            settings=settings,
         )
 
 
@@ -1338,8 +1497,12 @@ def run_cli(settings: Settings) -> None:
                 active_model = _get_agent_model_ref(ctx.agent)
                 _append_prompt_history(user_input, ctx.history_file, ctx.history_enabled)
                 _append_chat_log(ctx.chat_log_file, "user", user_input, model_ref=active_model)
-                response = _run_agent_with_feedback(ctx.agent, user_input, ctx.settings.verbose)
-                response = _continue_after_max_iterations(ctx.agent, response, ctx.settings.verbose)
+                response = _run_agent_with_feedback(
+                    ctx.agent, user_input, ctx.settings.verbose, settings=ctx.settings
+                )
+                response = _continue_after_max_iterations(
+                    ctx.agent, response, ctx.settings.verbose, settings=ctx.settings
+                )
                 console.print(f"[bold blue]{_build_agent_prefix(ctx.agent)}[/bold blue] ", end="")
                 console.print(Markdown(response))
                 _display_token_usage(ctx.agent)

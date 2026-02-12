@@ -59,6 +59,10 @@ class Settings:
     verbose: bool = False
     dry_run: bool = False
 
+    # Status display settings (-1 = unlimited)
+    status_max_tasks_main: int = 5
+    status_max_tasks_subagent: int = 3
+
     # Loaded configs
     models: list[ModelConfig] = field(default_factory=list)
     agents_config: dict[str, Any] = field(default_factory=dict)
@@ -267,6 +271,8 @@ def load_settings() -> Settings:
         telegram_allow_all_users=allow_all_users,
         telegram_whitelist_configured=whitelist_configured,
         providers=providers,
+        status_max_tasks_main=int(os.getenv("STATUS_MAX_TASKS_MAIN", "5")),
+        status_max_tasks_subagent=int(os.getenv("STATUS_MAX_TASKS_SUBAGENT", "3")),
     )
 
     # Load models and agents config
