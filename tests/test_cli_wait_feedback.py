@@ -1,6 +1,7 @@
 """Tests for CLI wait feedback helpers."""
 
 import threading
+from collections import deque
 from io import StringIO
 
 from rich.console import Console
@@ -10,6 +11,7 @@ from flavia.agent.status import StatusPhase, ToolStatus
 from flavia.interfaces.cli_interface import (
     LOADING_DOTS,
     LOADING_MESSAGES,
+    MAX_STATUS_EVENTS,
     _agent_label_from_id,
     _build_agent_activity_line,
     _build_agent_header_line,
@@ -81,6 +83,18 @@ def test_agent_label_from_id_for_main_and_subagents():
     assert _agent_label_from_id("main") == "main"
     assert _agent_label_from_id("main.summarizer.1") == "summarizer"
     assert _agent_label_from_id("main.sub.2") == "sub-2"
+
+
+def test_agent_label_from_id_for_nested_subagents():
+    """Nested subagents should preserve hierarchy in label."""
+    # Nested sub-agent: main.sub.1.sub.2 -> sub-1.sub-2
+    assert _agent_label_from_id("main.sub.1.sub.2") == "sub-1.sub-2"
+    # Three levels deep
+    assert _agent_label_from_id("main.sub.1.sub.2.sub.3") == "sub-1.sub-2.sub-3"
+    # Named agent spawns sub-agent
+    assert _agent_label_from_id("main.summarizer.1.sub.1") == "summarizer.sub-1"
+    # Mixed hierarchy
+    assert _agent_label_from_id("main.researcher.2.sub.1.sub.2") == "researcher.sub-1.sub-2"
 
 
 def test_build_agent_header_and_activity_lines():
@@ -191,12 +205,12 @@ def test_run_status_animation_shows_interleaved_agents_with_same_activity():
     )
 
     status_holder = [event_b]
-    status_events = [event_a, event_b]
+    status_events = deque([event_a, event_b], maxlen=MAX_STATUS_EVENTS)
     status_lock = threading.Lock()
     stop_event = _StopAfterFirstWait()
 
     buf = StringIO()
-    test_console = Console(file=buf, no_color=True, width=200)
+    test_console = Console(file=buf, no_color=True, width=200, force_terminal=True)
 
     import flavia.interfaces.cli_interface as cli_mod
 
@@ -217,7 +231,8 @@ def test_run_status_animation_shows_interleaved_agents_with_same_activity():
     output = buf.getvalue()
     assert "sub-1:" in output
     assert "sub-2:" in output
-    assert output.count("Listing /tmp/docs") == 2
+    # Each agent shows the task; count is 2 per frame, and Rich Live renders multiple frames
+    assert output.count("Listing /tmp/docs") >= 2
 
 
 def test_run_status_animation_shows_ellipsis_when_agent_history_is_truncated():
@@ -244,12 +259,12 @@ def test_run_status_animation_shows_ellipsis_when_agent_history_is_truncated():
     ]
 
     status_holder = [events[-1]]
-    status_events = events
+    status_events = deque(events, maxlen=MAX_STATUS_EVENTS)
     status_lock = threading.Lock()
     stop_event = _StopAfterFirstWait()
 
     buf = StringIO()
-    test_console = Console(file=buf, no_color=True, width=200)
+    test_console = Console(file=buf, no_color=True, width=200, force_terminal=True)
 
     import flavia.interfaces.cli_interface as cli_mod
 
@@ -270,7 +285,7 @@ def test_run_status_animation_shows_ellipsis_when_agent_history_is_truncated():
     output = buf.getvalue()
     assert "sub-1:" in output
     # With base_max_tasks=5 and 1 agent, 10 events => 5 omitted
-    assert "  ... (5 previous)" in output
+    assert "... (5 previous)" in output
     assert "Task 0" not in output
     assert "Task 4" not in output
     assert "Task 5" in output
@@ -306,12 +321,12 @@ def test_run_status_animation_reduces_tasks_with_many_agents():
             )
 
     status_holder = [events[-1]]
-    status_events = events
+    status_events = deque(events, maxlen=MAX_STATUS_EVENTS)
     status_lock = threading.Lock()
     stop_event = _StopAfterFirstWait()
 
     buf = StringIO()
-    test_console = Console(file=buf, no_color=True, width=200)
+    test_console = Console(file=buf, no_color=True, width=200, force_terminal=True)
 
     import flavia.interfaces.cli_interface as cli_mod
 
@@ -334,15 +349,15 @@ def test_run_status_animation_reduces_tasks_with_many_agents():
     for i in range(1, 7):
         assert f"sub-{i}:" in output
     # With 6 agents (>5), max_tasks_per_agent=2; 5 tasks - 2 kept = 3 omitted
-    assert "  ... (3 previous)" in output
+    assert "... (3 previous)" in output
     # Only the last 2 tasks per agent should remain
     assert "Agent1-Task0" not in output
     assert "Agent1-Task3" in output
     assert "Agent1-Task4" in output
 
 
-def test_run_status_animation_uses_previous_frame_height_after_shrink():
-    """Regression: keep cursor rewind height after rendering a shorter frame."""
+def test_run_status_animation_handles_multiple_frames_with_shrinking_content():
+    """Rich Live handles frame size changes automatically without cursor drift."""
 
     class _StopAfterThreeFrames:
         def __init__(self, status_events, second_frame_events):
@@ -393,12 +408,12 @@ def test_run_status_animation_uses_previous_frame_height_after_shrink():
     ]
 
     status_holder = [first_frame_events[-1]]
-    status_events = list(first_frame_events)
+    status_events = deque(first_frame_events, maxlen=MAX_STATUS_EVENTS)
     status_lock = threading.Lock()
     stop_event = _StopAfterThreeFrames(status_events, second_frame_events)
 
     buf = StringIO()
-    test_console = Console(file=buf, no_color=True, width=200)
+    test_console = Console(file=buf, no_color=True, width=200, force_terminal=True)
 
     import flavia.interfaces.cli_interface as cli_mod
 
@@ -417,7 +432,82 @@ def test_run_status_animation_uses_previous_frame_height_after_shrink():
         cli_mod.console = original_console
 
     output = buf.getvalue()
-    # Frame 2/3 must rewind to the first line of the 27-line painted area.
-    # Cursor sits on the last line, so rewind distance is 26 (not 27).
-    assert output.count("\x1b[26F") >= 2
-    assert "\x1b[27F" not in output
+    # Verify all 4 agents appear in the final output (Rich Live handles cleanup)
+    assert "sub-1:" in output
+    assert "sub-2:" in output
+    assert "sub-3:" in output
+    assert "sub-4:" in output
+    # Verify task trimming occurred (agents 1-3 have ellipsis due to 10 tasks each)
+    assert "... (" in output  # Ellipsis for omitted tasks
+
+
+def test_render_interrupted_summary_shows_completed_and_interrupted_tasks():
+    """Interrupted summary shows completed tasks with checkmarks and interrupted task."""
+    from flavia.interfaces.cli_interface import (
+        _AnimationState,
+        _render_interrupted_summary,
+    )
+
+    state = _AnimationState()
+    state.model_ref = "test-model"
+    state.agent_order = ["main.sub.1", "main.sub.2"]
+    state.agent_tasks = {
+        "main.sub.1": ["Reading file.txt", "Analyzing content"],
+        "main.sub.2": ["Searching catalog"],
+    }
+    state.agent_omitted_count = {"main.sub.1": 0, "main.sub.2": 0}
+    # sub.2's last task was interrupted
+    state.current_agent_id = "main.sub.2"
+    state.current_task = "Searching catalog"
+
+    buf = StringIO()
+    test_console = Console(file=buf, no_color=True, width=200, force_terminal=True)
+
+    import flavia.interfaces.cli_interface as cli_mod
+
+    original_console = cli_mod.console
+    cli_mod.console = test_console
+    try:
+        _render_interrupted_summary(state)
+    finally:
+        cli_mod.console = original_console
+
+    output = buf.getvalue()
+    # Header shows interrupted
+    assert "(interrupted)" in output
+    # sub-1 tasks are completed (shown with checkmark)
+    assert "Reading file.txt" in output
+    assert "✓" in output
+    # sub-2's task is marked as interrupted
+    assert "Searching catalog (interrupted)" in output
+
+
+def test_render_interrupted_summary_with_no_tasks():
+    """Interrupted summary with no tasks shows appropriate message."""
+    from flavia.interfaces.cli_interface import (
+        _AnimationState,
+        _render_interrupted_summary,
+    )
+
+    state = _AnimationState()
+    state.model_ref = "test-model"
+    state.agent_order = []
+    state.agent_tasks = {}
+    state.agent_omitted_count = {}
+    state.current_agent_id = None
+    state.current_task = None
+
+    buf = StringIO()
+    test_console = Console(file=buf, no_color=True, width=200, force_terminal=True)
+
+    import flavia.interfaces.cli_interface as cli_mod
+
+    original_console = cli_mod.console
+    cli_mod.console = test_console
+    try:
+        _render_interrupted_summary(state)
+    finally:
+        cli_mod.console = original_console
+
+    output = buf.getvalue()
+    assert "no tasks started" in output

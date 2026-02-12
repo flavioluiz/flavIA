@@ -6,14 +6,17 @@ import os
 import random
 import sys
 import threading
+from collections import deque
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 from rich.console import Console
+from rich.live import Live
 from rich.markdown import Markdown
 from rich.syntax import Syntax
+from rich.tree import Tree
 
 from flavia.agent import AgentProfile, RecursiveAgent, StatusPhase, ToolStatus
 from flavia.agent.status import sanitize_terminal_text
@@ -30,6 +33,7 @@ except Exception:  # pragma: no cover - platform-dependent
     _readline = None
 
 LOADING_DOTS = (".", "..", "...", "..")
+MAX_STATUS_EVENTS = 100
 LOADING_MESSAGES = (
     "Skimming conference proceedings",
     "Checking references in the lab notebook",
@@ -104,17 +108,40 @@ def _truncate_status_text(text: str, max_len: int = 30) -> str:
 
 
 def _agent_label_from_id(agent_id: str) -> str:
-    """Map internal agent IDs to compact labels for CLI status."""
+    """Map internal agent IDs to compact hierarchical labels for CLI status.
+
+    Examples:
+        "main" -> "main"
+        "main.sub.1" -> "sub-1"
+        "main.sub.1.sub.2" -> "sub-1.sub-2"
+        "main.summarizer.1" -> "summarizer"
+        "main.summarizer.1.sub.1" -> "summarizer.sub-1"
+    """
     safe_id = sanitize_terminal_text(agent_id).strip() or "main"
     if safe_id == "main":
         return "main"
 
+    # Strip "main." prefix if present
+    if safe_id.startswith("main."):
+        safe_id = safe_id[5:]
+
     parts = safe_id.split(".")
-    if len(parts) >= 2 and parts[-2] == "sub" and parts[-1].isdigit():
-        return f"sub-{parts[-1]}"
-    if len(parts) >= 2 and parts[-1].isdigit():
-        return parts[-2]
-    return parts[-1]
+    result_parts = []
+    i = 0
+    while i < len(parts):
+        if i + 1 < len(parts) and parts[i] == "sub" and parts[i + 1].isdigit():
+            # "sub.N" -> "sub-N"
+            result_parts.append(f"sub-{parts[i + 1]}")
+            i += 2
+        elif i + 1 < len(parts) and parts[i + 1].isdigit():
+            # "name.N" -> "name" (named agent with numeric suffix)
+            result_parts.append(parts[i])
+            i += 2
+        else:
+            result_parts.append(parts[i])
+            i += 1
+
+    return ".".join(result_parts) if result_parts else "agent"
 
 
 def _build_tool_status_line(
@@ -574,6 +601,9 @@ def _suppress_terminal_input() -> None:
 # Lock used by the write-confirmation callback to safely pause the
 # status animation thread while prompting the user.
 _confirmation_lock = threading.Lock()
+# Event for signaling animation pause/resume (set = running, clear = paused)
+_confirmation_pause_event = threading.Event()
+_confirmation_pause_event.set()  # Not paused by default
 
 
 def _cli_write_confirmation_callback(
@@ -594,6 +624,9 @@ def _cli_write_confirmation_callback(
 
     fd = sys.stdin.fileno() if hasattr(sys.stdin, "fileno") else None
     old_settings = None
+
+    # Signal animation to pause
+    _confirmation_pause_event.clear()
 
     with _confirmation_lock:
         try:
@@ -642,6 +675,8 @@ def _cli_write_confirmation_callback(
                     _termios.tcsetattr(fd, _termios.TCSANOW, old_settings)
                 except Exception:
                     pass
+            # Resume animation
+            _confirmation_pause_event.set()
 
 
 def _display_operation_preview(preview: OperationPreview) -> None:
@@ -719,69 +754,108 @@ def _run_loading_animation(stop_event: threading.Event, model_ref: str) -> None:
             break
 
 
+class _AnimationState:
+    """Shared state for status animation, allowing access after interruption."""
+
+    def __init__(self) -> None:
+        self.agent_order: list[str] = []
+        self.agent_tasks: dict[str, list[str]] = {}
+        self.agent_omitted_count: dict[str, int] = {}
+        self.current_task: Optional[str] = None
+        self.current_agent_id: Optional[str] = None
+        self.model_ref: str = ""
+
+
+def _render_interrupted_summary(state: _AnimationState) -> None:
+    """Render a summary of completed and interrupted tasks after Ctrl+C."""
+    if not state.agent_order:
+        console.print("[yellow]Interrupted (no tasks started)[/yellow]")
+        return
+
+    tree = Tree(f"[bold cyan]Agent [{state.model_ref}][/bold cyan] [yellow](interrupted)[/yellow]")
+
+    for agent_id in state.agent_order:
+        label = _agent_label_from_id(agent_id)
+        branch = tree.add(f"[bold blue]{label}:[/bold blue]")
+
+        omitted_count = state.agent_omitted_count.get(agent_id, 0)
+        if omitted_count > 0:
+            branch.add(f"[dim]... ({omitted_count} previous)[/dim]")
+
+        tasks = state.agent_tasks.get(agent_id, [])
+        for i, task in enumerate(tasks):
+            is_last_task = (i == len(tasks) - 1)
+            is_interrupted_agent = (agent_id == state.current_agent_id)
+
+            if is_last_task and is_interrupted_agent and state.current_task:
+                # This is the task that was interrupted
+                branch.add(f"[yellow]{task} (interrupted)[/yellow]")
+            else:
+                # Completed task
+                branch.add(f"[green]{task}[/green] [dim]✓[/dim]")
+
+    console.print(tree)
+
+
 def _run_status_animation(
     stop_event: threading.Event,
     model_ref: str,
     status_holder: list[Optional[ToolStatus]],
-    status_events: list[ToolStatus],
+    status_events: deque[ToolStatus],
     status_lock: threading.Lock,
     verbose: bool = False,
+    animation_state: Optional[_AnimationState] = None,
 ) -> None:
-    """Render status animation with tool status updates.
+    """Render status animation with tool status updates using Rich Live display.
 
     Shows tool-specific status when available, falls back to loading messages.
+    Uses Rich Live for robust terminal handling that automatically manages
+    cursor positioning and cleanup.
 
     Args:
         stop_event: Event to signal animation stop.
         model_ref: Model reference for display.
         status_holder: Single-element list holding current ToolStatus.
-        status_events: Buffered status events to avoid losing fast tool updates.
+        status_events: Bounded deque of status events (maxlen=MAX_STATUS_EVENTS).
         status_lock: Lock protecting shared status structures.
         verbose: Whether to show detailed tool arguments.
+        animation_state: Optional shared state for interrupt handling.
     """
-
-    def _render_status_block(lines: list[str], previous_line_count: int) -> int:
-        """Render a multi-line status block, rewriting the previous frame in place."""
-        output = console.file
-        if previous_line_count > 1:
-            # Cursor is on the last rendered line. To return to the first line of
-            # the previous frame we need to move up (line_count - 1) lines.
-            output.write(f"\033[{previous_line_count - 1}F")
-
-        total_lines = max(previous_line_count, len(lines))
-        for index in range(total_lines):
-            output.write("\r\033[2K")
-            if index < len(lines):
-                output.write(lines[index])
-            if index < total_lines - 1:
-                output.write("\n")
-        output.flush()
-        return total_lines
-
     step = 0
     fallback_message = _choose_loading_message()
     next_message_step = random.randint(14, 24)
-    rendered_line_count = 0
 
-    # Parallel-friendly grouped activity view.
-    agent_order: list[str] = []
-    agent_tasks: dict[str, list[str]] = {}
-    agent_omitted_count: dict[str, int] = {}
+    # Use shared state if provided, otherwise create local state
+    state = animation_state or _AnimationState()
+    state.model_ref = model_ref
+    agent_order = state.agent_order
+    agent_tasks = state.agent_tasks
+    agent_omitted_count = state.agent_omitted_count
     base_max_tasks = 5
 
-    while not stop_event.is_set():
-        # Pause status rendering while a write-confirmation prompt is active,
-        # otherwise the animation can overwrite the "[y/N]" prompt line.
-        if _confirmation_lock.locked():
-            if stop_event.wait(0.05):
-                break
-            continue
+    def build_status_tree() -> Tree:
+        """Build a Rich Tree representing current agent status."""
+        nonlocal step, fallback_message, next_message_step
 
         with status_lock:
             current_status = status_holder[0] if status_holder else None
-            pending_events = status_events[:]
+            pending_events = list(status_events)
             status_events.clear()
 
+        # Track current task for interrupt handling
+        if current_status and current_status.phase in (
+            StatusPhase.EXECUTING_TOOL,
+            StatusPhase.SPAWNING_AGENT,
+        ):
+            state.current_agent_id = current_status.agent_id
+            state.current_task = _build_agent_activity_line(
+                current_status, step, model_ref, verbose
+            ).strip()
+        else:
+            state.current_task = None
+            state.current_agent_id = None
+
+        # Process pending events
         for event in pending_events:
             if event.phase not in (StatusPhase.EXECUTING_TOOL, StatusPhase.SPAWNING_AGENT):
                 continue
@@ -794,10 +868,7 @@ def _run_status_animation(
             tasks = agent_tasks[event.agent_id]
             tasks.append(task_line)
 
-        # Dynamically limit tasks per agent based on agent count to keep
-        # the status block compact.  With many parallel sub-agents the
-        # display grows quickly; reduce the per-agent budget so it stays
-        # readable.
+        # Dynamically limit tasks per agent based on agent count
         num_agents = len(agent_order)
         if num_agents > 5:
             max_tasks_per_agent = 2
@@ -806,7 +877,7 @@ def _run_status_animation(
         else:
             max_tasks_per_agent = base_max_tasks
 
-        # Trim each agent's task list to the dynamic limit.
+        # Trim each agent's task list to the dynamic limit
         for agent_id in agent_order:
             tasks = agent_tasks.get(agent_id, [])
             if len(tasks) > max_tasks_per_agent:
@@ -819,41 +890,53 @@ def _run_status_animation(
             and current_status.phase in (StatusPhase.EXECUTING_TOOL, StatusPhase.SPAWNING_AGENT)
         )
 
-        if tool_active and current_status is not None:
-            footer_line = _build_loading_line("Working", step, model_ref, include_prefix=False)
-            footer_line = _colorize_status(footer_line, _ANSI_DIM)
+        # Build footer message
+        dots = LOADING_DOTS[step % len(LOADING_DOTS)]
+        if tool_active:
+            footer_text = f"Working {dots}"
         else:
-            footer_line = _build_loading_line(
-                fallback_message, step, model_ref, include_prefix=False
-            )
-            footer_line = _colorize_status(footer_line, _ANSI_DIM)
+            footer_text = f"{fallback_message} {dots}"
 
-        lines: list[str] = [
-            _colorize_status(_build_session_header_line(model_ref), _ANSI_BOLD_CYAN),
-            "",
-        ]
+        # Build the tree
+        tree = Tree(f"[bold cyan]Agent [{model_ref}][/bold cyan]")
 
         for agent_id in agent_order:
-            header_status = ToolStatus.waiting_llm(agent_id=agent_id, depth=0)
-            lines.append(_colorize_status(_build_agent_header_line(header_status), _ANSI_BOLD_BLUE))
+            label = _agent_label_from_id(agent_id)
+            branch = tree.add(f"[bold blue]{label}:[/bold blue]")
             omitted_count = agent_omitted_count.get(agent_id, 0)
             if omitted_count > 0:
-                lines.append(_colorize_status(f"  ... ({omitted_count} previous)", _ANSI_DIM))
+                branch.add(f"[dim]... ({omitted_count} previous)[/dim]")
             for task in agent_tasks.get(agent_id, []):
-                lines.append(_colorize_status(f"  {task}", _ANSI_GREEN))
-            lines.append("")
+                branch.add(f"[green]{task}[/green]")
 
-        lines.append(footer_line)
-        rendered_line_count = _render_status_block(lines, rendered_line_count)
+        # Add footer as a separate item if there are agents, or show it standalone
+        if agent_order:
+            tree.add(f"[dim]{footer_text}[/dim]")
+        else:
+            tree.add(f"[dim]{footer_text}[/dim]")
 
+        # Update step and message rotation
         step += 1
         if (not tool_active) and step % next_message_step == 0:
             fallback_message = _choose_loading_message(fallback_message)
             next_message_step = random.randint(14, 24)
 
-        # Faster refresh for tool status updates (0.25s vs 0.35s)
-        if stop_event.wait(0.25):
-            break
+        return tree
+
+    # Use Rich Live for automatic cursor management and cleanup
+    with Live(build_status_tree(), console=console, refresh_per_second=4, transient=True) as live:
+        while not stop_event.is_set():
+            # Pause status rendering while a write-confirmation prompt is active
+            if not _confirmation_pause_event.wait(timeout=0.05):
+                if stop_event.is_set():
+                    break
+                continue
+
+            live.update(build_status_tree())
+
+            # Check for stop with 0.25s interval
+            if stop_event.wait(0.25):
+                break
 
 
 def _run_agent_with_feedback(
@@ -872,6 +955,9 @@ def _run_agent_with_feedback(
 
     Returns:
         Agent's response string.
+
+    Raises:
+        KeyboardInterrupt: Re-raised after rendering interrupted state summary.
     """
     kwargs = run_kwargs or {}
     if not _supports_wait_feedback():
@@ -882,8 +968,11 @@ def _run_agent_with_feedback(
 
     # Thread-safe container for status updates
     status_holder: list[Optional[ToolStatus]] = [None]
-    status_events: list[ToolStatus] = []
+    status_events: deque[ToolStatus] = deque(maxlen=MAX_STATUS_EVENTS)
     status_lock = threading.Lock()
+
+    # Shared state for interrupt handling - allows us to show what was done
+    animation_state = _AnimationState()
 
     def update_status(status: ToolStatus) -> None:
         with status_lock:
@@ -894,16 +983,35 @@ def _run_agent_with_feedback(
 
     animation_thread = threading.Thread(
         target=_run_status_animation,
-        args=(stop_event, model_ref, status_holder, status_events, status_lock, verbose),
+        args=(
+            stop_event,
+            model_ref,
+            status_holder,
+            status_events,
+            status_lock,
+            verbose,
+            animation_state,
+        ),
         daemon=True,
     )
     animation_thread.start()
 
+    interrupted = False
     try:
         with _suppress_terminal_input():
             return agent.run(user_input, **kwargs)
+    except KeyboardInterrupt:
+        interrupted = True
+        raise
     finally:
         agent.status_callback = None
+        stop_event.set()
+        animation_thread.join(timeout=1.0)
+        if interrupted:
+            # Show what was completed and what was interrupted
+            _render_interrupted_summary(animation_state)
+        else:
+            _clear_terminal_line()
         stop_event.set()
         animation_thread.join(timeout=1.0)
         _clear_terminal_line()
@@ -1238,7 +1346,8 @@ def run_cli(settings: Settings) -> None:
                 _prompt_compaction(ctx.agent)
                 _append_chat_log(ctx.chat_log_file, "assistant", response, model_ref=active_model)
             except KeyboardInterrupt:
-                console.print("\n[yellow]Interrupted[/yellow]")
+                # Summary already rendered by _run_agent_with_feedback
+                pass
             except Exception as e:
                 console.print(f"[red]Error: {e}[/red]")
                 if ctx.settings.verbose:
