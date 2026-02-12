@@ -587,3 +587,64 @@ def test_run_status_animation_shows_nested_agents_hierarchically():
     assert "Reading config.yaml" in output
     assert "Spawning sub-agent" in output
     assert "Searching documents" in output
+
+
+def test_run_status_animation_keeps_child_visible_when_child_event_arrives_first():
+    """Child tasks must remain visible even if child event arrives before parent event."""
+
+    class _StopAfterFirstWait:
+        def __init__(self):
+            self._stopped = False
+
+        def is_set(self):
+            return self._stopped
+
+        def wait(self, _timeout):
+            self._stopped = True
+            return True
+
+    # Child event arrives before parent event (possible with async interleaving)
+    events = [
+        ToolStatus(
+            phase=StatusPhase.EXECUTING_TOOL,
+            tool_name="search_files",
+            tool_display="Child task",
+            agent_id="main.sub.1.sub.1",
+            depth=2,
+        ),
+        ToolStatus(
+            phase=StatusPhase.SPAWNING_AGENT,
+            tool_name="spawn_agent",
+            tool_display="Spawning sub-agent",
+            agent_id="main.sub.1",
+            depth=1,
+        ),
+    ]
+
+    status_holder = [events[-1]]
+    status_events = deque(events, maxlen=MAX_STATUS_EVENTS)
+    status_lock = threading.Lock()
+    stop_event = _StopAfterFirstWait()
+
+    buf = StringIO()
+    test_console = Console(file=buf, no_color=True, width=200, force_terminal=True)
+
+    import flavia.interfaces.cli_interface as cli_mod
+
+    original_console = cli_mod.console
+    cli_mod.console = test_console
+    try:
+        _run_status_animation(
+            stop_event=stop_event,
+            model_ref="test-model",
+            status_holder=status_holder,
+            status_events=status_events,
+            status_lock=status_lock,
+            verbose=False,
+        )
+    finally:
+        cli_mod.console = original_console
+
+    output = buf.getvalue()
+    assert "Spawning sub-agent" in output
+    assert "Child task" in output

@@ -86,6 +86,17 @@ def test_load_settings_ignores_invalid_compact_threshold_env(tmp_path, monkeypat
     assert settings.compact_threshold_configured is False
 
 
+def test_load_settings_reads_status_task_limits_from_env(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("STATUS_MAX_TASKS_MAIN", "8")
+    monkeypatch.setenv("STATUS_MAX_TASKS_SUBAGENT", "2")
+
+    settings = load_settings()
+    assert settings.status_max_tasks_main == 8
+    assert settings.status_max_tasks_subagent == 2
+
+
 def test_python_m_flavia_propagates_exit_code(tmp_path):
     """python -m flavia should return the CLI exit code."""
     repo_root = Path(__file__).resolve().parents[1]

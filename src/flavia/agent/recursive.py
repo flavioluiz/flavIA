@@ -3,7 +3,9 @@
 import json
 import re
 import threading
+import weakref
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures.thread import _threads_queues, _worker
 from typing import Any, Optional
 
 from flavia.config import Settings
@@ -12,6 +14,40 @@ from flavia.tools.compact.compact_context import COMPACT_SENTINEL
 from .base import BaseAgent
 from .profile import AgentProfile
 from .status import ToolStatus
+
+
+class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
+    """Thread pool executor that uses daemon threads.
+
+    Daemon workers ensure the CLI can exit cleanly even if sub-agent tasks
+    are still running after an interruption.
+    """
+
+    def _adjust_thread_count(self) -> None:
+        # Mirrors ThreadPoolExecutor internals, but marks workers as daemon.
+        if self._idle_semaphore.acquire(timeout=0):
+            return
+
+        def weakref_cb(_, q=self._work_queue):
+            q.put(None)
+
+        num_threads = len(self._threads)
+        if num_threads < self._max_workers:
+            thread_name = f"{self._thread_name_prefix or self}_{num_threads}"
+            t = threading.Thread(
+                name=thread_name,
+                target=_worker,
+                args=(
+                    weakref.ref(self, weakref_cb),
+                    self._work_queue,
+                    self._initializer,
+                    self._initargs,
+                ),
+            )
+            t.daemon = True
+            t.start()
+            self._threads.add(t)
+            _threads_queues[t] = self._work_queue
 
 
 class RecursiveAgent(BaseAgent):
@@ -328,9 +364,11 @@ class RecursiveAgent(BaseAgent):
             configured_workers = 1
         workers = max(1, min(len(spawns), configured_workers))
 
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {}
+        executor = _DaemonThreadPoolExecutor(max_workers=workers, thread_name_prefix="flavia-spawn")
+        futures = {}
+        interrupted = False
 
+        try:
             for spawn in spawns:
                 future = executor.submit(self._execute_single_spawn, spawn)
                 futures[future] = spawn["tool_call_id"]
@@ -348,6 +386,13 @@ class RecursiveAgent(BaseAgent):
                         "content": result,
                     }
                 )
+        except KeyboardInterrupt:
+            interrupted = True
+            for future in futures:
+                future.cancel()
+            raise
+        finally:
+            executor.shutdown(wait=not interrupted, cancel_futures=interrupted)
 
         return results
 

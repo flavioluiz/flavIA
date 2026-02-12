@@ -1018,7 +1018,7 @@ def _run_status_animation(
 
                 # Track parent-child relationship
                 parent = _get_parent_agent_id(agent_id)
-                if parent and parent in agent_tasks:
+                if parent:
                     if parent not in agent_children:
                         agent_children[parent] = []
                     if agent_id not in agent_children[parent]:

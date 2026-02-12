@@ -15,10 +15,11 @@ The interface uses [Rich](https://github.com/Textualize/rich) for formatting, wi
 During agent execution, the CLI status block shows current activity in real time:
 
 - Tool-aware messages such as `Reading config.yaml`, `Searching 'TODO'`, or `Querying catalog`
-- Parallel sub-agents grouped by agent section (`main`, `sub-1`, `sub-2`, ...)
+- Hierarchical sub-agent display (children nested under parent agent branches)
 - Rolling per-agent history (keeps the most recent tasks and collapses older ones as `... (N previous)`)
 - Verbose mode (`-v`) includes compact tool arguments in the status line
 - Automatic fallback to generic loading messages while waiting for the next LLM response
+- Task history limits are configurable with `STATUS_MAX_TASKS_MAIN` and `STATUS_MAX_TASKS_SUBAGENT` (`-1` = unlimited)
 
 ### Token usage indicator
 

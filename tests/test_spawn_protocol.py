@@ -5,6 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import flavia.agent.recursive as recursive_module
 from flavia.agent.context import AgentContext
 from flavia.agent.profile import AgentPermissions, AgentProfile
@@ -267,3 +269,65 @@ def test_predefined_spawn_sentinel_from_non_spawn_tool_is_not_interpreted():
     assert results[0]["content"].startswith("__SPAWN_PREDEFINED__:")
     assert spawns == []
     assert [s.phase for s in statuses] == [StatusPhase.EXECUTING_TOOL]
+
+
+def test_execute_spawns_parallel_uses_daemon_worker_threads():
+    agent = RecursiveAgent.__new__(RecursiveAgent)
+    agent.settings = SimpleNamespace(parallel_workers=4)
+
+    daemon_flags: list[bool] = []
+    lock = threading.Lock()
+
+    def fake_execute_single_spawn(_spawn):
+        with lock:
+            daemon_flags.append(threading.current_thread().daemon)
+        return "ok"
+
+    agent._execute_single_spawn = fake_execute_single_spawn
+
+    spawns = [
+        {"tool_call_id": "call-1", "type": "dynamic"},
+        {"tool_call_id": "call-2", "type": "dynamic"},
+    ]
+    results = RecursiveAgent._execute_spawns_parallel(agent, spawns)
+
+    assert sorted(item["tool_call_id"] for item in results) == ["call-1", "call-2"]
+    assert daemon_flags
+    assert all(daemon_flags)
+
+
+def test_execute_spawns_parallel_uses_non_blocking_shutdown_when_interrupted(monkeypatch):
+    calls: list[tuple[bool, bool]] = []
+
+    class _FakeFuture:
+        def cancel(self):
+            return True
+
+    class _FakeExecutor:
+        def __init__(self, *args, **kwargs):
+            self.futures = []
+
+        def submit(self, _fn, _spawn):
+            future = _FakeFuture()
+            self.futures.append(future)
+            return future
+
+        def shutdown(self, wait=True, cancel_futures=False):
+            calls.append((wait, cancel_futures))
+
+    def _raise_interrupt(_futures):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(recursive_module, "_DaemonThreadPoolExecutor", _FakeExecutor)
+    monkeypatch.setattr(recursive_module, "as_completed", _raise_interrupt)
+
+    agent = RecursiveAgent.__new__(RecursiveAgent)
+    agent.settings = SimpleNamespace(parallel_workers=2)
+    agent._execute_single_spawn = lambda _spawn: "ok"
+
+    with pytest.raises(KeyboardInterrupt):
+        RecursiveAgent._execute_spawns_parallel(
+            agent, [{"tool_call_id": "call-1", "type": "dynamic"}]
+        )
+
+    assert calls == [(False, True)]
