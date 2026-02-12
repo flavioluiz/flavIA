@@ -177,7 +177,7 @@ class BaseAgent(ABC):
             }
 
         # Add timeout to avoid hanging on connection issues
-        kwargs["timeout"] = httpx.Timeout(60.0, connect=10.0)
+        kwargs["timeout"] = httpx.Timeout(600.0, connect=10.0)
 
         try:
             return OpenAI(**kwargs)
@@ -188,7 +188,7 @@ class BaseAgent(ABC):
             # Remove default_headers for httpx.Client fallback if present
             http_kwargs = {k: v for k, v in kwargs.items() if k != "default_headers"}
             return OpenAI(
-                **http_kwargs, http_client=httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0))
+                **http_kwargs, http_client=httpx.Client(timeout=httpx.Timeout(600.0, connect=10.0))
             )
 
     def _init_system_prompt(self) -> None:
