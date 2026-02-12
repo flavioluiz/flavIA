@@ -9,7 +9,7 @@ import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from rich.console import Console
 from rich.markdown import Markdown
@@ -816,19 +816,26 @@ def _run_status_animation(
             break
 
 
-def _run_agent_with_feedback(agent: RecursiveAgent, user_input: str, verbose: bool = False) -> str:
+def _run_agent_with_feedback(
+    agent: RecursiveAgent,
+    user_input: str,
+    verbose: bool = False,
+    run_kwargs: Optional[dict[str, Any]] = None,
+) -> str:
     """Run agent with visual processing feedback.
 
     Args:
         agent: The agent to run.
         user_input: User's input message.
         verbose: Whether to show detailed tool arguments in status.
+        run_kwargs: Optional extra kwargs forwarded to ``agent.run()``.
 
     Returns:
         Agent's response string.
     """
+    kwargs = run_kwargs or {}
     if not _supports_wait_feedback():
-        return agent.run(user_input)
+        return agent.run(user_input, **kwargs)
 
     stop_event = threading.Event()
     model_ref = _get_agent_model_ref(agent)
@@ -854,12 +861,51 @@ def _run_agent_with_feedback(agent: RecursiveAgent, user_input: str, verbose: bo
 
     try:
         with _suppress_terminal_input():
-            return agent.run(user_input)
+            return agent.run(user_input, **kwargs)
     finally:
         agent.status_callback = None
         stop_event.set()
         animation_thread.join(timeout=1.0)
         _clear_terminal_line()
+
+
+def _prompt_continue_after_max_iterations(limit: int) -> bool:
+    """Ask whether to continue after max-iterations termination."""
+    console.print(
+        f"\n[bold yellow]Agent reached the maximum iteration limit ({limit}). "
+        f"Continue with {limit} more iterations? [y/N][/bold yellow] ",
+        end="",
+    )
+    try:
+        answer = input().strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        console.print()
+        return False
+    return answer in ("y", "yes")
+
+
+def _continue_after_max_iterations(
+    agent: RecursiveAgent,
+    response: str,
+    verbose: bool = False,
+) -> str:
+    """Optionally continue agent execution when max iterations is reached."""
+    current_response = response
+
+    while True:
+        limit = RecursiveAgent.extract_max_iterations_limit(current_response)
+        if limit is None:
+            return current_response
+
+        if not _prompt_continue_after_max_iterations(limit):
+            return current_response
+
+        current_response = _run_agent_with_feedback(
+            agent,
+            "",
+            verbose,
+            run_kwargs={"continue_from_current": True, "max_iterations": limit},
+        )
 
 
 def create_agent_from_settings(
@@ -1142,6 +1188,7 @@ def run_cli(settings: Settings) -> None:
                 _append_prompt_history(user_input, ctx.history_file, ctx.history_enabled)
                 _append_chat_log(ctx.chat_log_file, "user", user_input, model_ref=active_model)
                 response = _run_agent_with_feedback(ctx.agent, user_input, ctx.settings.verbose)
+                response = _continue_after_max_iterations(ctx.agent, response, ctx.settings.verbose)
                 console.print(f"[bold blue]{_build_agent_prefix(ctx.agent)}[/bold blue] ", end="")
                 console.print(Markdown(response))
                 _display_token_usage(ctx.agent)

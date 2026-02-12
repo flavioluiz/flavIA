@@ -1,5 +1,6 @@
 """Tests for CLI wait feedback helpers."""
 
+from flavia.agent.recursive import RecursiveAgent
 from flavia.agent.status import StatusPhase, ToolStatus
 from flavia.interfaces.cli_interface import (
     LOADING_DOTS,
@@ -11,6 +12,7 @@ from flavia.interfaces.cli_interface import (
     _build_loading_line,
     _build_tool_status_line,
     _choose_loading_message,
+    _continue_after_max_iterations,
     _get_agent_model_ref,
 )
 
@@ -113,3 +115,43 @@ def test_agent_model_ref_uses_provider_prefix():
 
     assert _get_agent_model_ref(Agent()) == "openai:gpt-4o"
     assert _build_agent_prefix(Agent()) == "Agent [openai:gpt-4o]:"
+
+
+def test_continue_after_max_iterations_runs_extra_iterations(monkeypatch):
+    calls = []
+
+    def fake_run(agent, user_input, verbose=False, run_kwargs=None):
+        calls.append((agent, user_input, verbose, run_kwargs))
+        return "Done"
+
+    monkeypatch.setattr("flavia.interfaces.cli_interface._run_agent_with_feedback", fake_run)
+    monkeypatch.setattr("builtins.input", lambda: "y")
+
+    initial = RecursiveAgent.format_max_iterations_message(3)
+    agent = object()
+
+    result = _continue_after_max_iterations(agent, initial, verbose=True)
+
+    assert result == "Done"
+    assert len(calls) == 1
+    assert calls[0][1] == ""
+    assert calls[0][2] is True
+    assert calls[0][3] == {"continue_from_current": True, "max_iterations": 3}
+
+
+def test_continue_after_max_iterations_returns_original_when_user_declines(monkeypatch):
+    called = []
+
+    def fake_run(*_args, **_kwargs):
+        called.append(True)
+        return "should not run"
+
+    monkeypatch.setattr("flavia.interfaces.cli_interface._run_agent_with_feedback", fake_run)
+    monkeypatch.setattr("builtins.input", lambda: "n")
+
+    initial = RecursiveAgent.format_max_iterations_message(5)
+
+    result = _continue_after_max_iterations(object(), initial, verbose=False)
+
+    assert result == initial
+    assert called == []

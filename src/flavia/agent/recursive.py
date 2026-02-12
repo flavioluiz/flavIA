@@ -1,6 +1,7 @@
 """Recursive agent with parallel execution for flavIA."""
 
 import json
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Optional
 
@@ -15,6 +16,7 @@ class RecursiveAgent(BaseAgent):
     """Agent capable of spawning and managing sub-agents."""
 
     MAX_ITERATIONS = 20
+    MAX_ITERATIONS_MESSAGE_RE = re.compile(r"^Maximum iterations reached \((\d+)\)\.")
     WRITE_TOOL_NAMES = {
         "write_file",
         "edit_file",
@@ -37,11 +39,45 @@ class RecursiveAgent(BaseAgent):
         self._child_counter = 0
         self._active_children: dict[str, "RecursiveAgent"] = {}
 
-    def run(self, user_message: str) -> str:
+    @classmethod
+    def format_max_iterations_message(cls, limit: int) -> str:
+        """Format the max-iterations termination message."""
+        return (
+            f"Maximum iterations reached ({limit}). "
+            "Would you like to continue with more iterations or try a more specific request?"
+        )
+
+    @classmethod
+    def extract_max_iterations_limit(cls, response_text: str) -> Optional[int]:
+        """Extract max-iterations limit from a termination message."""
+        if not response_text:
+            return None
+        match = cls.MAX_ITERATIONS_MESSAGE_RE.match(response_text.strip())
+        if not match:
+            return None
+        try:
+            return int(match.group(1))
+        except (TypeError, ValueError):
+            return None
+
+    def run(
+        self,
+        user_message: str,
+        *,
+        max_iterations: Optional[int] = None,
+        continue_from_current: bool = False,
+    ) -> str:
         """Run the agent with a user message."""
         self.compaction_warning_pending = False
         self.compaction_warning_prompt_tokens = 0
-        self.messages.append({"role": "user", "content": user_message})
+        if not continue_from_current:
+            self.messages.append({"role": "user", "content": user_message})
+
+        try:
+            iteration_limit = int(max_iterations) if max_iterations is not None else self.MAX_ITERATIONS
+        except (TypeError, ValueError):
+            iteration_limit = self.MAX_ITERATIONS
+        iteration_limit = max(1, iteration_limit)
 
         iterations = 0
         pending_spawns: list[dict[str, Any]] = []
@@ -49,7 +85,7 @@ class RecursiveAgent(BaseAgent):
         had_successful_write = False
         write_failures: list[str] = []
 
-        while iterations < self.MAX_ITERATIONS:
+        while iterations < iteration_limit:
             iterations += 1
 
             self._notify_status(
@@ -102,8 +138,8 @@ class RecursiveAgent(BaseAgent):
 
                 pending_spawns = []
 
-        self.log("Max iterations reached")
-        return "Maximum iterations reached. Please try a more specific request."
+        self.log(f"Max iterations reached ({iteration_limit})")
+        return self.format_max_iterations_message(iteration_limit)
 
     @staticmethod
     def _is_error_result(result_text: str) -> bool:
