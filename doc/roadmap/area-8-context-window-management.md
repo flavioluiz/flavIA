@@ -141,6 +141,7 @@ Prevent large tool results from exceeding the context window by implementing pro
   - Provides metadata: file size (KB/MB), total lines, estimated tokens, % of context window
   - Shows instructions for partial reads using `start_line`/`end_line` parameters
 - Added optional `start_line` and `end_line` parameters to the tool schema for partial file reading
+- Partial-read parameters are validated as integers and invalid values return explicit tool errors
 - Partial reads are also size-checked; results exceeding budget are truncated with warning
 
 **Layer 2 — Context awareness exposure** (`src/flavia/agent/context.py` + `base.py`):
@@ -156,6 +157,7 @@ Prevent large tool results from exceeding the context window by implementing pro
   - Truncates if it would consume more than 25% of context window
   - Shows head (500 chars) + tail (500 chars) with explanatory message
 - Applied in both `_process_tool_calls()` (BaseAgent) and `_process_tool_calls_with_spawns()` (RecursiveAgent)
+- Budgeting is cumulative per LLM turn, so each additional tool result in the same turn uses the remaining guard budget
 - Acts as a safety net for *all* tools, not just `read_file`
 - Spawn results (`__SPAWN_AGENT__:*` and `__SPAWN_PREDEFINED__:*`) bypass truncation
 

@@ -117,6 +117,7 @@ class RecursiveAgent(BaseAgent):
         """Process tool calls and identify spawn requests."""
         results = []
         spawns = []
+        consumed_tokens = 0
 
         for tool_call in tool_calls:
             name = tool_call.function.name
@@ -163,7 +164,9 @@ class RecursiveAgent(BaseAgent):
 
             else:
                 # Apply generic size guard to non-spawn tool results
-                result = self._guard_tool_result(result)
+                result = self._guard_tool_result(result, consumed_tokens=consumed_tokens)
+
+            consumed_tokens += self._estimate_guard_tokens(result)
 
             results.append(
                 {

@@ -1,7 +1,7 @@
 """Tests for read_file context-window size guard (Camadas 1-4)."""
 
 from pathlib import Path
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import pytest
 
@@ -39,6 +39,18 @@ def _write_file(tmp_path: Path, name: str, content: str) -> Path:
     p = tmp_path / name
     p.write_text(content, encoding="utf-8")
     return p
+
+
+@dataclass
+class _FakeFunctionCall:
+    name: str
+    arguments: str = "{}"
+
+
+@dataclass
+class _FakeToolCall:
+    id: str
+    function: _FakeFunctionCall
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +249,24 @@ class TestReadFilePartialRead:
 
         assert "TRUNCATED" in result
 
+    def test_partial_read_rejects_invalid_start_type(self, tmp_path):
+        _write_file(tmp_path, "short.txt", "one\ntwo\nthree\n")
+
+        tool = ReadFileTool()
+        ctx = _make_context(tmp_path)
+        result = tool.execute({"path": "short.txt", "start_line": "abc"}, ctx)
+
+        assert result == "Error: start_line must be an integer"
+
+    def test_partial_read_rejects_bool_line_type(self, tmp_path):
+        _write_file(tmp_path, "short.txt", "one\ntwo\nthree\n")
+
+        tool = ReadFileTool()
+        ctx = _make_context(tmp_path)
+        result = tool.execute({"path": "short.txt", "end_line": True}, ctx)
+
+        assert result == "Error: end_line must be an integer"
+
 
 class TestDynamicBudget:
     """Camada 4: budget shrinks as context fills up."""
@@ -275,6 +305,48 @@ class TestToolResultGuard:
         assert BaseAgent._GUARD_MAX_CONTEXT_FRACTION == 0.25
         assert BaseAgent._GUARD_REMAINING_FRACTION == 0.50
         assert BaseAgent._GUARD_KEEP_EDGE_CHARS == 500
+
+    def test_guard_uses_consumed_tokens(self):
+        from flavia.agent.base import BaseAgent
+
+        class _DummyAgent(BaseAgent):
+            def run(self, user_message: str) -> str:
+                return user_message
+
+        agent = object.__new__(_DummyAgent)
+        agent.max_context_tokens = 100
+        agent.last_prompt_tokens = 60
+
+        result = "X" * 60  # ~15 tokens
+        not_truncated = agent._guard_tool_result(result, consumed_tokens=0)
+        truncated = agent._guard_tool_result(result, consumed_tokens=15)
+
+        assert "TOOL RESULT TRUNCATED" not in not_truncated
+        assert "TOOL RESULT TRUNCATED" in truncated
+
+    def test_process_tool_calls_accounts_for_previous_results(self):
+        from flavia.agent.base import BaseAgent
+
+        class _DummyAgent(BaseAgent):
+            def run(self, user_message: str) -> str:
+                return user_message
+
+        agent = object.__new__(_DummyAgent)
+        agent.max_context_tokens = 100
+        agent.last_prompt_tokens = 60
+        agent.settings = type("SettingsStub", (), {"verbose": False})()
+        agent.context = type("ContextStub", (), {"agent_id": "test"})()
+        agent._execute_tool = lambda name, args: "A" * 60 if name == "first" else "B" * 60
+        agent._handle_spawn_result = lambda result, tool_name, args: result
+
+        tool_calls = [
+            _FakeToolCall(id="call-1", function=_FakeFunctionCall(name="first")),
+            _FakeToolCall(id="call-2", function=_FakeFunctionCall(name="second")),
+        ]
+        results = agent._process_tool_calls(tool_calls)
+
+        assert "TOOL RESULT TRUNCATED" not in results[0]["content"]
+        assert "TOOL RESULT TRUNCATED" in results[1]["content"]
 
 
 class TestContextFieldsPropagated:

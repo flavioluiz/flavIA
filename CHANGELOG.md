@@ -106,6 +106,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **Tool result guard edge cases (Task 8.4)**:
+  - Guard budget now accounts for cumulative size of multiple tool results in the same LLM turn (`BaseAgent` and `RecursiveAgent`)
+  - `read_file` now validates `start_line` / `end_line` argument types and returns explicit errors for invalid values
 - **Runtime model switching edge cases**:
   - `/model` now rejects invalid model references (including out-of-range indexes) instead of silently falling back
   - `/model` now applies the selected model at runtime even when `agents.yaml` defines a fixed `main.model`

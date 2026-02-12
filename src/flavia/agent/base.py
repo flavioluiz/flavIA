@@ -572,13 +572,19 @@ class BaseAgent(ABC):
     _GUARD_REMAINING_FRACTION = 0.50
     _GUARD_KEEP_EDGE_CHARS = 500  # chars kept at start/end on truncation
 
-    def _guard_tool_result(self, result: str) -> str:
+    def _estimate_guard_tokens(self, text: str) -> int:
+        """Estimate token count used by guard budgeting."""
+        if not text:
+            return 0
+        return (len(text) + self._GUARD_CHARS_PER_TOKEN - 1) // self._GUARD_CHARS_PER_TOKEN
+
+    def _guard_tool_result(self, result: str, consumed_tokens: int = 0) -> str:
         """Truncate a tool result if it would consume too much context.
 
         This acts as a safety net for *all* tools, not just ``read_file``.
         """
         max_ctx = getattr(self, "max_context_tokens", 128_000)
-        current = getattr(self, "last_prompt_tokens", 0)
+        current = getattr(self, "last_prompt_tokens", 0) + max(0, consumed_tokens)
         remaining = max(0, max_ctx - current)
 
         absolute_cap = int(max_ctx * self._GUARD_MAX_CONTEXT_FRACTION)
@@ -589,7 +595,7 @@ class BaseAgent(ABC):
         if len(result) <= budget_chars:
             return result
 
-        estimated_tokens = max(1, len(result) // self._GUARD_CHARS_PER_TOKEN)
+        estimated_tokens = max(1, self._estimate_guard_tokens(result))
         edge = self._GUARD_KEEP_EDGE_CHARS
         head = result[:edge]
         tail = result[-edge:]
@@ -604,6 +610,7 @@ class BaseAgent(ABC):
     def _process_tool_calls(self, tool_calls: list[Any]) -> list[dict[str, Any]]:
         """Process tool calls from LLM response."""
         results = []
+        consumed_tokens = 0
 
         for tool_call in tool_calls:
             name = tool_call.function.name
@@ -617,7 +624,8 @@ class BaseAgent(ABC):
 
             result = self._execute_tool(name, args)
             result = self._handle_spawn_result(result, name, args)
-            result = self._guard_tool_result(result)
+            result = self._guard_tool_result(result, consumed_tokens=consumed_tokens)
+            consumed_tokens += self._estimate_guard_tokens(result)
 
             results.append(
                 {

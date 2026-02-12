@@ -193,8 +193,11 @@ class ReadFileTool(BaseTool):
 
     def execute(self, args: dict[str, Any], agent_context: "AgentContext") -> str:
         path = args.get("path", "")
-        start_line = args.get("start_line")
-        end_line = args.get("end_line")
+        try:
+            start_line = self._parse_line_arg(args.get("start_line"), "start_line")
+            end_line = self._parse_line_arg(args.get("end_line"), "end_line")
+        except ValueError as e:
+            return f"Error: {e}"
 
         if not path:
             return "Error: path is required"
@@ -246,6 +249,21 @@ class ReadFileTool(BaseTool):
             return f"Error: Permission denied reading '{path}'"
         except Exception as e:
             return f"Error reading file: {e}"
+
+    @staticmethod
+    def _parse_line_arg(value: Any, param_name: str) -> int | None:
+        """Parse optional line-number args and reject invalid types."""
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            raise ValueError(f"{param_name} must be an integer")
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped and (stripped.isdigit() or (stripped.startswith("-") and stripped[1:].isdigit())):
+                return int(stripped)
+        raise ValueError(f"{param_name} must be an integer")
 
     def _read_partial(
         self,
