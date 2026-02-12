@@ -755,7 +755,7 @@ def _run_status_animation(
             if index < total_lines - 1:
                 output.write("\n")
         output.flush()
-        return len(lines)
+        return total_lines
 
     step = 0
     fallback_message = _choose_loading_message()
