@@ -246,10 +246,12 @@ class TelegramBot:
             after_pct = agent.context_utilization * 100
             after_tokens = agent.last_prompt_tokens
 
+            summary_preview = summary[:500] + ("..." if len(summary) > 500 else "")
             reply = (
                 "\u2705 Conversation compacted.\n\n"
                 f"Before: {before_tokens:,}/{max_tokens:,} ({before_pct:.0f}%)\n"
-                f"After: {after_tokens:,}/{max_tokens:,} ({after_pct:.1f}%)"
+                f"After: {after_tokens:,}/{max_tokens:,} ({after_pct:.1f}%)\n\n"
+                f"Summary:\n{summary_preview}"
             )
             await update.message.reply_text(reply)
             self._log_event(

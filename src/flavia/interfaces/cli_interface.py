@@ -1159,8 +1159,11 @@ def _prompt_compaction(agent: RecursiveAgent) -> bool:
     if answer in ("y", "yes"):
         console.print("[dim]Compacting conversation...[/dim]")
         try:
-            agent.compact_conversation()
+            summary = agent.compact_conversation()
             console.print("[green]Conversation compacted.[/green]")
+            if summary:
+                console.print("[bold]Summary:[/bold]")
+                console.print(summary)
             new_pct = agent.context_utilization * 100
             new_prompt = agent.last_prompt_tokens
             console.print(f"[dim]New context: {new_prompt:,}/{max_tokens:,} ({new_pct:.1f}%)[/dim]")

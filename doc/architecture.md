@@ -70,6 +70,8 @@ src/flavia/
 │   │   └── refresh_catalog.py
 │   ├── academic/             # Academic workflow tools
 │   │   └── compile_latex.py
+│   ├── compact/              # Context management tools
+│   │   └── compact_context.py
 │   └── setup/                # --init exclusive tools
 │       ├── convert_pdfs.py   # Conversion via pdfplumber
 │       └── create_agents_config.py
@@ -100,8 +102,9 @@ When a spawn tool is called, it returns a special payload:
 
 - `__SPAWN_AGENT__:{json}` -- for dynamic agents
 - `__SPAWN_PREDEFINED__:{json}` -- for sub-agents from `agents.yaml`
+- `__COMPACT_CONTEXT__` (optionally with `:{instructions}`) -- for context compaction
 
-The `RecursiveAgent` intercepts these payloads, creates the sub-agent, and executes it in parallel when possible.
+The `RecursiveAgent` intercepts these payloads, creates the sub-agent, and executes it in parallel when possible. For compaction sentinels, it calls `compact_conversation()` with the optional instructions.
 
 ### AgentProfile
 
@@ -130,7 +133,7 @@ Singleton that maintains the registry of all tools. Read/spawn/content tools are
 
 Abstract class for tools. Each tool defines:
 - Name and description
-- Category (`read`, `write`, `spawn`, `content`, `academic`, `setup`)
+- Category (`read`, `write`, `spawn`, `content`, `academic`, `compact`, `setup`)
 - Parameter schema (compatible with OpenAI function calling)
 - Execution method
 

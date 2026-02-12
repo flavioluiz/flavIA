@@ -11,10 +11,10 @@ Planned features and improvements for flavIA, organized by area. Each task inclu
 This roadmap outlines **45 tasks** across **10 major areas** to extend flavIA from a read-only research assistant into a comprehensive, production-ready AI agent system with multimodal processing, write capabilities, external service integration, web & academic research tools, multi-platform deployment, and file delivery through messaging interfaces.
 
 ### Quick Stats
-- **10 Easy tasks** (< 1 day each) — Quick wins for immediate value — **5 completed** ✓
+- **10 Easy tasks** (< 1 day each) — Quick wins for immediate value — **6 completed** ✓
 - **26 Medium tasks** (1-2 days each) — Core feature development — **7 completed** ✓
 - **9 Hard tasks** (3+ days each) — Complex integrations requiring careful design
-- **Total completed so far**: **12 / 45 tasks** ✓
+- **Total completed so far**: **13 / 45 tasks** ✓
 
 ### Strategic Priorities
 1. **Immediate value** (Tasks 4.1-4.8, 8.1): Improve CLI UX and add token tracking
@@ -93,7 +93,7 @@ Track token usage and automatically summarize conversations approaching context 
 - **8.2** ~~Compaction with Confirmation (Medium)~~ ✅ — Auto-summarize at threshold with user approval
 - **8.3** ~~Manual /compact Command (Easy)~~ ✅ — On-demand conversation summarization
 - **8.4** ~~Tool Result Size Protection (Medium)~~ ✅ — Guard against large tool results exceeding context window
-- **8.5** Context Compaction Tool (Easy) — Agent-accessible tool for on-demand context summarization with custom instructions
+- **8.5** ~~Context Compaction Tool (Easy)~~ ✅ — Agent-accessible tool for on-demand context summarization with custom instructions, mid-execution context warning, and compaction summary display
 
 ### [Area 9: Web & Academic Research Tools](roadmap/area-9-web-academic-research-tools.md) (8 tasks)
 Comprehensive web and academic search toolkit for literature reviews, deep research, and precise scientific citation management.
@@ -302,7 +302,7 @@ Tasks ordered by a pragmatic implementation sequence that balances dependency re
 | 6 | ~~**8.1** Token usage tracking & display~~ | ~~Easy~~ | ~~Context Management~~ |
 | 7 | ~~**8.3** Manual /compact slash command~~ | ~~Easy~~ | ~~Context Management~~ |
 | 8 | **8.4** Tool result size protection | Medium | Context Management |
-| 9 | **8.5** Context compaction tool | Easy | Context Management |
+| 9 | ~~**8.5** Context compaction tool~~ | ~~Easy~~ | ~~Context Management~~ |
 | 10 | ~~**5.1** Write/Edit file tools~~ | ~~Medium~~ | ~~File Modification~~ |
 | 11 | ~~**5.2** Write operation preview + dry-run mode~~ | ~~Medium~~ | ~~File Modification~~ |
 | 12 | **1.1** Audio/Video transcription converter | Medium | File Processing |

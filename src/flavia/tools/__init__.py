@@ -14,6 +14,7 @@ from . import spawn
 from . import content
 from . import write
 from . import academic
+from . import compact
 
 __all__ = [
     "BaseTool",

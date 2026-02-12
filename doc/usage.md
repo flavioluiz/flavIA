@@ -12,10 +12,11 @@ The interface uses [Rich](https://github.com/Textualize/rich) for formatting, wi
 
 ### Real-time tool status
 
-During agent execution, the CLI status line shows the current action in real time:
+During agent execution, the CLI status block shows current activity in real time:
 
 - Tool-aware messages such as `Reading config.yaml`, `Searching 'TODO'`, or `Querying catalog`
-- Sub-agent depth with indentation
+- Parallel sub-agents grouped by agent section (`main`, `sub-1`, `sub-2`, ...)
+- Rolling per-agent history (keeps the most recent tasks and collapses older ones as `... (N previous)`)
 - Verbose mode (`-v`) includes compact tool arguments in the status line
 - Automatic fallback to generic loading messages while waiting for the next LLM response
 
@@ -43,6 +44,8 @@ When context usage reaches the configured `compact_threshold` (default `0.9`), t
 
 Compaction summarizes the conversation and resets context with the summary injected as starting context.
 You can also force compaction at any time with `/compact`, even below the threshold.
+
+The agent also has a `compact_context` tool it can use proactively. When the context window gets close to the threshold during a tool execution loop, the agent receives a system notice informing it of the low context and suggesting it use the `compact_context` tool. The tool accepts an optional `instructions` parameter to customize the compaction focus (e.g., "preserve all file paths", "focus on technical decisions").
 
 Configuration options:
 - `agents.yaml` per-agent:

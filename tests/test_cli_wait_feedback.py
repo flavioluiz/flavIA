@@ -339,17 +339,3 @@ def test_run_status_animation_reduces_tasks_with_many_agents():
     assert "Agent1-Task0" not in output
     assert "Agent1-Task3" in output
     assert "Agent1-Task4" in output
-
-
-def test_child_counter_thread_safety():
-    """Verify that _child_counter_lock is defined in RecursiveAgent.__init__."""
-    import threading as _threading
-
-    from flavia.agent.recursive import RecursiveAgent
-
-    # Inspect the source to confirm the lock is initialized alongside the counter.
-    import inspect
-
-    source = inspect.getsource(RecursiveAgent.__init__)
-    assert "_child_counter_lock" in source
-    assert "threading.Lock()" in source

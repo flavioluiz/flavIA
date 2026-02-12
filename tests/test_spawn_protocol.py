@@ -1,6 +1,7 @@
 """Tests for spawn tool payload protocol."""
 
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -112,6 +113,58 @@ def test_spawn_dynamic_inherits_parent_permissions(monkeypatch, tmp_path):
     assert spawned_permissions.read_paths == parent_permissions.read_paths
     assert spawned_permissions.write_paths == parent_permissions.write_paths
     assert spawned_permissions is not parent_permissions
+
+
+def test_spawn_dynamic_assigns_consistent_id_and_profile_name_under_concurrency(
+    monkeypatch, tmp_path
+):
+    captured: list[tuple[str, str]] = []
+    captured_lock = threading.Lock()
+
+    class FakeChildAgent:
+        def __init__(self, settings, profile, agent_id, depth, parent_id):
+            with captured_lock:
+                captured.append((agent_id, profile.name or ""))
+
+        def run(self, user_message: str) -> str:
+            return "ok"
+
+    monkeypatch.setattr(recursive_module, "RecursiveAgent", FakeChildAgent)
+
+    parent_profile = AgentProfile(
+        context="parent",
+        base_dir=tmp_path,
+        tools=["read_file"],
+        subagents={},
+    )
+
+    agent = RecursiveAgent.__new__(RecursiveAgent)
+    agent._child_counter = 0
+    agent._child_counter_lock = threading.Lock()
+    agent.profile = parent_profile
+    agent.context = AgentContext(agent_id="main", current_depth=0, max_depth=3, base_dir=tmp_path)
+    agent.settings = object()
+    agent.log = lambda _msg: None
+    agent.status_callback = None
+
+    total_spawns = 20
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [
+            executor.submit(RecursiveAgent._spawn_dynamic, agent, f"task-{i}", "context")
+            for i in range(total_spawns)
+        ]
+    results = [future.result() for future in futures]
+
+    assert results == ["[sub-agent]: ok"] * total_spawns
+    assert agent._child_counter == total_spawns
+    assert len(captured) == total_spawns
+
+    captured_ids = [agent_id for agent_id, _ in captured]
+    assert len(set(captured_ids)) == total_spawns
+
+    for child_id, profile_name in captured:
+        counter = int(child_id.rsplit(".", 1)[-1])
+        assert profile_name == f"sub-{counter}"
 
 
 def test_process_tool_calls_normalizes_non_object_json_arguments():

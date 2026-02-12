@@ -213,83 +213,42 @@ Prevent large tool results from exceeding the context window by implementing pro
 
 ---
 
-### Task 8.5 -- Context Compaction Tool
+### Task 8.5 -- Context Compaction Tool ✅
 
-**Difficulty**: Easy | **Dependencies**: Tasks 8.1, 8.2 | **Status**: Pending
+**Difficulty**: Easy | **Dependencies**: Tasks 8.1, 8.2 | **Status**: Done
 
 Create a `compact_context` tool that agents can call to summarize their own conversation on-demand with custom instructions. Unlike the `/compact` slash command which is triggered by the user, this tool allows the agent itself to initiate compaction when it deems appropriate, or in response to user requests embedded in natural language.
 
-**Tool specification**:
-```yaml
-compact_context:
-  name: "compact_context"
-  description: |
-    Compact the current conversation by summarizing it.
-    Use this when the conversation is long and the user asks to summarize,
-    condense, or make it shorter. The summary will preserve important context
-    while reducing token usage.
-  parameters:
-    instructions:
-      type: "string"
-      description: |
-        Optional custom instructions for how to summarize the conversation.
-        Examples: "focus on technical decisions", "preserve all file paths",
-        "keep only the most recent tasks", "summarize what was done and what's pending"
-      required: false
-```
-
 **Implementation**:
-- Create `src/flavia/tools/compact/compact_context.py` with a new `CompactContextTool` class
-- The tool calls the existing `compact_conversation()` method from Task 8.2
-- If `instructions` parameter is provided, incorporate them into the compaction prompt
-- If no instructions provided, use the default compaction prompt from Task 8.2
-- Return a summary message: "Conversation compacted. Summary: <first few lines>..."
+- Created `src/flavia/tools/compact/compact_context.py` with `CompactContextTool` class
+- Uses the **sentinel string pattern** (`__COMPACT_CONTEXT__`): since tools only receive `AgentContext` (a passive dataclass) and cannot call agent methods directly, the tool returns a sentinel string that the agent loop intercepts
+- `RecursiveAgent._process_tool_calls_with_spawns()` detects the sentinel and calls `compact_conversation()` with the optional `instructions` parameter
+- The entire compaction pipeline (`compact_conversation()` → `_summarize_messages_for_compaction()` → `_summarize_messages_recursive()` → `_call_compaction_llm()`) now accepts an optional `instructions` parameter that gets appended to the compaction prompt
+- Tool registered via auto-import in `src/flavia/tools/__init__.py`
 
-**Enhanced compaction prompt with instructions**:
-```python
-_BASE_COMPACTION_PROMPT = """
-You are summarizing a conversation to preserve context for continuation.
-Summarize the following conversation between a user and an AI assistant.
-Your summary must preserve:
-- All key decisions made
-- Important facts, numbers, and references mentioned
-- Any ongoing tasks or open questions
-- File paths, code snippets, or document references discussed
-- The user's goals and preferences expressed
-"""
+**Mid-execution context warning** (bonus feature):
+- When the agent is in a tool execution loop and context usage crosses the `compact_threshold`, a system notice is injected into `self.messages` informing the LLM that context is running low
+- The warning mentions the `compact_context` tool availability and includes current token stats
+- Injected only once per `run()` call via a `_compaction_warning_injected` flag, and only when tool calls are present (ensuring the loop will continue and the LLM can act on the warning)
+- The LLM can then decide to use `compact_context`, finish its current task quickly, or take other appropriate action
 
-# When instructions are provided:
-_COMPACT_PROMPT_WITH_INSTRUCTIONS = f"""
-{BaseAgent._COMPACTION_PROMPT}
+**Compaction summary display consistency** (bonus fix):
+- CLI automatic compaction (`_prompt_compaction()`) now captures and displays the summary text after compaction
+- Telegram `/compact` command now includes a summary preview (truncated to 500 chars) in the reply message
 
-Additional instructions from the user:
-{instructions}
+**Key files created**:
+- `src/flavia/tools/compact/__init__.py` — package init
+- `src/flavia/tools/compact/compact_context.py` — tool implementation
+- `tests/test_compact_context_tool.py` — 23 tests covering schema, sentinel execution, sentinel detection, instructions parameter, and mid-execution warning injection
 
-Be concise but comprehensive. The summary will be used to continue the conversation
-with full context. Output only the summary, no preamble.
-"""
-```
+**Key files modified**:
+- `src/flavia/tools/__init__.py` — auto-register compact tool
+- `src/flavia/agent/base.py` — `instructions` parameter throughout compaction pipeline
+- `src/flavia/agent/recursive.py` — sentinel detection, context warning injection, `_compaction_warning_injected` flag
+- `src/flavia/interfaces/cli_interface.py` — summary display on auto-compaction
+- `src/flavia/interfaces/telegram_interface.py` — summary preview in `/compact` reply
 
-**Tool registry**:
-- Register the tool in `src/flavia/tools/__init__.py` under category "Context"
-- Category helps with tool organization and `/tools` display
-
-**Use cases**:
-- User asks: "Can you summarize what we've done so far?" → Agent calls `compact_context()`
-- User asks: "Please condense the conversation but keep all the file references" → Agent calls `compact_context(instructions="preserve all file paths")`
-- Agent autonomously decides to compact when conversation gets very long (future improvement, optional)
-- Parallel sub-agent workspaces can call this before spawning to reduce parent token usage
-
-**Advantages over `/compact` command**:
-1. **Embedded in conversation flow**: No need to type a slash command; user can just ask naturally
-2. **Customizable**: User can specify what to focus on via the `instructions` parameter
-3. **Agent-initiated**: Allows the agent to compact proactively in the future
-4. **Consistent with tool paradigm**: Part of the agent's tool repertoire like other actions
-
-**Key files to modify**:
-- `src/flavia/tools/compact/compact_context.py` — create new tool
-- `src/flavia/tools/__init__.py` — register tool
-- `doc/usage.md` — document the new tool
+**Testing**: 23 new tests + updated existing compaction and Telegram tests. Full suite: 666 passed, 6 skipped.
 
 **New dependencies**: None.
 

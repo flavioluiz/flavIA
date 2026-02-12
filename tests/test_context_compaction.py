@@ -212,7 +212,9 @@ class TestCompactionSignalInRun:
             return final_response
 
         agent._call_llm = MagicMock(side_effect=fake_call_llm)
-        agent._assistant_message_to_dict = MagicMock(return_value={"role": "assistant", "content": ""})
+        agent._assistant_message_to_dict = MagicMock(
+            return_value={"role": "assistant", "content": ""}
+        )
         agent._process_tool_calls_with_spawns = MagicMock(return_value=([], []))
 
         result = agent.run("Hello")
@@ -622,6 +624,8 @@ class TestCliPromptCompaction:
         output = buf.getvalue()
         assert "Compacting conversation" in output
         assert "compacted" in output.lower()
+        assert "Summary:" in output
+        assert "Summary text" in output
 
     def test_compaction_not_triggered_on_empty_input(self):
         from flavia.interfaces.cli_interface import _prompt_compaction

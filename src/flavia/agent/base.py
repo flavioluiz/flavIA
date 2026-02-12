@@ -226,12 +226,16 @@ class BaseAgent(ABC):
     )
     _COMPACTION_MAX_RECURSION_DEPTH = 6
 
-    def compact_conversation(self) -> str:
+    def compact_conversation(self, instructions: str | None = None) -> str:
         """Compact the conversation by summarizing its history.
 
         Sends the current conversation (excluding system prompt) to the LLM
         with a compaction prompt, then resets the conversation and injects
         the summary as initial context.
+
+        Args:
+            instructions: Optional custom instructions for how to summarize
+                the conversation (e.g. "focus on technical decisions").
 
         Returns:
             The generated summary text.
@@ -241,7 +245,9 @@ class BaseAgent(ABC):
         if not conversation_messages:
             return ""
 
-        summary = self._summarize_messages_for_compaction(conversation_messages)
+        summary = self._summarize_messages_for_compaction(
+            conversation_messages, instructions=instructions
+        )
 
         # Reset conversation to system prompt only
         self.reset()
@@ -308,19 +314,27 @@ class BaseAgent(ABC):
 
         return max(1, total + 2)  # assistant priming overhead
 
-    def _summarize_messages_for_compaction(self, messages: list[dict[str, Any]]) -> str:
+    def _summarize_messages_for_compaction(
+        self, messages: list[dict[str, Any]], *, instructions: str | None = None
+    ) -> str:
         """Summarize messages for compaction with size-aware fallback."""
         self.log(
             f"Compaction requested: {len(messages)} messages "
             f"(last prompt tokens: {self.last_prompt_tokens})"
         )
-        return self._summarize_messages_recursive(messages, depth=0)
+        return self._summarize_messages_recursive(messages, depth=0, instructions=instructions)
 
-    def _summarize_messages_recursive(self, messages: list[dict[str, Any]], depth: int) -> str:
+    def _summarize_messages_recursive(
+        self,
+        messages: list[dict[str, Any]],
+        depth: int,
+        *,
+        instructions: str | None = None,
+    ) -> str:
         """Summarize messages, recursively splitting on retryable failures."""
         conversation_text = self._serialize_messages_for_compaction(messages)
         try:
-            return self._call_compaction_llm(conversation_text)
+            return self._call_compaction_llm(conversation_text, instructions=instructions)
         except RuntimeError as exc:
             if (
                 len(messages) <= 1
@@ -338,8 +352,12 @@ class BaseAgent(ABC):
                 "retrying with split conversation chunks."
             )
 
-            left_summary = self._summarize_messages_recursive(messages[:midpoint], depth + 1)
-            right_summary = self._summarize_messages_recursive(messages[midpoint:], depth + 1)
+            left_summary = self._summarize_messages_recursive(
+                messages[:midpoint], depth + 1, instructions=instructions
+            )
+            right_summary = self._summarize_messages_recursive(
+                messages[midpoint:], depth + 1, instructions=instructions
+            )
 
             merged_text = (
                 "Conversation chunk summaries:\n\n"
@@ -348,7 +366,7 @@ class BaseAgent(ABC):
             )
 
             try:
-                return self._call_compaction_llm(merged_text)
+                return self._call_compaction_llm(merged_text, instructions=instructions)
             except RuntimeError as merge_exc:
                 if (
                     depth >= self._COMPACTION_MAX_RECURSION_DEPTH
@@ -361,10 +379,16 @@ class BaseAgent(ABC):
                     return merged_summary
                 raise
 
-    def _call_compaction_llm(self, conversation_text: str) -> str:
+    def _call_compaction_llm(
+        self, conversation_text: str, *, instructions: str | None = None
+    ) -> str:
         """Call the LLM for compaction with tools disabled."""
+        prompt = self._COMPACTION_PROMPT
+        if instructions:
+            prompt += f"\n\nAdditional instructions:\n{instructions}"
+
         compaction_messages: list[dict[str, Any]] = [
-            {"role": "system", "content": self._COMPACTION_PROMPT},
+            {"role": "system", "content": prompt},
             {"role": "user", "content": conversation_text},
         ]
 

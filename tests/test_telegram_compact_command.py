@@ -46,7 +46,7 @@ class _CompactAgent:
     def context_utilization(self) -> float:
         return self.last_prompt_tokens / self.max_context_tokens
 
-    def compact_conversation(self) -> str:
+    def compact_conversation(self, instructions=None) -> str:
         self.compaction_calls += 1
         if self._summary:
             self.last_prompt_tokens = 3_200
@@ -85,6 +85,8 @@ def test_compact_command_reports_before_and_after_usage():
     assert "Conversation compacted." in reply
     assert "Before: 45,000/128,000 (35%)" in reply
     assert "After: 3,200/128,000 (2.5%)" in reply
+    assert "Summary:" in reply
+    assert "Compacted summary" in reply
 
 
 def test_compact_command_handles_empty_conversation():

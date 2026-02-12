@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Optional
 
 from flavia.config import Settings
+from flavia.tools.compact.compact_context import COMPACT_SENTINEL
 
 from .base import BaseAgent
 from .profile import AgentProfile
@@ -72,6 +73,7 @@ class RecursiveAgent(BaseAgent):
         """Run the agent with a user message."""
         self.compaction_warning_pending = False
         self.compaction_warning_prompt_tokens = 0
+        self._compaction_warning_injected = False
         if not continue_from_current:
             self.messages.append({"role": "user", "content": user_message})
 
@@ -115,6 +117,23 @@ class RecursiveAgent(BaseAgent):
                 return final_text
 
             tool_results, spawns = self._process_tool_calls_with_spawns(response.tool_calls)
+
+            # Inject context-window warning for the LLM to see on next iteration.
+            # Only injected once per run() and only when there are tool calls
+            # (i.e. the loop will continue), so the LLM can act on it.
+            if self.needs_compaction and not self._compaction_warning_injected:
+                self._compaction_warning_injected = True
+                pct = self.context_utilization * 100
+                remaining = self.max_context_tokens - self.last_prompt_tokens
+                warning = (
+                    f"[System notice] Context window is at {pct:.0f}% capacity "
+                    f"({self.last_prompt_tokens:,}/{self.max_context_tokens:,} tokens, "
+                    f"~{remaining:,} remaining). "
+                    "You have the compact_context tool available to summarize the "
+                    "conversation and free up space. Consider using it now, or wrap "
+                    "up your current task quickly."
+                )
+                self.messages.append({"role": "user", "content": warning})
 
             for tool_call, tool_result in zip(response.tool_calls, tool_results):
                 tool_name = getattr(getattr(tool_call, "function", None), "name", "")
@@ -201,6 +220,27 @@ class RecursiveAgent(BaseAgent):
                     )
                 )
                 result = "[Spawning predefined agent...]"
+
+            elif result.startswith(COMPACT_SENTINEL):
+                # Extract optional instructions from sentinel payload
+                instructions: str | None = None
+                if ":" in result:
+                    _, payload = result.split(":", 1)
+                    try:
+                        data = json.loads(payload)
+                        instructions = data.get("instructions")
+                    except (json.JSONDecodeError, AttributeError):
+                        pass
+
+                try:
+                    summary = self.compact_conversation(instructions=instructions)
+                    result = (
+                        f"Conversation compacted successfully. Summary:\n{summary}"
+                        if summary
+                        else "Nothing to compact (conversation is empty)."
+                    )
+                except Exception as exc:
+                    result = f"Compaction failed: {exc}"
 
             else:
                 # Apply generic size guard to non-spawn tool results
@@ -358,7 +398,8 @@ class RecursiveAgent(BaseAgent):
         """Spawn a dynamic sub-agent."""
         with self._child_counter_lock:
             self._child_counter += 1
-            child_id = f"{self.context.agent_id}.sub.{self._child_counter}"
+            child_number = self._child_counter
+            child_id = f"{self.context.agent_id}.sub.{child_number}"
 
         self.log(f"Spawning dynamic agent: {child_id}")
 
@@ -368,7 +409,7 @@ class RecursiveAgent(BaseAgent):
             base_dir=self.profile.base_dir,
             tools=tools or self.profile.tools,
             subagents={},
-            name=f"sub-{self._child_counter}",
+            name=f"sub-{child_number}",
             max_depth=self.profile.max_depth,
             compact_threshold=self.profile.compact_threshold,
             compact_threshold_source=self.profile.compact_threshold_source,

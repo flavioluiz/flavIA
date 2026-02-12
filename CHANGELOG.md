@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Context Compaction Tool (Task 8.5)**: New `compact_context` tool that allows agents to proactively compact their own context:
+  - Uses sentinel string pattern (`__COMPACT_CONTEXT__`) for agent loop integration
+  - Optional `instructions` parameter for customized compaction (e.g., "focus on technical decisions", "preserve all file paths")
+  - Entire compaction pipeline (`compact_conversation()` → `_summarize_messages_for_compaction()` → `_summarize_messages_recursive()` → `_call_compaction_llm()`) now accepts `instructions`
+  - Mid-execution context warning: injects a system notice when context usage crosses threshold during tool loops, informing the LLM it can use `compact_context`
+  - Warning injected only once per `run()` call via `_compaction_warning_injected` flag
+  - Compaction summary now consistently displayed after compaction in CLI (auto-compaction) and Telegram (`/compact` reply includes 500-char preview)
+  - 23 new tests covering schema, sentinel execution, detection, instructions, and warning injection
 - **LaTeX Compilation Tool (Task 6.1)**: New `compile_latex` tool in `tools/academic/` for compiling `.tex` files into PDFs:
   - Supports `pdflatex`, `xelatex`, `lualatex`, and `latexmk` compilers
   - Automatic multiple compilation passes (configurable, 1-5)
@@ -22,6 +30,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- **Parallel CLI status display compaction**:
+  - Per-agent recent activity window now defaults to 5 entries (was 8)
+  - Window shrinks automatically when many sub-agents are active (`3` when >3 agents, `2` when >5)
+  - Trimming is now applied after each frame's event batch, so limits adapt immediately as new agents appear
 - **Write confirmation callback compatibility hardening**:
   - `WriteConfirmation.confirm()` now resolves callback signature upfront instead of using retry-on-`TypeError` fallback
   - Prevents accidental double callback invocation when callbacks raise internal `TypeError`
@@ -120,6 +132,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **Sub-agent ID/profile consistency under concurrency**:
+  - `RecursiveAgent._spawn_dynamic()` now uses one locked counter snapshot for both `agent_id` and dynamic `profile.name`
+  - Prevents occasional mismatches between dynamic sub-agent labels during parallel spawning
 - **Tool result guard edge cases (Task 8.4)**:
   - Guard budget now accounts for cumulative size of multiple tool results in the same LLM turn (`BaseAgent` and `RecursiveAgent`)
   - `read_file` now validates `start_line` / `end_line` argument types and returns explicit errors for invalid values
