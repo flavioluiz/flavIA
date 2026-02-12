@@ -237,6 +237,22 @@ class TestCompactSentinelDetection:
         assert len(spawns) == 0
         assert len(results) == 1
 
+    def test_sentinel_from_non_compact_tool_does_not_trigger_compaction(self):
+        """Only compact_context tool output should trigger compaction sentinel handling."""
+        agent = _make_agent()
+        agent.messages.append({"role": "user", "content": "Hello"})
+
+        agent.compact_conversation = MagicMock(return_value="Summary.")
+        agent._notify_status = MagicMock()
+        agent._execute_tool = MagicMock(return_value=COMPACT_SENTINEL)
+
+        tool_call = _make_tool_call("call-1", "read_file", '{"path":"README.md"}')
+        results, spawns = agent._process_tool_calls_with_spawns([tool_call])
+
+        agent.compact_conversation.assert_not_called()
+        assert results[0]["content"] == COMPACT_SENTINEL
+        assert len(spawns) == 0
+
 
 # ---------------------------------------------------------------------------
 # compact_conversation() with instructions parameter

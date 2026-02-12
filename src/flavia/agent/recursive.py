@@ -195,7 +195,7 @@ class RecursiveAgent(BaseAgent):
             )
             result = self._execute_tool(name, args)
 
-            if result.startswith("__SPAWN_AGENT__:"):
+            if name == "spawn_agent" and result.startswith("__SPAWN_AGENT__:"):
                 spawn_info = self._parse_spawn_agent(result, args)
                 spawn_info["tool_call_id"] = tool_call.id
                 spawns.append(spawn_info)
@@ -208,7 +208,7 @@ class RecursiveAgent(BaseAgent):
                 )
                 result = "[Spawning sub-agent...]"
 
-            elif result.startswith("__SPAWN_PREDEFINED__:"):
+            elif name == "spawn_predefined_agent" and result.startswith("__SPAWN_PREDEFINED__:"):
                 spawn_info = self._parse_spawn_predefined(result, args)
                 spawn_info["tool_call_id"] = tool_call.id
                 spawns.append(spawn_info)
@@ -221,14 +221,16 @@ class RecursiveAgent(BaseAgent):
                 )
                 result = "[Spawning predefined agent...]"
 
-            elif result.startswith(COMPACT_SENTINEL):
+            elif name == "compact_context" and result.startswith(COMPACT_SENTINEL):
                 # Extract optional instructions from sentinel payload
                 instructions: str | None = None
                 if ":" in result:
                     _, payload = result.split(":", 1)
                     try:
                         data = json.loads(payload)
-                        instructions = data.get("instructions")
+                        candidate = data.get("instructions")
+                        if isinstance(candidate, str) and candidate.strip():
+                            instructions = candidate
                     except (json.JSONDecodeError, AttributeError):
                         pass
 

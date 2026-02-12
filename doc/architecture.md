@@ -102,7 +102,7 @@ When a spawn tool is called, it returns a special payload:
 
 - `__SPAWN_AGENT__:{json}` -- for dynamic agents
 - `__SPAWN_PREDEFINED__:{json}` -- for sub-agents from `agents.yaml`
-- `__COMPACT_CONTEXT__` (optionally with `:{instructions}`) -- for context compaction
+- `__COMPACT_CONTEXT__` (optionally with `:{"instructions":"..."}` JSON payload) -- for context compaction
 
 The `RecursiveAgent` intercepts these payloads, creates the sub-agent, and executes it in parallel when possible. For compaction sentinels, it calls `compact_conversation()` with the optional instructions.
 
