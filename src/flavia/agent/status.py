@@ -12,6 +12,7 @@ class StatusPhase(Enum):
     WAITING_LLM = "waiting_llm"
     EXECUTING_TOOL = "executing_tool"
     SPAWNING_AGENT = "spawning_agent"
+    AGENT_COMPLETED = "agent_completed"
 
 
 @dataclass
@@ -66,6 +67,22 @@ class ToolStatus:
             phase=StatusPhase.SPAWNING_AGENT,
             tool_name="spawn_agent",
             tool_display=f"Spawning {sanitize_terminal_text(agent_name)}",
+            agent_id=agent_id,
+            depth=depth,
+        )
+
+    @classmethod
+    def agent_completed(
+        cls,
+        result_summary: str,
+        agent_id: str = "main",
+        depth: int = 0,
+    ) -> "ToolStatus":
+        """Create a status indicating an agent has completed its work."""
+        return cls(
+            phase=StatusPhase.AGENT_COMPLETED,
+            tool_name="agent_completed",
+            tool_display=f"Done: {_truncate_text(result_summary, 80)}",
             agent_id=agent_id,
             depth=depth,
         )
@@ -232,11 +249,14 @@ def _format_execute_command(args: dict[str, Any]) -> str:
 
 def _format_spawn_agent(args: dict[str, Any]) -> str:
     task = args.get("task", "")
-    return f"Spawning agent: {_truncate_text(task, 30)}"
+    return f"Spawning agent: {_truncate_text(task, 60)}"
 
 
 def _format_spawn_predefined(args: dict[str, Any]) -> str:
     agent_name = args.get("agent_name", "agent")
+    task = args.get("task", "")
+    if task:
+        return f"Spawning {sanitize_terminal_text(agent_name)}: {_truncate_text(task, 50)}"
     return f"Spawning {sanitize_terminal_text(agent_name)}"
 
 

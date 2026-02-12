@@ -648,3 +648,148 @@ def test_run_status_animation_keeps_child_visible_when_child_event_arrives_first
     output = buf.getvalue()
     assert "Spawning agent:" in output
     assert "Child task" in output
+
+
+def test_agent_label_shows_full_hierarchical_path():
+    """Nested agent labels should show the full hierarchical path, not just the last segment."""
+    # sub-1.sub-2 should NOT be truncated to just sub-2
+    assert _agent_label_from_id("main.sub.1.sub.2") == "sub-1.sub-2"
+    assert _agent_label_from_id("main.sub.1.sub.2.sub.3") == "sub-1.sub-2.sub-3"
+    assert _agent_label_from_id("main.summarizer.1.sub.1") == "summarizer.sub-1"
+
+
+def test_run_status_animation_shows_full_label_for_nested_agents():
+    """Nested agents in the tree should display their full hierarchical label."""
+
+    class _StopAfterFirstWait:
+        def __init__(self):
+            self._stopped = False
+
+        def is_set(self):
+            return self._stopped
+
+        def wait(self, _timeout):
+            self._stopped = True
+            return True
+
+    events = [
+        ToolStatus(
+            phase=StatusPhase.EXECUTING_TOOL,
+            tool_name="spawn_agent",
+            tool_display="Spawning agent: launch sub",
+            agent_id="main",
+            depth=0,
+        ),
+        ToolStatus(
+            phase=StatusPhase.EXECUTING_TOOL,
+            tool_name="spawn_agent",
+            tool_display="Spawning agent: go deeper",
+            agent_id="main.sub.1",
+            depth=1,
+        ),
+        ToolStatus(
+            phase=StatusPhase.EXECUTING_TOOL,
+            tool_name="read_file",
+            tool_display="Reading data.csv",
+            agent_id="main.sub.1.sub.1",
+            depth=2,
+        ),
+    ]
+
+    status_holder = [events[-1]]
+    status_events = deque(events, maxlen=MAX_STATUS_EVENTS)
+    status_lock = threading.Lock()
+    stop_event = _StopAfterFirstWait()
+
+    buf = StringIO()
+    test_console = Console(file=buf, no_color=True, width=200, force_terminal=True)
+
+    import flavia.interfaces.cli_interface as cli_mod
+
+    original_console = cli_mod.console
+    cli_mod.console = test_console
+    try:
+        _run_status_animation(
+            stop_event=stop_event,
+            model_ref="test-model",
+            status_holder=status_holder,
+            status_events=status_events,
+            status_lock=status_lock,
+            verbose=False,
+        )
+    finally:
+        cli_mod.console = original_console
+
+    output = buf.getvalue()
+    # The sub-1 agent should show full label "sub-1:"
+    assert "sub-1:" in output
+    # The sub-1.sub-1 (grandchild) should show full path "sub-1.sub-1:"
+    # NOT just "sub-1:" (which would be ambiguous with the parent)
+    # The _agent_label_from_id for "main.sub.1.sub.1" returns "sub-1.sub-1"
+    assert "sub-1.sub-1:" in output
+
+
+def test_run_status_animation_shows_agent_completed():
+    """Agent completion events should appear with the Done: prefix."""
+
+    class _StopAfterFirstWait:
+        def __init__(self):
+            self._stopped = False
+
+        def is_set(self):
+            return self._stopped
+
+        def wait(self, _timeout):
+            self._stopped = True
+            return True
+
+    events = [
+        ToolStatus(
+            phase=StatusPhase.EXECUTING_TOOL,
+            tool_name="spawn_agent",
+            tool_display="Spawning agent: do work",
+            agent_id="main",
+            depth=0,
+        ),
+        ToolStatus(
+            phase=StatusPhase.EXECUTING_TOOL,
+            tool_name="read_file",
+            tool_display="Reading config.yaml",
+            agent_id="main.sub.1",
+            depth=1,
+        ),
+        ToolStatus(
+            phase=StatusPhase.AGENT_COMPLETED,
+            tool_name="agent_completed",
+            tool_display="Done: task finished successfully",
+            agent_id="main.sub.1",
+            depth=1,
+        ),
+    ]
+
+    status_holder = [events[-1]]
+    status_events = deque(events, maxlen=MAX_STATUS_EVENTS)
+    status_lock = threading.Lock()
+    stop_event = _StopAfterFirstWait()
+
+    buf = StringIO()
+    test_console = Console(file=buf, no_color=True, width=200, force_terminal=True)
+
+    import flavia.interfaces.cli_interface as cli_mod
+
+    original_console = cli_mod.console
+    cli_mod.console = test_console
+    try:
+        _run_status_animation(
+            stop_event=stop_event,
+            model_ref="test-model",
+            status_holder=status_holder,
+            status_events=status_events,
+            status_lock=status_lock,
+            verbose=False,
+        )
+    finally:
+        cli_mod.console = original_console
+
+    output = buf.getvalue()
+    assert "Done: task finished successfully" in output

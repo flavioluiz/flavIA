@@ -824,10 +824,6 @@ def _render_agent_branch(
     """Recursively render an agent and its children as nested branches."""
     label = _agent_label_from_id(agent_id)
 
-    # For nested agents, show just the last part of the label
-    if "." in label:
-        label = label.split(".")[-1]
-
     branch = parent_branch.add(f"[bold blue]{label}:[/bold blue]")
 
     omitted_count = state.agent_omitted_count.get(agent_id, 0)
@@ -850,13 +846,17 @@ def _render_agent_branch(
         is_last_task = i == len(tasks) - 1
         is_interrupted_agent = agent_id == state.current_agent_id
         is_spawn_task = "Spawning" in task
+        is_completed = task.startswith("__COMPLETED__")
+        display_task = task[len("__COMPLETED__") :] if is_completed else task
 
-        if interrupted and is_last_task and is_interrupted_agent and state.current_task:
-            branch.add(f"[yellow]{task} (interrupted)[/yellow]")
+        if is_completed:
+            branch.add(f"[dim cyan]{display_task} [green]\\u2713[/green][/dim cyan]")
+        elif interrupted and is_last_task and is_interrupted_agent and state.current_task:
+            branch.add(f"[yellow]{display_task} (interrupted)[/yellow]")
         elif interrupted:
-            branch.add(f"[green]{task}[/green] [dim]✓[/dim]")
+            branch.add(f"[green]{display_task}[/green] [dim]✓[/dim]")
         else:
-            branch.add(f"[green]{task}[/green]")
+            branch.add(f"[green]{display_task}[/green]")
 
         # If this is a spawn task and we have a pending child, render it nested
         if is_spawn_task and current_child:
@@ -964,9 +964,6 @@ def _run_status_animation(
     def _render_agent_live(agent_id: str, parent_branch: Tree) -> None:
         """Recursively render an agent and its children as nested branches."""
         label = _agent_label_from_id(agent_id)
-        # For nested agents, show just the last part of the label
-        if "." in label:
-            label = label.split(".")[-1]
 
         branch = parent_branch.add(f"[bold blue]{label}:[/bold blue]")
 
@@ -987,7 +984,12 @@ def _run_status_animation(
 
         for task in tasks:
             is_spawn_task = "Spawning" in task
-            branch.add(f"[green]{task}[/green]")
+            is_completed = task.startswith("__COMPLETED__")
+            display_task = task[len("__COMPLETED__") :] if is_completed else task
+            if is_completed:
+                branch.add(f"[dim cyan]{display_task} [green]\\u2713[/green][/dim cyan]")
+            else:
+                branch.add(f"[green]{display_task}[/green]")
 
             # If this is a spawn task and we have a pending child, render it nested
             if is_spawn_task and current_child:
@@ -1029,7 +1031,11 @@ def _run_status_animation(
 
         # Process pending events
         for event in pending_events:
-            if event.phase not in (StatusPhase.EXECUTING_TOOL, StatusPhase.SPAWNING_AGENT):
+            if event.phase not in (
+                StatusPhase.EXECUTING_TOOL,
+                StatusPhase.SPAWNING_AGENT,
+                StatusPhase.AGENT_COMPLETED,
+            ):
                 continue
 
             agent_id = event.agent_id
@@ -1047,6 +1053,9 @@ def _run_status_animation(
                         agent_children[parent].append(agent_id)
 
             task_line = _build_agent_activity_line(event, step, model_ref, verbose).strip()
+            # Mark completion events so the renderer can style them differently
+            if event.phase == StatusPhase.AGENT_COMPLETED:
+                task_line = f"__COMPLETED__{task_line}"
             tasks = agent_tasks[agent_id]
             tasks.append(task_line)
 

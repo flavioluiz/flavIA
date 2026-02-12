@@ -424,6 +424,13 @@ class RecursiveAgent(BaseAgent):
 
         try:
             result = child.run(task)
+            self._notify_status(
+                ToolStatus.agent_completed(
+                    result[:200] if result else "",
+                    child_id,
+                    self.context.current_depth + 1,
+                )
+            )
             return f"[{agent_name}]: {result}"
         except Exception as e:
             return f"Error in {agent_name}: {e}"
@@ -467,6 +474,13 @@ class RecursiveAgent(BaseAgent):
 
         try:
             result = child.run(task)
+            self._notify_status(
+                ToolStatus.agent_completed(
+                    result[:200] if result else "",
+                    child_id,
+                    self.context.current_depth + 1,
+                )
+            )
             return f"[sub-agent]: {result}"
         except Exception as e:
             return f"Error in sub-agent: {e}"
