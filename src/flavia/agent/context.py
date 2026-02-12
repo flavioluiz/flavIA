@@ -29,6 +29,8 @@ class AgentContext:
     permissions: AgentPermissions = field(default_factory=lambda: AgentPermissions())
     write_confirmation: Optional["WriteConfirmation"] = None
     dry_run: bool = False
+    max_context_tokens: int = 128_000
+    current_context_tokens: int = 0
 
     @classmethod
     def from_profile(

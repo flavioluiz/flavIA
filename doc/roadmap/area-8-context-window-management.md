@@ -125,4 +125,90 @@ Add a `/compact` slash command available in both CLI and Telegram that allows th
 
 ---
 
+### Task 8.4 -- Tool Result Size Protection ✅
+
+**Difficulty**: Medium | **Dependencies**: Task 8.1 | **Status**: Done
+
+Prevent large tool results from exceeding the context window by implementing proactive size guards at both the tool-level and result-level. Previously, tools like `read_file` would load entire files (e.g., a 500KB Markdown file = ~125K tokens) directly into the conversation, causing `Context limit exceeded` errors.
+
+**Four-layer protection system**:
+
+**Layer 1 — Tool-level size guard in `read_file`** (`src/flavia/tools/read/read_file.py`):
+- Before reading, checks `stat().st_size` and estimates token count via `bytes / 4`
+- Compares estimated tokens against a dynamic budget (see Layer 4)
+- If file exceeds budget:
+  - Returns preview of first ~50 lines instead of full content
+  - Provides metadata: file size (KB/MB), total lines, estimated tokens, % of context window
+  - Shows instructions for partial reads using `start_line`/`end_line` parameters
+- Added optional `start_line` and `end_line` parameters to the tool schema for partial file reading
+- Partial reads are also size-checked; results exceeding budget are truncated with warning
+
+**Layer 2 — Context awareness exposure** (`src/flavia/agent/context.py` + `base.py`):
+- `AgentContext` now exposes:
+  - `max_context_tokens: int = 128_000` — total context window size
+  - `current_context_tokens: int = 0` — actual tokens used in last LLM call
+- `BaseAgent._update_token_usage()` propagates `last_prompt_tokens` to `context.current_context_tokens` after each LLM call
+- Any tool can inspect current context usage via `agent_context.current_context_tokens`
+
+**Layer 3 — Generic tool result guard** (`src/flavia/agent/base.py` + `recursive.py`):
+- New `BaseAgent._guard_tool_result(result: str) -> str` method:
+  - Estimates token count of any tool output
+  - Truncates if it would consume more than 25% of context window
+  - Shows head (500 chars) + tail (500 chars) with explanatory message
+- Applied in both `_process_tool_calls()` (BaseAgent) and `_process_tool_calls_with_spawns()` (RecursiveAgent)
+- Acts as a safety net for *all* tools, not just `read_file`
+- Spawn results (`__SPAWN_AGENT__:*` and `__SPAWN_PREDEFINED__:*`) bypass truncation
+
+**Layer 4 — Dynamic context budget** (`src/flavia/tools/read/read_file.py`):
+- Budget shrinks as conversation fills: `budget = min(25% of total, 50% of remaining)`
+- In practice:
+  - Empty context (0%): 25 of 100K tokens allowed per result
+  - Half-full (50%): 25 of 100K (absolute cap)
+  - Near-full (90%): 5 of 100K (dynamic cap dominates)
+  - Almost-full (95%): 2.5 of 100K
+- Prevents large reads when context is already close to the limit
+
+**User-facing changes**:
+- Large file reads now return structured messages instead of raw content:
+  ```
+  ⚠ FILE TOO LARGE FOR FULL READ
+
+  File: big_report.md
+  Size: 2.4 MB (~620,000 tokens)
+  Total lines: 15,000
+  Would occupy: 484.4% of context window
+  Current context usage: 25.0%
+  Budget for this read: ~25,600 tokens
+
+  --- Preview (lines 1-50) ---
+  [first 50 lines shown]
+  --- End of preview ---
+
+  To read this file, use partial reads:
+    - read_file(path="big_report.md", start_line=1, end_line=500)
+    - read_file(path="big_report.md", start_line=501, end_line=1000)
+    - ...and so on in chunks of ~500 lines
+
+  Or delegate to a sub-agent that can process the file in its own context window.
+  ```
+
+**Key files to modify**:
+- `src/flavia/tools/read/read_file.py` — size guard, preview, partial reads, dynamic budget
+- `src/flavia/agent/context.py` — added `max_context_tokens`, `current_context_tokens` fields
+- `src/flavia/agent/base.py` — propagate tokens to context, add `_guard_tool_result()` method
+- `src/flavia/agent/recursive.py` — apply guard to non-spawn tool results
+- `tests/test_read_file_size_guard.py` — comprehensive test coverage for all 4 layers
+
+**Testing**:
+- Unit tests for token estimation and budget computation
+- Integration tests for small files (normal reads pass through)
+- Integration tests for large files (blocked with preview)
+- Integration tests for partial reads (start_line/end_line)
+- Integration tests for dynamic budget shrinks with context usage
+- Test coverage for generic guard truncating arbitrary tool outputs
+
+**New dependencies**: None.
+
+---
+
 **[← Back to Roadmap](../roadmap.md)**

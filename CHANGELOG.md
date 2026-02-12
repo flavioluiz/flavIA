@@ -33,6 +33,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Tool result size protection (Task 8.4)**: Four-layer protection system preventing large file reads and tool outputs from exceeding context window:
+  - **Layer 1 (tool-level)**: `read_file` now checks file size before reading; large files return preview (50 lines) + metadata + instructions for partial reads
+  - **Layer 2 (context awareness)**: `AgentContext` exposes `max_context_tokens` and `current_context_tokens`; tools can see current usage
+  - **Layer 3 (result guard)**: `BaseAgent._guard_tool_result()` truncates any tool output exceeding 25% of context window
+  - **Layer 4 (dynamic budget)**: Budget shrinks as conversation fills: `min(25% of total, 50% of remaining)`
+  - New `start_line` / `end_line` parameters on `read_file` for partial file reading
+  - Prevents "Context limit exceeded" errors when reading large files (e.g., 500KB Markdown files)
+  - See `doc/roadmap/area-8-context-window-management.md` Task 8.4 for details
 - **Write operation previews + dry-run mode (Task 5.2)**:
   - New `OperationPreview` model and preview helpers in `src/flavia/tools/write/preview.py`
   - CLI write confirmations now show rich previews before approval:

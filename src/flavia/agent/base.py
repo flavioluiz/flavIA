@@ -59,6 +59,7 @@ class BaseAgent(ABC):
         self.compaction_warning_pending: bool = False
         self.compaction_warning_prompt_tokens: int = 0
         self.max_context_tokens: int = self._resolve_max_context_tokens()
+        self.context.max_context_tokens = self.max_context_tokens
 
         # Status callback for real-time tool status updates
         self.status_callback: Optional[StatusCallback] = None
@@ -138,9 +139,7 @@ class BaseAgent(ABC):
         if provider_threshold is not None:
             return provider_threshold, "provider"
 
-        settings_configured = bool(
-            getattr(self.settings, "compact_threshold_configured", False)
-        )
+        settings_configured = bool(getattr(self.settings, "compact_threshold_configured", False))
         settings_threshold = self._parse_compact_threshold(
             getattr(self.settings, "compact_threshold", 0.9)
         )
@@ -317,9 +316,7 @@ class BaseAgent(ABC):
         )
         return self._summarize_messages_recursive(messages, depth=0)
 
-    def _summarize_messages_recursive(
-        self, messages: list[dict[str, Any]], depth: int
-    ) -> str:
+    def _summarize_messages_recursive(self, messages: list[dict[str, Any]], depth: int) -> str:
         """Summarize messages, recursively splitting on retryable failures."""
         conversation_text = self._serialize_messages_for_compaction(messages)
         try:
@@ -486,6 +483,11 @@ class BaseAgent(ABC):
         self.last_completion_tokens = _coerce_token_count(completion_tokens)
         self.total_prompt_tokens += self.last_prompt_tokens
         self.total_completion_tokens += self.last_completion_tokens
+        # Keep context aware of current utilization so tools can make
+        # budget-aware decisions (e.g. refusing to read oversized files).
+        ctx = getattr(self, "context", None)
+        if ctx is not None:
+            ctx.current_context_tokens = self.last_prompt_tokens
 
     def _call_llm(self, messages: list[dict[str, Any]]) -> Any:
         """Call the LLM with messages."""
@@ -562,6 +564,43 @@ class BaseAgent(ABC):
         """Execute a tool by name."""
         return registry.execute(name, args, self.context)
 
+    # ------------------------------------------------------------------
+    # Camada 3: Generic tool-result size guard
+    # ------------------------------------------------------------------
+    _GUARD_CHARS_PER_TOKEN = 4
+    _GUARD_MAX_CONTEXT_FRACTION = 0.25
+    _GUARD_REMAINING_FRACTION = 0.50
+    _GUARD_KEEP_EDGE_CHARS = 500  # chars kept at start/end on truncation
+
+    def _guard_tool_result(self, result: str) -> str:
+        """Truncate a tool result if it would consume too much context.
+
+        This acts as a safety net for *all* tools, not just ``read_file``.
+        """
+        max_ctx = getattr(self, "max_context_tokens", 128_000)
+        current = getattr(self, "last_prompt_tokens", 0)
+        remaining = max(0, max_ctx - current)
+
+        absolute_cap = int(max_ctx * self._GUARD_MAX_CONTEXT_FRACTION)
+        dynamic_cap = int(remaining * self._GUARD_REMAINING_FRACTION)
+        budget_tokens = max(1, min(absolute_cap, dynamic_cap))
+        budget_chars = budget_tokens * self._GUARD_CHARS_PER_TOKEN
+
+        if len(result) <= budget_chars:
+            return result
+
+        estimated_tokens = max(1, len(result) // self._GUARD_CHARS_PER_TOKEN)
+        edge = self._GUARD_KEEP_EDGE_CHARS
+        head = result[:edge]
+        tail = result[-edge:]
+        return (
+            f"[TOOL RESULT TRUNCATED: ~{estimated_tokens:,} tokens estimated, "
+            f"budget is ~{budget_tokens:,} tokens ({self._GUARD_MAX_CONTEXT_FRACTION:.0%} of "
+            f"context window). Showing first and last {edge} chars. "
+            f"Consider using partial reads (start_line/end_line) or a sub-agent.]\n\n"
+            f"--- Start ---\n{head}\n--- ... ---\n{tail}\n--- End ---"
+        )
+
     def _process_tool_calls(self, tool_calls: list[Any]) -> list[dict[str, Any]]:
         """Process tool calls from LLM response."""
         results = []
@@ -578,6 +617,7 @@ class BaseAgent(ABC):
 
             result = self._execute_tool(name, args)
             result = self._handle_spawn_result(result, name, args)
+            result = self._guard_tool_result(result)
 
             results.append(
                 {

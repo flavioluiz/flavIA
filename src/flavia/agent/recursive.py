@@ -66,16 +66,12 @@ class RecursiveAgent(BaseAgent):
 
             if not response.tool_calls:
                 fallback = (
-                    "I could not produce a textual response. "
-                    "Please try rephrasing your question."
+                    "I could not produce a textual response. Please try rephrasing your question."
                 )
                 final_text = response.content or fallback
                 if had_write_tool_call and not had_successful_write and write_failures:
                     details = "\n".join(f"- {item}" for item in write_failures[-3:])
-                    final_text += (
-                        "\n\nWrite operations were not applied due to errors:\n"
-                        f"{details}"
-                    )
+                    final_text += f"\n\nWrite operations were not applied due to errors:\n{details}"
                 return final_text
 
             tool_results, spawns = self._process_tool_calls_with_spawns(response.tool_calls)
@@ -116,8 +112,7 @@ class RecursiveAgent(BaseAgent):
         return lowered.startswith("error:") or lowered.startswith("operation cancelled")
 
     def _process_tool_calls_with_spawns(
-        self,
-        tool_calls: list[Any]
+        self, tool_calls: list[Any]
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """Process tool calls and identify spawn requests."""
         results = []
@@ -166,11 +161,17 @@ class RecursiveAgent(BaseAgent):
                 )
                 result = "[Spawning predefined agent...]"
 
-            results.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": result,
-            })
+            else:
+                # Apply generic size guard to non-spawn tool results
+                result = self._guard_tool_result(result)
+
+            results.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": result,
+                }
+            )
 
         return results, spawns
 
@@ -256,10 +257,12 @@ class RecursiveAgent(BaseAgent):
                 except Exception as e:
                     result = f"Error in sub-agent: {e}"
 
-                results.append({
-                    "tool_call_id": tool_call_id,
-                    "content": result,
-                })
+                results.append(
+                    {
+                        "tool_call_id": tool_call_id,
+                        "content": result,
+                    }
+                )
 
         return results
 
