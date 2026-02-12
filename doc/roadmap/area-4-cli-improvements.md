@@ -419,4 +419,61 @@ This task expands `questionary` adoption across all interactive CLI prompts, mak
 
 ---
 
+### Task 4.9 -- Configurable LLM API Timeout Management
+
+**Difficulty**: Medium | **Dependencies**: None
+
+Add a configurable timeout system for LLM API calls to allow runtime adjustment of timeout values and better handle different provider requirements:
+
+**Requirements**:
+
+1. **CLI flag for timeout configuration**:
+   - Add `--api-timeout <seconds>` flag to set the API request timeout (default: 600s)
+   - Add `--connect-timeout <seconds>` flag to set the connection timeout (default: 10s)
+   - Timeouts should apply to both the main OpenAI client and the fallback httpx.Client
+
+2. **Configuration file support**:
+   - Allow timeout values to be set in `.flavia/config.yaml`:
+     ```yaml
+     timeouts:
+       api: 600
+       connect: 10
+     ```
+
+3. **Provider-level overrides** (optional enhancement):
+   - Allow per-provider timeout overrides in `providers.yaml`:
+     ```yaml
+     providers:
+       synthetic:
+         api_base_url: "https://api.synthetic.new/openai/v1"
+         timeout: 300  # override for this specific provider
+         connect_timeout: 5
+     ```
+
+4. **Better timeout UX**:
+   - Show current timeout values in `/config` output
+   - Add `/timeout show` and `/timeout set <seconds>` slash commands for runtime adjustments
+   - Provide helpful error messages suggesting timeout adjustments when timeouts occur
+
+5. **Graceful timeout handling**:
+   - Ensure timeout exceptions don't leave the agent in an inconsistent state
+   - Allow retry mechanism with increased timeout on explicit user request
+   - Consider exponential backoff for transient network issues
+
+**Rationale**:
+- Current hardcoded 600s timeout may be insufficient for very long LLM generations on slow connections
+- Different providers and models have varying response times
+- Some academic workflows (e.g., multi-tool chains, long reasoning models) may benefit from longer timeouts
+- Configurable timeouts give users control for their specific network conditions and model choices
+
+**Key files to modify**:
+- `src/flavia/agent/base.py` -- accept timeout parameters from settings
+- `src/flavia/config/settings.py` -- add timeout configuration fields
+- `src/flavia/config/loader.py` -- load timeout values from config.yaml
+- `src/flavia/interfaces/cli_interface.py` -- add timeout slash commands and flags
+- `src/flavia/cli.py` -- add `--api-timeout` and `--connect-timeout` flags
+- `doc/usage.md` -- document timeout configuration
+
+---
+
 **[← Back to Roadmap](../roadmap.md)**
