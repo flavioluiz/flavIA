@@ -1,5 +1,6 @@
 """Tests for spawn tool payload protocol."""
 
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -97,6 +98,7 @@ def test_spawn_dynamic_inherits_parent_permissions(monkeypatch, tmp_path):
 
     agent = RecursiveAgent.__new__(RecursiveAgent)
     agent._child_counter = 0
+    agent._child_counter_lock = threading.Lock()
     agent.profile = parent_profile
     agent.context = AgentContext(agent_id="main", current_depth=0, max_depth=3, base_dir=tmp_path)
     agent.settings = object()

@@ -661,7 +661,9 @@ def _display_operation_preview(preview: OperationPreview) -> None:
 
     # Display content preview for write/append operations
     elif preview.content_preview:
-        console.print(f"\n[dim]Content ({preview.content_lines} lines, {preview.content_bytes} bytes):[/dim]")
+        console.print(
+            f"\n[dim]Content ({preview.content_lines} lines, {preview.content_bytes} bytes):[/dim]"
+        )
         # Truncate display if too long
         lines = preview.content_preview.split("\n")
         if len(lines) > 15:
@@ -737,6 +739,7 @@ def _run_status_animation(
         status_lock: Lock protecting shared status structures.
         verbose: Whether to show detailed tool arguments.
     """
+
     def _render_status_block(lines: list[str], previous_line_count: int) -> int:
         """Render a multi-line status block, rewriting the previous frame in place."""
         output = console.file
@@ -763,7 +766,7 @@ def _run_status_animation(
     agent_order: list[str] = []
     agent_tasks: dict[str, list[str]] = {}
     agent_omitted_count: dict[str, int] = {}
-    max_tasks_per_agent = 8
+    base_max_tasks = 5
 
     while not stop_event.is_set():
         # Pause status rendering while a write-confirmation prompt is active,
@@ -789,9 +792,25 @@ def _run_status_animation(
             task_line = _build_agent_activity_line(event, step, model_ref, verbose).strip()
             tasks = agent_tasks[event.agent_id]
             tasks.append(task_line)
+
+        # Dynamically limit tasks per agent based on agent count to keep
+        # the status block compact.  With many parallel sub-agents the
+        # display grows quickly; reduce the per-agent budget so it stays
+        # readable.
+        num_agents = len(agent_order)
+        if num_agents > 5:
+            max_tasks_per_agent = 2
+        elif num_agents > 3:
+            max_tasks_per_agent = 3
+        else:
+            max_tasks_per_agent = base_max_tasks
+
+        # Trim each agent's task list to the dynamic limit.
+        for agent_id in agent_order:
+            tasks = agent_tasks.get(agent_id, [])
             if len(tasks) > max_tasks_per_agent:
                 removed = len(tasks) - max_tasks_per_agent
-                agent_omitted_count[event.agent_id] += removed
+                agent_omitted_count[agent_id] = agent_omitted_count.get(agent_id, 0) + removed
                 del tasks[0:removed]
 
         tool_active = bool(
@@ -803,7 +822,9 @@ def _run_status_animation(
             footer_line = _build_loading_line("Working", step, model_ref, include_prefix=False)
             footer_line = _colorize_status(footer_line, _ANSI_DIM)
         else:
-            footer_line = _build_loading_line(fallback_message, step, model_ref, include_prefix=False)
+            footer_line = _build_loading_line(
+                fallback_message, step, model_ref, include_prefix=False
+            )
             footer_line = _colorize_status(footer_line, _ANSI_DIM)
 
         lines: list[str] = [

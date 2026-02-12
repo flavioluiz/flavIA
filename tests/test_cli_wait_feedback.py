@@ -269,8 +269,87 @@ def test_run_status_animation_shows_ellipsis_when_agent_history_is_truncated():
 
     output = buf.getvalue()
     assert "sub-1:" in output
-    assert "  ... (2 previous)" in output
+    # With base_max_tasks=5 and 1 agent, 10 events => 5 omitted
+    assert "  ... (5 previous)" in output
     assert "Task 0" not in output
-    assert "Task 1" not in output
-    assert "Task 2" in output
+    assert "Task 4" not in output
+    assert "Task 5" in output
     assert "Task 9" in output
+
+
+def test_run_status_animation_reduces_tasks_with_many_agents():
+    """When many sub-agents run in parallel, the per-agent task limit decreases."""
+
+    class _StopAfterFirstWait:
+        def __init__(self):
+            self._stopped = False
+
+        def is_set(self):
+            return self._stopped
+
+        def wait(self, _timeout):
+            self._stopped = True
+            return True
+
+    # 6 sub-agents, each with 5 tasks => limit drops to 2 per agent
+    events = []
+    for agent_idx in range(1, 7):
+        for task_idx in range(5):
+            events.append(
+                ToolStatus(
+                    phase=StatusPhase.EXECUTING_TOOL,
+                    tool_name="list_files",
+                    tool_display=f"Agent{agent_idx}-Task{task_idx}",
+                    agent_id=f"main.sub.{agent_idx}",
+                    depth=1,
+                )
+            )
+
+    status_holder = [events[-1]]
+    status_events = events
+    status_lock = threading.Lock()
+    stop_event = _StopAfterFirstWait()
+
+    buf = StringIO()
+    test_console = Console(file=buf, no_color=True, width=200)
+
+    import flavia.interfaces.cli_interface as cli_mod
+
+    original_console = cli_mod.console
+    cli_mod.console = test_console
+    try:
+        _run_status_animation(
+            stop_event=stop_event,
+            model_ref="",
+            status_holder=status_holder,
+            status_events=status_events,
+            status_lock=status_lock,
+            verbose=False,
+        )
+    finally:
+        cli_mod.console = original_console
+
+    output = buf.getvalue()
+    # All 6 agents should appear
+    for i in range(1, 7):
+        assert f"sub-{i}:" in output
+    # With 6 agents (>5), max_tasks_per_agent=2; 5 tasks - 2 kept = 3 omitted
+    assert "  ... (3 previous)" in output
+    # Only the last 2 tasks per agent should remain
+    assert "Agent1-Task0" not in output
+    assert "Agent1-Task3" in output
+    assert "Agent1-Task4" in output
+
+
+def test_child_counter_thread_safety():
+    """Verify that _child_counter_lock is defined in RecursiveAgent.__init__."""
+    import threading as _threading
+
+    from flavia.agent.recursive import RecursiveAgent
+
+    # Inspect the source to confirm the lock is initialized alongside the counter.
+    import inspect
+
+    source = inspect.getsource(RecursiveAgent.__init__)
+    assert "_child_counter_lock" in source
+    assert "threading.Lock()" in source

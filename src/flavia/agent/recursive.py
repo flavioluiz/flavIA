@@ -2,6 +2,7 @@
 
 import json
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Optional
 
@@ -37,6 +38,7 @@ class RecursiveAgent(BaseAgent):
     ):
         super().__init__(settings, profile, agent_id, depth, parent_id)
         self._child_counter = 0
+        self._child_counter_lock = threading.Lock()
         self._active_children: dict[str, "RecursiveAgent"] = {}
 
     @classmethod
@@ -74,7 +76,9 @@ class RecursiveAgent(BaseAgent):
             self.messages.append({"role": "user", "content": user_message})
 
         try:
-            iteration_limit = int(max_iterations) if max_iterations is not None else self.MAX_ITERATIONS
+            iteration_limit = (
+                int(max_iterations) if max_iterations is not None else self.MAX_ITERATIONS
+            )
         except (TypeError, ValueError):
             iteration_limit = self.MAX_ITERATIONS
         iteration_limit = max(1, iteration_limit)
@@ -323,8 +327,9 @@ class RecursiveAgent(BaseAgent):
         if not subagent_profile:
             return f"Error: Unknown predefined agent '{agent_name}'"
 
-        self._child_counter += 1
-        child_id = f"{self.context.agent_id}.{agent_name}.{self._child_counter}"
+        with self._child_counter_lock:
+            self._child_counter += 1
+            child_id = f"{self.context.agent_id}.{agent_name}.{self._child_counter}"
 
         self.log(f"Spawning predefined agent: {agent_name} as {child_id}")
 
@@ -351,8 +356,9 @@ class RecursiveAgent(BaseAgent):
         tools: Optional[list[str]] = None,
     ) -> str:
         """Spawn a dynamic sub-agent."""
-        self._child_counter += 1
-        child_id = f"{self.context.agent_id}.sub.{self._child_counter}"
+        with self._child_counter_lock:
+            self._child_counter += 1
+            child_id = f"{self.context.agent_id}.sub.{self._child_counter}"
 
         self.log(f"Spawning dynamic agent: {child_id}")
 
