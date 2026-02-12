@@ -743,9 +743,10 @@ def _run_status_animation(
     def _render_status_block(lines: list[str], previous_line_count: int) -> int:
         """Render a multi-line status block, rewriting the previous frame in place."""
         output = console.file
-        if previous_line_count > 0:
-            # Move to start of previous frame before repainting.
-            output.write(f"\033[{previous_line_count}F")
+        if previous_line_count > 1:
+            # Cursor is on the last rendered line. To return to the first line of
+            # the previous frame we need to move up (line_count - 1) lines.
+            output.write(f"\033[{previous_line_count - 1}F")
 
         total_lines = max(previous_line_count, len(lines))
         for index in range(total_lines):

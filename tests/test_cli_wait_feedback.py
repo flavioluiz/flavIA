@@ -339,3 +339,85 @@ def test_run_status_animation_reduces_tasks_with_many_agents():
     assert "Agent1-Task0" not in output
     assert "Agent1-Task3" in output
     assert "Agent1-Task4" in output
+
+
+def test_run_status_animation_uses_previous_frame_height_after_shrink():
+    """Regression: keep cursor rewind height after rendering a shorter frame."""
+
+    class _StopAfterThreeFrames:
+        def __init__(self, status_events, second_frame_events):
+            self._stopped = False
+            self._wait_count = 0
+            self._status_events = status_events
+            self._second_frame_events = second_frame_events
+
+        def is_set(self):
+            return self._stopped
+
+        def wait(self, _timeout):
+            self._wait_count += 1
+            if self._wait_count == 1:
+                # Feed frame 2 with one extra agent so max_tasks_per_agent drops
+                # and the rendered block becomes shorter than frame 1.
+                self._status_events.extend(self._second_frame_events)
+                return False
+            if self._wait_count == 2:
+                # Frame 3 re-renders without new events.
+                return False
+            self._stopped = True
+            return True
+
+    # Frame 1: 3 agents with many tasks => each agent has ellipsis + 5 tasks.
+    first_frame_events = []
+    for agent_idx in range(1, 4):
+        for task_idx in range(10):
+            first_frame_events.append(
+                ToolStatus(
+                    phase=StatusPhase.EXECUTING_TOOL,
+                    tool_name="list_files",
+                    tool_display=f"A{agent_idx}-T{task_idx}",
+                    agent_id=f"main.sub.{agent_idx}",
+                    depth=1,
+                )
+            )
+
+    # Frame 2: add one new agent; limit drops from 5 to 3 and frame shrinks.
+    second_frame_events = [
+        ToolStatus(
+            phase=StatusPhase.EXECUTING_TOOL,
+            tool_name="list_files",
+            tool_display="A4-T0",
+            agent_id="main.sub.4",
+            depth=1,
+        )
+    ]
+
+    status_holder = [first_frame_events[-1]]
+    status_events = list(first_frame_events)
+    status_lock = threading.Lock()
+    stop_event = _StopAfterThreeFrames(status_events, second_frame_events)
+
+    buf = StringIO()
+    test_console = Console(file=buf, no_color=True, width=200)
+
+    import flavia.interfaces.cli_interface as cli_mod
+
+    original_console = cli_mod.console
+    cli_mod.console = test_console
+    try:
+        _run_status_animation(
+            stop_event=stop_event,
+            model_ref="",
+            status_holder=status_holder,
+            status_events=status_events,
+            status_lock=status_lock,
+            verbose=False,
+        )
+    finally:
+        cli_mod.console = original_console
+
+    output = buf.getvalue()
+    # Frame 2/3 must rewind to the first line of the 27-line painted area.
+    # Cursor sits on the last line, so rewind distance is 26 (not 27).
+    assert output.count("\x1b[26F") >= 2
+    assert "\x1b[27F" not in output

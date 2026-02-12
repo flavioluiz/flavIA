@@ -132,6 +132,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **CLI status animation frame rewind when block shrinks**:
+  - `_render_status_block()` now returns the rendered frame height (`max(previous, current)`) instead of current line count only
+  - Cursor rewind now moves to the first line of the previous frame (`line_count - 1`), avoiding progressive upward drift
+  - Prevents cursor rewind underflow on the next repaint, avoiding overwritten output above the status block and duplicate spinner lines below
 - **Sub-agent ID/profile consistency under concurrency**:
   - `RecursiveAgent._spawn_dynamic()` now uses one locked counter snapshot for both `agent_id` and dynamic `profile.name`
   - Prevents occasional mismatches between dynamic sub-agent labels during parallel spawning
