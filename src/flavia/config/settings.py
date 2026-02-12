@@ -61,7 +61,7 @@ class Settings:
 
     # Status display settings (-1 = unlimited)
     status_max_tasks_main: int = -1
-    status_max_tasks_subagent: int = 3
+    status_max_tasks_subagent: int = -1
 
     # Loaded configs
     models: list[ModelConfig] = field(default_factory=list)
@@ -272,7 +272,7 @@ def load_settings() -> Settings:
         telegram_whitelist_configured=whitelist_configured,
         providers=providers,
         status_max_tasks_main=int(os.getenv("STATUS_MAX_TASKS_MAIN", "-1")),
-        status_max_tasks_subagent=int(os.getenv("STATUS_MAX_TASKS_SUBAGENT", "3")),
+        status_max_tasks_subagent=int(os.getenv("STATUS_MAX_TASKS_SUBAGENT", "-1")),
     )
 
     # Load models and agents config
