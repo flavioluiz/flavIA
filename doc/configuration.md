@@ -128,8 +128,17 @@ main:
     - list_files
     - search_files
     - get_file_info
+    - compile_latex
     - spawn_agent
     - spawn_predefined_agent
+
+  latex:
+    compiler: "pdflatex"       # pdflatex | xelatex | lualatex | latexmk
+    passes: 2                  # 1..5
+    bibtex: true               # run bibtex/biber when bibliography is detected
+    clean_aux: true            # remove .aux/.log/.toc/... after successful compile
+    shell_escape: false        # secure default; enable only if document requires it
+    continue_on_error: true    # continue passes and collect errors/logs automatically
 
   subagents:
     summarizer:
@@ -158,6 +167,7 @@ The `{base_dir}` placeholder in the context is replaced with the base directory 
 | `list_files` | read | List directory contents |
 | `search_files` | read | Search for patterns in files |
 | `get_file_info` | read | Get file metadata |
+| `compile_latex` | academic | Compile `.tex` into PDF with log parsing and configurable passes |
 | `write_file` | write | Create or overwrite a file |
 | `edit_file` | write | Replace exact text in a file (single match required) |
 | `insert_text` | write | Insert text at a specific line number |
@@ -171,6 +181,30 @@ The `{base_dir}` placeholder in the context is replaced with the base directory 
 | `create_agents_config` | setup | Create `agents.yaml` (only available during `--init`) |
 
 All write tools enforce `AgentPermissions.write_paths` and require user confirmation in the CLI. Write operations are denied in Telegram (no confirmation handler).
+
+`compile_latex` is non-interactive: it never asks for user confirmation. It returns compilation status plus parsed errors/warnings for the agent to handle automatically.
+
+### LaTeX tool settings (`agents.yaml`)
+
+Per-agent LaTeX defaults live under `latex:`:
+
+```yaml
+main:
+  tools:
+    - compile_latex
+  latex:
+    compiler: "pdflatex"
+    passes: 2
+    bibtex: true
+    clean_aux: true
+    shell_escape: false
+    continue_on_error: true
+```
+
+Notes:
+- `continue_on_error: true` keeps compiling and aggregates issues from log/output so the agent can fix and retry.
+- `continue_on_error: false` uses halt-on-error behavior (stop at first LaTeX error in that run).
+- `shell_escape` is disabled by default for safety.
 
 ### Per-agent model configuration
 

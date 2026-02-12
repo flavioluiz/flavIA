@@ -63,6 +63,8 @@ class TestLatexConfig:
         assert config.passes == 2
         assert config.bibtex is True
         assert config.clean_aux is True
+        assert config.shell_escape is False
+        assert config.continue_on_error is True
 
     def test_from_dict(self):
         config = LatexConfig.from_dict(
@@ -83,10 +85,38 @@ class TestLatexConfig:
         assert config.compiler == "lualatex"
         assert config.passes == 2  # default
         assert config.bibtex is True  # default
+        assert config.shell_escape is False
+        assert config.continue_on_error is True
 
     def test_from_dict_empty(self):
         config = LatexConfig.from_dict({})
         assert config.compiler == "pdflatex"
+        assert config.shell_escape is False
+        assert config.continue_on_error is True
+
+    def test_from_dict_string_values(self):
+        config = LatexConfig.from_dict(
+            {
+                "passes": "3",
+                "bibtex": "false",
+                "clean_aux": "yes",
+                "shell_escape": "1",
+                "continue_on_error": "off",
+            }
+        )
+        assert config.passes == 3
+        assert config.bibtex is False
+        assert config.clean_aux is True
+        assert config.shell_escape is True
+        assert config.continue_on_error is False
+
+    def test_from_dict_invalid_passes_raises(self):
+        with pytest.raises(ValueError, match="passes must be an integer"):
+            LatexConfig.from_dict({"passes": "abc"})
+
+    def test_from_dict_invalid_bool_raises(self):
+        with pytest.raises(ValueError, match="bibtex must be a boolean"):
+            LatexConfig.from_dict({"bibtex": "maybe"})
 
     def test_validate_valid(self):
         for compiler in SUPPORTED_COMPILERS:
@@ -490,6 +520,7 @@ class TestCompileLatex:
         pdf_path = tmp_path / "test.pdf"
 
         def side_effect(cmd, cwd, timeout=120):
+            assert "-no-shell-escape" in cmd
             # Create the PDF on the first call
             pdf_path.write_text("PDF content")
             # Create a log file
@@ -510,16 +541,73 @@ class TestCompileLatex:
         tex = self._create_tex_file(tmp_path)
 
         def side_effect(cmd, cwd, timeout=120):
+            assert "-halt-on-error" in cmd
             (tmp_path / "test.log").write_text("! Undefined control sequence.\nl.5 \\badcmd\n")
             return 1, "", "Fatal error"
 
         mock_run.side_effect = side_effect
-        config = LatexConfig(compiler="pdflatex", passes=2, bibtex=False, clean_aux=False)
+        config = LatexConfig(
+            compiler="pdflatex",
+            passes=2,
+            bibtex=False,
+            clean_aux=False,
+            continue_on_error=False,
+        )
         result = compile_latex(tex, config)
 
         assert result.success is False
         assert result.passes_run == 1
         assert len(result.errors) >= 1
+
+    @patch("flavia.tools.academic.compile_latex._run_command")
+    def test_continue_on_error_runs_all_passes(self, mock_run, tmp_path):
+        tex = self._create_tex_file(tmp_path)
+
+        def side_effect(cmd, cwd, timeout=120):
+            assert "-halt-on-error" not in cmd
+            (tmp_path / "test.log").write_text("! Undefined control sequence.\nl.5 \\badcmd\n")
+            return 1, "", "Fatal error"
+
+        mock_run.side_effect = side_effect
+        config = LatexConfig(
+            compiler="pdflatex",
+            passes=2,
+            bibtex=False,
+            clean_aux=False,
+            continue_on_error=True,
+        )
+        result = compile_latex(tex, config)
+
+        assert result.success is False
+        assert result.passes_run == 2
+        assert mock_run.call_count == 2
+
+    @patch("flavia.tools.academic.compile_latex._run_command")
+    def test_continue_on_error_keeps_generated_pdf(self, mock_run, tmp_path):
+        tex = self._create_tex_file(tmp_path)
+        pdf_path = tmp_path / "test.pdf"
+        call_count = 0
+
+        def side_effect(cmd, cwd, timeout=120):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                pdf_path.write_text("partial pdf")
+            (tmp_path / "test.log").write_text("! Undefined control sequence.\nl.5 \\badcmd\n")
+            return 1, "", "Fatal error"
+
+        mock_run.side_effect = side_effect
+        config = LatexConfig(
+            compiler="pdflatex",
+            passes=2,
+            bibtex=False,
+            clean_aux=False,
+            continue_on_error=True,
+        )
+        result = compile_latex(tex, config)
+
+        assert result.success is False
+        assert result.pdf_path == pdf_path
 
     @patch("flavia.tools.academic.compile_latex.shutil.which")
     @patch("flavia.tools.academic.compile_latex._run_command")
@@ -564,6 +652,7 @@ class TestCompileLatex:
         def side_effect(cmd, cwd, timeout=120):
             assert cmd[0] == "latexmk"
             assert "-pdf" in cmd
+            assert "-no-shell-escape" in cmd
             pdf_path.write_text("PDF content")
             (tmp_path / "test.log").write_text("")
             return 0, "", ""
@@ -574,6 +663,28 @@ class TestCompileLatex:
 
         assert result.success is True
         assert result.compiler_used == "latexmk"
+
+    @patch("flavia.tools.academic.compile_latex._run_command")
+    def test_latexmk_halt_on_error_flag(self, mock_run, tmp_path):
+        tex = self._create_tex_file(tmp_path)
+
+        def side_effect(cmd, cwd, timeout=120):
+            assert "-halt-on-error" in cmd
+            assert "-f" not in cmd
+            (tmp_path / "test.log").write_text("! Undefined control sequence.\nl.5 \\badcmd\n")
+            return 1, "", "Fatal error"
+
+        mock_run.side_effect = side_effect
+        config = LatexConfig(
+            compiler="latexmk",
+            passes=1,
+            bibtex=False,
+            clean_aux=False,
+            continue_on_error=False,
+        )
+        result = compile_latex(tex, config)
+
+        assert result.success is False
 
     @patch("flavia.tools.academic.compile_latex._run_command")
     def test_clean_aux_after_success(self, mock_run, tmp_path):
@@ -617,6 +728,30 @@ class TestCompileLatex:
         assert result.success is False
         # Aux files should NOT be cleaned on failure
         assert (tmp_path / "test.aux").exists()
+
+    @patch("flavia.tools.academic.compile_latex._run_command")
+    def test_shell_escape_enabled(self, mock_run, tmp_path):
+        tex = self._create_tex_file(tmp_path)
+        pdf_path = tmp_path / "test.pdf"
+
+        def side_effect(cmd, cwd, timeout=120):
+            assert "-shell-escape" in cmd
+            assert "-no-shell-escape" not in cmd
+            pdf_path.write_text("PDF content")
+            (tmp_path / "test.log").write_text("")
+            return 0, "", ""
+
+        mock_run.side_effect = side_effect
+        config = LatexConfig(
+            compiler="pdflatex",
+            passes=1,
+            bibtex=False,
+            clean_aux=False,
+            shell_escape=True,
+        )
+        result = compile_latex(tex, config)
+
+        assert result.success is True
 
 
 # ──────────────────────────────────────────────
@@ -707,6 +842,7 @@ class TestCompileLatexTool:
             result = tool.execute({"path": "test.tex", "compiler": "xelatex"}, ctx)
         assert "[DRY-RUN]" in result
         assert "xelatex" in result
+        assert "Continue on error:" in result
 
     def test_invalid_compiler_in_args(self, tmp_path):
         tool = CompileLatexTool()
@@ -718,6 +854,39 @@ class TestCompileLatexTool:
 
         result = tool.execute({"path": "test.tex", "compiler": "badcompiler"}, ctx)
         assert "Unsupported compiler" in result
+
+    def test_invalid_passes_in_args(self, tmp_path):
+        tool = CompileLatexTool()
+        tool._available_compiler = "pdflatex"
+        ctx = _make_context(tmp_path)
+
+        tex = tmp_path / "test.tex"
+        tex.write_text(r"\documentclass{article}\begin{document}Hi\end{document}")
+
+        result = tool.execute({"path": "test.tex", "passes": "abc"}, ctx)
+        assert "Invalid LaTeX configuration" in result
+
+    def test_invalid_bool_in_args(self, tmp_path):
+        tool = CompileLatexTool()
+        tool._available_compiler = "pdflatex"
+        ctx = _make_context(tmp_path)
+
+        tex = tmp_path / "test.tex"
+        tex.write_text(r"\documentclass{article}\begin{document}Hi\end{document}")
+
+        result = tool.execute({"path": "test.tex", "bibtex": "sometimes"}, ctx)
+        assert "Invalid LaTeX configuration" in result
+
+    def test_invalid_continue_on_error_in_args(self, tmp_path):
+        tool = CompileLatexTool()
+        tool._available_compiler = "pdflatex"
+        ctx = _make_context(tmp_path)
+
+        tex = tmp_path / "test.tex"
+        tex.write_text(r"\documentclass{article}\begin{document}Hi\end{document}")
+
+        result = tool.execute({"path": "test.tex", "continue_on_error": "sometimes"}, ctx)
+        assert "Invalid LaTeX configuration" in result
 
     @patch("flavia.tools.academic.compile_latex.compile_latex")
     @patch("flavia.tools.academic.compile_latex.detect_compiler")
@@ -771,6 +940,8 @@ class TestCompileLatexTool:
         assert "passes" in param_names
         assert "bibtex" in param_names
         assert "clean_aux" in param_names
+        assert "shell_escape" in param_names
+        assert "continue_on_error" in param_names
 
     def test_schema_openai_format(self):
         tool = CompileLatexTool()
@@ -784,6 +955,8 @@ class TestCompileLatexTool:
         # Optional params should NOT be in required
         assert "compiler" not in params["required"]
         assert "passes" not in params["required"]
+        assert "shell_escape" not in params["required"]
+        assert "continue_on_error" not in params["required"]
 
     def test_is_available_always_true(self, tmp_path):
         tool = CompileLatexTool()

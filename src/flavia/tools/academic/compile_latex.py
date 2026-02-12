@@ -54,15 +54,22 @@ class LatexConfig:
     passes: int = 2
     bibtex: bool = True
     clean_aux: bool = True
+    shell_escape: bool = False
+    continue_on_error: bool = True
 
     @classmethod
     def from_dict(cls, config: dict[str, Any]) -> "LatexConfig":
         """Create config from a dictionary (e.g. from agents.yaml)."""
         return cls(
             compiler=config.get("compiler", "pdflatex"),
-            passes=int(config.get("passes", 2)),
-            bibtex=bool(config.get("bibtex", True)),
-            clean_aux=bool(config.get("clean_aux", True)),
+            passes=_parse_int(config.get("passes", 2), "passes"),
+            bibtex=_parse_bool(config.get("bibtex", True), "bibtex"),
+            clean_aux=_parse_bool(config.get("clean_aux", True), "clean_aux"),
+            shell_escape=_parse_bool(config.get("shell_escape", False), "shell_escape"),
+            continue_on_error=_parse_bool(
+                config.get("continue_on_error", True),
+                "continue_on_error",
+            ),
         )
 
     def validate(self) -> tuple[bool, str]:
@@ -124,6 +131,8 @@ class CompilationResult:
         else:
             parts.append(f"Compilation FAILED using {self.compiler_used}")
             parts.append(f"Passes attempted: {self.passes_run}")
+            if self.pdf_path:
+                parts.append(f"Output PDF generated with errors: {self.pdf_path}")
 
         if self.errors:
             parts.append(f"\nErrors ({len(self.errors)}):")
@@ -180,6 +189,41 @@ def detect_bibtex_engine() -> Optional[str]:
     if shutil.which("bibtex"):
         return "bibtex"
     return None
+
+
+def _parse_bool(value: Any, field_name: str) -> bool:
+    """Parse a bool from common YAML/JSON/string representations."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        if value in (0, 1):
+            return bool(value)
+        raise ValueError(f"{field_name} must be a boolean")
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "yes", "y", "on", "1"}:
+            return True
+        if lowered in {"false", "no", "n", "off", "0"}:
+            return False
+        raise ValueError(f"{field_name} must be a boolean")
+    raise ValueError(f"{field_name} must be a boolean")
+
+
+def _parse_int(value: Any, field_name: str) -> int:
+    """Parse an int from common YAML/JSON/string representations."""
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be an integer")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError(f"{field_name} must be an integer")
+        try:
+            return int(stripped)
+        except ValueError as exc:
+            raise ValueError(f"{field_name} must be an integer") from exc
+    raise ValueError(f"{field_name} must be an integer")
 
 
 def _has_bibliography(tex_path: Path) -> bool:
@@ -377,8 +421,9 @@ def compile_latex(
         cmd = [
             "latexmk",
             "-pdf",
+            "-shell-escape" if config.shell_escape else "-no-shell-escape",
             "-interaction=nonstopmode",
-            "-halt-on-error",
+            "-f" if config.continue_on_error else "-halt-on-error",
             str(tex_path.name),
         ]
         returncode, stdout, stderr = _run_command(cmd, tex_dir, timeout=timeout)
@@ -390,15 +435,18 @@ def compile_latex(
         result.errors = errors
         result.warnings = warnings
 
+        if pdf_path.exists():
+            result.pdf_path = pdf_path
+
         if returncode == 0 and pdf_path.exists():
             result.success = True
-            result.pdf_path = pdf_path
         elif not errors:
-            # If no parsed errors but command failed, capture stderr
-            if stderr.strip():
+            # If no parsed errors but command failed, capture subprocess output
+            failure_output = (stderr or stdout).strip()
+            if failure_output:
                 result.errors.append(
                     LatexError(
-                        message=stderr.strip()[:500],
+                        message=failure_output[:500],
                         error_type="error",
                     )
                 )
@@ -406,28 +454,36 @@ def compile_latex(
         # Manual multi-pass compilation for pdflatex/xelatex/lualatex
         base_cmd = [
             config.compiler,
+            "-shell-escape" if config.shell_escape else "-no-shell-escape",
             "-interaction=nonstopmode",
-            "-halt-on-error",
+            *([] if config.continue_on_error else ["-halt-on-error"]),
             str(tex_path.name),
         ]
+        had_nonzero_exit = False
 
         for pass_num in range(1, config.passes + 1):
             returncode, stdout, stderr = _run_command(base_cmd, tex_dir, timeout=timeout)
             result.passes_run = pass_num
 
             if returncode != 0:
-                # Parse log and report failure
+                had_nonzero_exit = True
                 errors, warnings = parse_latex_log(log_path)
-                result.errors = errors
-                result.warnings = warnings
-                if not errors and stderr.strip():
+                result.errors.extend(errors)
+                result.warnings.extend(warnings)
+
+                failure_output = (stderr or stdout).strip()
+                if not errors and failure_output:
                     result.errors.append(
                         LatexError(
-                            message=stderr.strip()[:500],
+                            message=failure_output[:500],
                             error_type="error",
                         )
                     )
-                return result
+
+                if not config.continue_on_error:
+                    if pdf_path.exists():
+                        result.pdf_path = pdf_path
+                    return result
 
             # Run bibliography after the first pass (if needed and .aux exists)
             if pass_num == 1 and run_bib and aux_path.exists():
@@ -463,8 +519,8 @@ def compile_latex(
         result.warnings.extend(warnings)
 
         if pdf_path.exists():
-            result.success = True
             result.pdf_path = pdf_path
+            result.success = not had_nonzero_exit
 
     # Clean auxiliary files if requested and compilation succeeded
     if config.clean_aux and result.success:
@@ -591,6 +647,24 @@ class CompileLatexTool(BaseTool):
                     ),
                     required=False,
                 ),
+                ToolParameter(
+                    name="shell_escape",
+                    type="boolean",
+                    description=(
+                        "Allow LaTeX shell-escape. "
+                        "Defaults to value from agents.yaml or false."
+                    ),
+                    required=False,
+                ),
+                ToolParameter(
+                    name="continue_on_error",
+                    type="boolean",
+                    description=(
+                        "Continue compilation and collect log errors instead of stopping "
+                        "at first LaTeX error. Defaults to value from agents.yaml or true."
+                    ),
+                    required=False,
+                ),
             ],
         )
 
@@ -654,8 +728,15 @@ class CompileLatexTool(BaseTool):
             config_dict["bibtex"] = args["bibtex"]
         if "clean_aux" in args:
             config_dict["clean_aux"] = args["clean_aux"]
+        if "shell_escape" in args:
+            config_dict["shell_escape"] = args["shell_escape"]
+        if "continue_on_error" in args:
+            config_dict["continue_on_error"] = args["continue_on_error"]
 
-        config = LatexConfig.from_dict(config_dict)
+        try:
+            config = LatexConfig.from_dict(config_dict)
+        except ValueError as e:
+            return f"Error: Invalid LaTeX configuration: {e}"
 
         # Validate config
         valid, error_msg = config.validate()
@@ -687,7 +768,9 @@ class CompileLatexTool(BaseTool):
                 f"  Compiler: {config.compiler}\n"
                 f"  Passes: {config.passes}\n"
                 f"  Bibliography: {'yes' if config.bibtex else 'no'}\n"
-                f"  Clean auxiliary files: {'yes' if config.clean_aux else 'no'}"
+                f"  Clean auxiliary files: {'yes' if config.clean_aux else 'no'}\n"
+                f"  Shell escape: {'yes' if config.shell_escape else 'no'}\n"
+                f"  Continue on error: {'yes' if config.continue_on_error else 'no'}"
             )
 
         # Compile

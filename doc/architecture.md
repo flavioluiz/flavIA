@@ -68,6 +68,8 @@ src/flavia/
 │   │   ├── query_catalog.py
 │   │   ├── get_summary.py
 │   │   └── refresh_catalog.py
+│   ├── academic/             # Academic workflow tools
+│   │   └── compile_latex.py
 │   └── setup/                # --init exclusive tools
 │       ├── convert_pdfs.py   # Conversion via pdfplumber
 │       └── create_agents_config.py
@@ -128,7 +130,7 @@ Singleton that maintains the registry of all tools. Read/spawn/content tools are
 
 Abstract class for tools. Each tool defines:
 - Name and description
-- Category (`read`, `write`, `spawn`, `content`, `setup`)
+- Category (`read`, `write`, `spawn`, `content`, `academic`, `setup`)
 - Parameter schema (compatible with OpenAI function calling)
 - Execution method
 
