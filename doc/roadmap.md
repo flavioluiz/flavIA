@@ -8,17 +8,17 @@ Planned features and improvements for flavIA, organized by area. Each task inclu
 
 ## 📋 Executive Summary
 
-This roadmap outlines **41 tasks** across **10 major areas** to extend flavIA from a read-only research assistant into a comprehensive, production-ready AI agent system with multimodal processing, write capabilities, external service integration, web & academic research tools, multi-platform deployment, and file delivery through messaging interfaces.
+This roadmap outlines **42 tasks** across **10 major areas** to extend flavIA from a read-only research assistant into a comprehensive, production-ready AI agent system with multimodal processing, write capabilities, external service integration, web & academic research tools, multi-platform deployment, and file delivery through messaging interfaces.
 
 ### Quick Stats
 - **9 Easy tasks** (< 1 day each) — Quick wins for immediate value — **5 completed** ✓
-- **23 Medium tasks** (1-2 days each) — Core feature development — **5 completed** ✓
+- **24 Medium tasks** (1-2 days each) — Core feature development — **6 completed** ✓
 - **9 Hard tasks** (3+ days each) — Complex integrations requiring careful design
-- **Total completed so far**: **10 / 41 tasks** ✓
+- **Total completed so far**: **11 / 42 tasks** ✓
 
 ### Strategic Priorities
 1. **Immediate value** (Tasks 4.1-4.8, 8.1): Improve CLI UX and add token tracking
-2. **Core capabilities** (Tasks 5.1, 1.1-1.3): Enable file writing and expand content processing
+2. **Core capabilities** (Tasks 5.1-5.2, 1.1-1.3): Enable file writing and expand content processing
 3. **Academic workflows** (Tasks 6.1-6.2): LaTeX compilation and script execution
 4. **Production readiness** (Tasks 3.1-3.6, 8.2-8.3): Multi-platform bots and context management
 5. **Web & academic research** (Tasks 9.1-9.8): Web search, academic databases, DOI resolution, Scopus, article download, BibTeX management
@@ -67,10 +67,11 @@ Consolidate commands, eliminate redundancies, add runtime switching, and introdu
 - **4.7** ~~Unified Help System (Easy)~~ — **DONE** ✓ Structured /help with categories, command registry, and per-command help
 - **4.8** ~~Expand questionary Adoption (Medium)~~ — **DONE** ✓ Interactive prompts with arrow-key menus, autocomplete, and non-TTY fallback
 
-### [Area 5: File Modification Tools](roadmap/area-5-file-modification-tools.md) (1 task)
+### [Area 5: File Modification Tools](roadmap/area-5-file-modification-tools.md) (2 tasks)
 ~~Enable write capabilities using the existing permission infrastructure.~~ **DONE** ✓
 
 - **5.1** ~~Write/Edit File Tools (Medium)~~ — **DONE** ✓ 7 write tools (write_file, edit_file, insert_text, append_file, delete_file, create_directory, remove_directory) with permission checks, user confirmation, and automatic backups
+- **5.2** ~~Write Operation Preview + Dry-Run Mode (Medium)~~ — **DONE** ✓ preview diffs/context in confirmation flow and `--dry-run` execution mode
 
 ### [Area 6: Academic Workflow Tools](roadmap/area-6-academic-workflow-tools.md) (2 tasks)
 Bridge the gap between text generation and actual research output.
@@ -125,13 +126,14 @@ Improve CLI usability, add token tracking, expand file processing to Office docs
 - Support for .docx, .xlsx, .pptx files
 - Interactive prompts with autocomplete, file paths, and menus
 
-### Phase 2: Core Write Capabilities (Tasks 5.1, 6.1)
-**Timeline**: 1 week | **Effort**: 2 Medium = ~3-4 days
+### Phase 2: Core Write Capabilities (Tasks 5.1-5.2, 6.1)
+**Timeline**: 1-2 weeks | **Effort**: 3 Medium = ~4-6 days
 
-Enable file modification and LaTeX compilation for productive academic workflows. Task 5.1 (write tools) is complete.
+Enable safe file modification and LaTeX compilation for productive academic workflows. Tasks 5.1 and 5.2 are complete.
 
 **Deliverables**:
 - ~~Agent can create, edit, and modify files (with permissions)~~ ✓
+- ~~Agent shows write operation previews and supports `--dry-run` for non-destructive execution~~ ✓
 - Compile LaTeX documents directly from chat
 
 ### Phase 3: Multimodal Expansion (Tasks 1.1-1.2, 1.5)
@@ -241,6 +243,7 @@ Task 4.8 (Expand questionary) ──────┘     depends on Task 4.7
 Task 2.1 (Structured Profiles) ─────┘
 
 Area 5 -- File Modification:
+Task 5.1 (Write/Edit Tools) ── Task 5.2 (Preview + Dry-Run)
 Task 5.1 (Write/Edit Tools) ──┬── Task 6.1 (LaTeX Compilation)
                                 └── Task 6.2 (Script Execution)
 
@@ -293,38 +296,39 @@ Tasks ordered by a pragmatic implementation sequence that balances dependency re
 | 6 | ~~**8.1** Token usage tracking & display~~ | ~~Easy~~ | ~~Context Management~~ |
 | 7 | ~~**8.3** Manual /compact slash command~~ | ~~Easy~~ | ~~Context Management~~ |
 | 8 | ~~**5.1** Write/Edit file tools~~ | ~~Medium~~ | ~~File Modification~~ |
-| 9 | **1.1** Audio/Video transcription converter | Medium | File Processing |
-| 10 | **1.2** Image description converter | Medium | File Processing |
-| 11 | ~~**4.4** In-session provider & model management~~ | ~~Medium~~ | ~~CLI~~ |
-| 12 | **4.5** Standard default agent | Medium | CLI |
-| 13 | ~~**4.8** Expand questionary adoption for prompts~~ | ~~Medium~~ | ~~CLI~~ |
-| 14 | **2.1** Structured agent profiles | Medium | Agents |
-| 15 | ~~**8.2** Context compaction with confirmation~~ | ~~Medium~~ | ~~Context Management~~ |
-| 16 | **3.1** YAML-based bot configuration | Medium | Messaging |
-| 17 | **6.1** LaTeX compilation tool | Medium | Academic Workflow |
-| 18 | **4.6** Global agent definitions | Medium | CLI |
-| 19 | **2.2** CLI agent management commands | Medium | Agents |
-| 20 | **3.2** Per-conversation agent binding | Medium | Messaging |
-| 21 | **3.3** Multi-bot support | Medium | Messaging |
-| 22 | **1.5** Online source converters (YouTube/Web) | Medium | File Processing |
-| 23 | **3.6** Web API interface | Medium | Messaging |
-| 24 | **1.4** OCR + LaTeX equation support | Hard | File Processing |
-| 25 | **3.4** Abstract messaging interface | Hard | Messaging |
-| 26 | **2.3** Meta-agent for agent generation | Hard | Agents |
-| 27 | **6.2** Sandboxed script execution (Python/MATLAB) | Hard | Academic Workflow |
-| 28 | **7.1** Email integration (IMAP/SMTP) | Hard | External Services |
-| 29 | **7.2** Google Calendar integration | Hard | External Services |
-| 30 | **3.5** WhatsApp integration | Hard | Messaging |
-| 31 | **9.3** DOI metadata resolution | Easy | Web & Academic Research |
-| 32 | **9.1** Web search engine | Medium | Web & Academic Research |
-| 33 | **9.2** Academic database search | Medium | Web & Academic Research |
-| 34 | **9.4** Scopus integration | Medium | Web & Academic Research |
-| 35 | **9.7** BibTeX reference management | Medium | Web & Academic Research |
-| 36 | **9.8** Research session management | Medium | Web & Academic Research |
-| 37 | **9.5** Article download & content integration | Hard | Web & Academic Research |
-| 38 | **9.6** CAPES/academic network publisher access | Hard | Web & Academic Research |
-| 39 | **10.1** Structured agent responses | Medium | Telegram File Delivery |
-| 40 | **10.2** Send file tool | Easy | Telegram File Delivery |
-| 41 | **10.3** Telegram file delivery handler | Medium | Telegram File Delivery |
+| 9 | ~~**5.2** Write operation preview + dry-run mode~~ | ~~Medium~~ | ~~File Modification~~ |
+| 10 | **1.1** Audio/Video transcription converter | Medium | File Processing |
+| 11 | **1.2** Image description converter | Medium | File Processing |
+| 12 | ~~**4.4** In-session provider & model management~~ | ~~Medium~~ | ~~CLI~~ |
+| 13 | **4.5** Standard default agent | Medium | CLI |
+| 14 | ~~**4.8** Expand questionary adoption for prompts~~ | ~~Medium~~ | ~~CLI~~ |
+| 15 | **2.1** Structured agent profiles | Medium | Agents |
+| 16 | ~~**8.2** Context compaction with confirmation~~ | ~~Medium~~ | ~~Context Management~~ |
+| 17 | **3.1** YAML-based bot configuration | Medium | Messaging |
+| 18 | **6.1** LaTeX compilation tool | Medium | Academic Workflow |
+| 19 | **4.6** Global agent definitions | Medium | CLI |
+| 20 | **2.2** CLI agent management commands | Medium | Agents |
+| 21 | **3.2** Per-conversation agent binding | Medium | Messaging |
+| 22 | **3.3** Multi-bot support | Medium | Messaging |
+| 23 | **1.5** Online source converters (YouTube/Web) | Medium | File Processing |
+| 24 | **3.6** Web API interface | Medium | Messaging |
+| 25 | **1.4** OCR + LaTeX equation support | Hard | File Processing |
+| 26 | **3.4** Abstract messaging interface | Hard | Messaging |
+| 27 | **2.3** Meta-agent for agent generation | Hard | Agents |
+| 28 | **6.2** Sandboxed script execution (Python/MATLAB) | Hard | Academic Workflow |
+| 29 | **7.1** Email integration (IMAP/SMTP) | Hard | External Services |
+| 30 | **7.2** Google Calendar integration | Hard | External Services |
+| 31 | **3.5** WhatsApp integration | Hard | Messaging |
+| 32 | **9.3** DOI metadata resolution | Easy | Web & Academic Research |
+| 33 | **9.1** Web search engine | Medium | Web & Academic Research |
+| 34 | **9.2** Academic database search | Medium | Web & Academic Research |
+| 35 | **9.4** Scopus integration | Medium | Web & Academic Research |
+| 36 | **9.7** BibTeX reference management | Medium | Web & Academic Research |
+| 37 | **9.8** Research session management | Medium | Web & Academic Research |
+| 38 | **9.5** Article download & content integration | Hard | Web & Academic Research |
+| 39 | **9.6** CAPES/academic network publisher access | Hard | Web & Academic Research |
+| 40 | **10.1** Structured agent responses | Medium | Telegram File Delivery |
+| 41 | **10.2** Send file tool | Easy | Telegram File Delivery |
+| 42 | **10.3** Telegram file delivery handler | Medium | Telegram File Delivery |
 
 This order is a suggestion. Tasks can be implemented in any order that respects the dependency graph above.

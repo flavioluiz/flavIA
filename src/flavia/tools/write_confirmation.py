@@ -8,7 +8,8 @@ destructive operations. Supports three modes:
 3. Fail-safe: if neither is configured, operations are denied
 """
 
-from typing import Callable, Optional, TYPE_CHECKING
+from inspect import Parameter, signature
+from typing import Callable, Literal, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from flavia.tools.write.preview import OperationPreview
@@ -35,6 +36,7 @@ class WriteConfirmation:
     def __init__(self) -> None:
         self._auto_approve: bool = False
         self._callback: Optional[WriteConfirmationCallback] = None
+        self._callback_preview_mode: Literal["none", "positional", "keyword"] = "none"
 
     @property
     def auto_approve(self) -> bool:
@@ -54,6 +56,49 @@ class WriteConfirmation:
                       Pass ``None`` to clear the callback.
         """
         self._callback = callback
+        self._callback_preview_mode = self._detect_preview_mode(callback)
+
+    @staticmethod
+    def _detect_preview_mode(
+        callback: Optional[WriteConfirmationCallback],
+    ) -> Literal["none", "positional", "keyword"]:
+        """Detect how a callback accepts preview data.
+
+        Returns:
+            - ``"positional"`` if callback accepts 4th positional arg.
+            - ``"keyword"`` if callback accepts ``preview=...`` keyword.
+            - ``"none"`` if callback appears to be legacy 3-arg signature.
+        """
+        if callback is None:
+            return "none"
+
+        try:
+            sig = signature(callback)
+        except (TypeError, ValueError):
+            # If introspection is unavailable, default to legacy mode
+            # to avoid accidentally retrying callbacks.
+            return "none"
+
+        # *args accepts preview positionally.
+        if any(p.kind == Parameter.VAR_POSITIONAL for p in sig.parameters.values()):
+            return "positional"
+
+        positional_params = [
+            p
+            for p in sig.parameters.values()
+            if p.kind in (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
+        ]
+        if len(positional_params) >= 4:
+            return "positional"
+
+        preview_param = sig.parameters.get("preview")
+        if preview_param and preview_param.kind in (
+            Parameter.POSITIONAL_OR_KEYWORD,
+            Parameter.KEYWORD_ONLY,
+        ):
+            return "keyword"
+
+        return "none"
 
     def confirm(
         self,
@@ -81,13 +126,11 @@ class WriteConfirmation:
 
         if self._callback is not None:
             try:
-                return self._callback(operation, path, details, preview)
-            except TypeError:
-                # Backward compatibility: try calling without preview
-                try:
-                    return self._callback(operation, path, details)  # type: ignore[call-arg]
-                except Exception:
-                    return False
+                if self._callback_preview_mode == "positional":
+                    return self._callback(operation, path, details, preview)
+                if self._callback_preview_mode == "keyword":
+                    return self._callback(operation, path, details, preview=preview)
+                return self._callback(operation, path, details)  # type: ignore[call-arg]
             except Exception:
                 # If the callback itself fails, deny the operation.
                 return False

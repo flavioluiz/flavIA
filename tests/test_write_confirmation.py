@@ -156,3 +156,33 @@ class TestWriteConfirmationWithPreview:
         wc = WriteConfirmation()
         wc.set_callback(bad_callback)
         assert wc.confirm("Write", "/f.txt", "", preview=preview) is False
+
+    def test_internal_type_error_does_not_retry_callback(self):
+        """Internal TypeError should deny once, without second callback execution."""
+        call_count = 0
+
+        def bad_callback(op, path, details, preview=None):
+            nonlocal call_count
+            call_count += 1
+            raise TypeError("internal callback bug")
+
+        wc = WriteConfirmation()
+        wc.set_callback(bad_callback)
+
+        assert wc.confirm("Write", "/f.txt", "", preview=OperationPreview(operation="write", path="/f.txt")) is False
+        assert call_count == 1
+
+    def test_keyword_only_preview_callback_receives_preview(self):
+        """Callbacks with keyword-only preview should receive preview content."""
+        received_preview = []
+
+        def cb(op, path, details, *, preview=None):
+            received_preview.append(preview)
+            return True
+
+        preview = OperationPreview(operation="write", path="/tmp/test.txt")
+        wc = WriteConfirmation()
+        wc.set_callback(cb)
+
+        assert wc.confirm("Write file", "/tmp/test.txt", "5 bytes", preview=preview) is True
+        assert received_preview == [preview]

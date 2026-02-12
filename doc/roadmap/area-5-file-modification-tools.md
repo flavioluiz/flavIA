@@ -2,7 +2,7 @@
 
 **Status**: Complete
 
-This area added write capabilities to flavIA's previously read-only agent system. The permission infrastructure (`AgentPermissions.can_write()`, `check_write_permission()` in `tools/permissions.py`) already existed but no tools used the write path. Seven write tools were implemented, along with a user confirmation mechanism and automatic backup system.
+This area added write capabilities to flavIA's previously read-only agent system. The permission infrastructure (`AgentPermissions.can_write()`, `check_write_permission()` in `tools/permissions.py`) already existed but no tools used the write path. Seven write tools were implemented, along with user confirmation, operation previews, dry-run support, and an automatic backup system.
 
 ---
 
@@ -40,6 +40,36 @@ Created `tools/write/` with seven tools that let the agent modify project files,
 
 4. **Edit safety**: `edit_file` requires the text to replace to appear exactly once in the file. If it appears zero times or more than once, the operation is rejected with a clear error message.
 
+### Task 5.2 -- Write Operation Preview + Dry-Run Mode ✓
+
+**Difficulty**: Medium | **Dependencies**: Task 5.1 | **Status**: Done
+
+Extended the write stack with pre-execution previews and a non-destructive execution mode.
+
+#### Features implemented
+
+1. **Operation previews in confirmation flow**:
+   - New `tools/write/preview.py` module with `OperationPreview` and formatting helpers
+   - Unified diffs for edits/overwrites when possible
+   - Content previews for write/append operations
+   - Context-aware insertion previews (before/after lines)
+   - File preview before delete and directory listing before recursive removal
+
+2. **Dry-run mode (`--dry-run`)**:
+   - New runtime flag propagated through `Settings` and `AgentContext`
+   - All seven write tools now support preview-only execution after normal permission and confirmation checks
+   - No filesystem modifications in dry-run mode
+   - No backup creation in dry-run mode
+
+3. **CLI visualization improvements**:
+   - Confirmation callback now accepts optional preview payloads
+   - Rich diff rendering in CLI for better review before approval
+   - Explicit DRY-RUN indicator in active model header
+
+4. **Backward compatibility and robustness**:
+   - Legacy confirmation callbacks without preview parameter remain supported
+   - Callback signature detection avoids retry-on-`TypeError` ambiguity and duplicate callback side effects
+
 #### Files created
 
 | File | Purpose |
@@ -54,6 +84,7 @@ Created `tools/write/` with seven tools that let the agent modify project files,
 | `tools/write/delete_file.py` | File deletion tool |
 | `tools/write/create_directory.py` | Directory creation tool |
 | `tools/write/remove_directory.py` | Directory removal tool |
+| `tools/write/preview.py` | Preview dataclass and formatting helpers for write operations |
 
 #### Files modified
 
@@ -65,6 +96,8 @@ Created `tools/write/` with seven tools that let the agent modify project files,
 | `agent/status.py` | Added display formatters for all 7 write tools |
 | `interfaces/cli_interface.py` | WriteConfirmation callback with terminal restore logic |
 | `interfaces/commands.py` | `recreate_agent()` preserves write_confirmation across agent switches |
+| `cli.py` | Added `--dry-run` CLI flag |
+| `config/settings.py` | Added `dry_run` runtime setting |
 | `config/loader.py` | `.gitignore` template includes `file_backups/` |
 
 #### Tests
@@ -73,10 +106,12 @@ Created `tools/write/` with seven tools that let the agent modify project files,
 |-----------|-------|----------|
 | `tests/test_write_tools.py` | 35 | All 7 tools: create, overwrite, edit, insert, append, delete, mkdir, rmdir |
 | `tests/test_write_tools_security.py` | 16 | Path traversal, symlink attacks, permission denial, confirmation gate |
-| `tests/test_write_confirmation.py` | 9 | Callback mode, auto-approve, fail-safe deny, context propagation |
+| `tests/test_write_confirmation.py` | 16 | Callback modes, preview compatibility, fail-safe deny, callback signature handling |
 | `tests/test_backup.py` | 10 | Backup creation, timestamped names, cleanup of old backups |
+| `tests/test_preview.py` | 23 | Diff generation, content/file/dir preview formatting, insertion context |
+| `tests/test_dry_run.py` | 17 | Dry-run behavior for all write tools, no filesystem changes, no backups |
 
-All 473 project tests pass (467 passed, 6 skipped).
+All project tests pass (527 passed, 6 skipped).
 
 ---
 

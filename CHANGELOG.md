@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- **Write confirmation callback compatibility hardening**:
+  - `WriteConfirmation.confirm()` now resolves callback signature upfront instead of using retry-on-`TypeError` fallback
+  - Prevents accidental double callback invocation when callbacks raise internal `TypeError`
+  - Supports legacy 3-argument callbacks plus preview-aware positional and keyword-only callback signatures
 - **Consolidated info commands (Task 4.1)**: Unified info display across CLI flags and slash commands via new `src/flavia/display.py` module:
   - Removed `/models` slash command and `--list-models` CLI flag (redundant with `/providers`)
   - `/providers` now shows providers with globally indexed models (usable with `-m` flag)
@@ -29,6 +33,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Write operation previews + dry-run mode (Task 5.2)**:
+  - New `OperationPreview` model and preview helpers in `src/flavia/tools/write/preview.py`
+  - CLI write confirmations now show rich previews before approval:
+    - unified diffs for edits/overwrites
+    - content previews for write/append
+    - insertion context for `insert_text`
+    - file/directory previews for delete/remove operations
+  - New global `--dry-run` flag and runtime `dry_run` propagation through `Settings` and `AgentContext`
+  - All seven write tools now support non-destructive preview execution in dry-run mode
+  - New safety documentation in `doc/SAFETY.md` and usage updates in `doc/usage.md`
+  - Added test coverage in `tests/test_preview.py` and `tests/test_dry_run.py`
 - **File Modification Tools (Task 5.1)**: Seven new write tools in `tools/write/` enabling agents to create, edit, and delete files and directories:
   - `write_file` — create or overwrite files
   - `edit_file` — replace exact text fragments (single-match enforced)
