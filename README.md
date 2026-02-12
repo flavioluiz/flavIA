@@ -67,6 +67,7 @@ The wizard guides you through each step: model/provider selection, connection te
 | [Installation](doc/installation.md) | Requirements, installation, venv, first use |
 | [Usage](doc/usage.md) | CLI, flags, interactive commands, examples |
 | [Configuration](doc/configuration.md) | Providers, agents, permissions, environment variables |
+| [Safety Features](doc/SAFETY.md) | Write tool safety, previews, dry-run mode, permissions, backups |
 | [Telegram](doc/telegram.md) | Telegram bot setup and usage |
 | [Architecture](doc/architecture.md) | Project structure, agent system, and tools |
 | [Use cases](doc/use-cases.md) | Practical examples for different contexts |

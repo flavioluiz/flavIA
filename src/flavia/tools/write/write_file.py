@@ -7,6 +7,7 @@ from ..backup import FileBackup
 from ..base import BaseTool, ToolParameter, ToolSchema
 from ..permissions import check_write_permission, resolve_path
 from ..registry import register_tool
+from .preview import OperationPreview, format_content_preview, generate_diff
 
 if TYPE_CHECKING:
     from flavia.agent.context import AgentContext
@@ -59,7 +60,9 @@ class WriteFileTool(BaseTool):
 
         # Build details for confirmation
         content_bytes = len(content.encode("utf-8"))
+        content_lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
         details = f"{content_bytes} bytes"
+        old_size = 0
         if is_overwrite:
             try:
                 old_size = full_path.stat().st_size
@@ -67,12 +70,55 @@ class WriteFileTool(BaseTool):
             except OSError:
                 pass
 
+        try:
+            rel_path = full_path.relative_to(agent_context.base_dir)
+        except ValueError:
+            rel_path = full_path
+
+        # Generate preview
+        if is_overwrite:
+            try:
+                old_content = full_path.read_text(encoding="utf-8")
+                diff = generate_diff(old_content, content, str(rel_path))
+                preview = OperationPreview(
+                    operation="write",
+                    path=str(full_path),
+                    diff=diff,
+                    content_lines=content_lines,
+                    content_bytes=content_bytes,
+                    file_size=old_size,
+                )
+            except (UnicodeDecodeError, OSError):
+                # Can't generate diff for binary files
+                preview = OperationPreview(
+                    operation="write",
+                    path=str(full_path),
+                    content_preview=format_content_preview(content),
+                    content_lines=content_lines,
+                    content_bytes=content_bytes,
+                    file_size=old_size,
+                )
+        else:
+            preview = OperationPreview(
+                operation="write",
+                path=str(full_path),
+                content_preview=format_content_preview(content),
+                content_lines=content_lines,
+                content_bytes=content_bytes,
+            )
+
         # User confirmation
         wc = agent_context.write_confirmation
         if wc is None:
             return "Error: Write operations require confirmation but no confirmation handler is configured"
-        if not wc.confirm(operation, str(full_path), details):
+        if not wc.confirm(operation, str(full_path), details, preview=preview):
             return "Operation cancelled by user"
+
+        # Dry-run check (after confirmation, before actual write)
+        if agent_context.dry_run:
+            if preview.diff:
+                return f"[DRY-RUN] Would {'overwrite' if is_overwrite else 'create'}: {rel_path}\n{preview.diff}"
+            return f"[DRY-RUN] Would {'overwrite' if is_overwrite else 'create'}: {rel_path} ({content_bytes} bytes)"
 
         # Backup existing file before overwrite
         if is_overwrite:
@@ -82,11 +128,6 @@ class WriteFileTool(BaseTool):
             # Create parent directories if needed
             full_path.parent.mkdir(parents=True, exist_ok=True)
             full_path.write_text(content, encoding="utf-8")
-
-            try:
-                rel_path = full_path.relative_to(agent_context.base_dir)
-            except ValueError:
-                rel_path = full_path
 
             action = "overwritten" if is_overwrite else "created"
             return f"File {action}: {rel_path} ({content_bytes} bytes)"

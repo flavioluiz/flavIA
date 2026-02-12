@@ -6,6 +6,7 @@ from ..backup import FileBackup
 from ..base import BaseTool, ToolParameter, ToolSchema
 from ..permissions import check_write_permission, resolve_path
 from ..registry import register_tool
+from .preview import OperationPreview, format_content_preview
 
 if TYPE_CHECKING:
     from flavia.agent.context import AgentContext
@@ -55,14 +56,43 @@ class AppendFileTool(BaseTool):
         file_exists = full_path.exists() and full_path.is_file()
         operation = "Append to file" if file_exists else "Create file"
         content_bytes = len(content.encode("utf-8"))
+        content_lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
         details = f"{content_bytes} bytes"
+
+        try:
+            rel_path = full_path.relative_to(agent_context.base_dir)
+        except ValueError:
+            rel_path = full_path
+
+        # Generate preview
+        file_size = 0
+        if file_exists:
+            try:
+                file_size = full_path.stat().st_size
+            except OSError:
+                pass
+
+        preview = OperationPreview(
+            operation="append",
+            path=str(full_path),
+            content_preview=format_content_preview(content),
+            content_lines=content_lines,
+            content_bytes=content_bytes,
+            file_size=file_size,
+        )
 
         # User confirmation
         wc = agent_context.write_confirmation
         if wc is None:
             return "Error: Write operations require confirmation but no confirmation handler is configured"
-        if not wc.confirm(operation, str(full_path), details):
+        if not wc.confirm(operation, str(full_path), details, preview=preview):
             return "Operation cancelled by user"
+
+        # Dry-run check (after confirmation, before actual write)
+        if agent_context.dry_run:
+            if file_exists:
+                return f"[DRY-RUN] Would append {content_bytes} bytes to {rel_path}"
+            return f"[DRY-RUN] Would create: {rel_path} ({content_bytes} bytes)"
 
         # Backup existing file before append
         if file_exists:
@@ -85,11 +115,6 @@ class AppendFileTool(BaseTool):
             return f"Error: OS permission denied writing to '{path}'"
         except OSError as e:
             return f"Error writing file: {e}"
-
-        try:
-            rel_path = full_path.relative_to(agent_context.base_dir)
-        except ValueError:
-            rel_path = full_path
 
         if file_exists:
             return f"Appended {content_bytes} bytes to {rel_path}"

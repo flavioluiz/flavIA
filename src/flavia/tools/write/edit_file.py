@@ -7,6 +7,7 @@ from ..backup import FileBackup
 from ..base import BaseTool, ToolParameter, ToolSchema
 from ..permissions import check_write_permission, resolve_path
 from ..registry import register_tool
+from .preview import OperationPreview, generate_diff
 
 if TYPE_CHECKING:
     from flavia.agent.context import AgentContext
@@ -100,18 +101,34 @@ class EditFileTool(BaseTool):
             f"replacing {len(old_text)} chars with {len(new_text)} chars"
         )
 
+        try:
+            rel_path = full_path.relative_to(agent_context.base_dir)
+        except ValueError:
+            rel_path = full_path
+
+        # Generate preview with diff
+        new_content = content.replace(old_text, new_text, 1)
+        diff = generate_diff(content, new_content, str(rel_path))
+        preview = OperationPreview(
+            operation="edit",
+            path=str(full_path),
+            diff=diff,
+            file_size=len(content.encode("utf-8")),
+        )
+
         # User confirmation
         wc = agent_context.write_confirmation
         if wc is None:
             return "Error: Write operations require confirmation but no confirmation handler is configured"
-        if not wc.confirm("Edit file", str(full_path), details):
+        if not wc.confirm("Edit file", str(full_path), details, preview=preview):
             return "Operation cancelled by user"
+
+        # Dry-run check (after confirmation, before actual write)
+        if agent_context.dry_run:
+            return f"[DRY-RUN] Would edit: {rel_path}\n{diff}"
 
         # Backup before edit
         FileBackup.backup(full_path, agent_context.base_dir)
-
-        # Apply edit
-        new_content = content.replace(old_text, new_text, 1)
 
         try:
             full_path.write_text(new_content, encoding="utf-8")
@@ -119,11 +136,6 @@ class EditFileTool(BaseTool):
             return f"Error: OS permission denied writing to '{path}'"
         except OSError as e:
             return f"Error writing file: {e}"
-
-        try:
-            rel_path = full_path.relative_to(agent_context.base_dir)
-        except ValueError:
-            rel_path = full_path
 
         return (
             f"File edited: {rel_path}\n"

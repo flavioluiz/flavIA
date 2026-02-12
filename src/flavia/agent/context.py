@@ -28,6 +28,7 @@ class AgentContext:
     messages: list[dict[str, Any]] = field(default_factory=list)
     permissions: AgentPermissions = field(default_factory=lambda: AgentPermissions())
     write_confirmation: Optional["WriteConfirmation"] = None
+    dry_run: bool = False
 
     @classmethod
     def from_profile(
@@ -75,6 +76,7 @@ class AgentContext:
             model_id=resolved_model or str(profile.model),
             permissions=profile.permissions.copy(),
             write_confirmation=self.write_confirmation,
+            dry_run=self.dry_run,
         )
 
 

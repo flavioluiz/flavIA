@@ -53,20 +53,41 @@ Configuration options:
   - `providers.<id>.compact_threshold`
   - `providers.<id>.models[].compact_threshold`
 
-### Write tool confirmation
+### Write tool confirmation and previews
 
-When the agent uses a write tool (e.g., `write_file`, `edit_file`, `delete_file`), the CLI prompts for explicit confirmation before executing the operation:
+When the agent uses a write tool (e.g., `write_file`, `edit_file`, `delete_file`), the CLI prompts for explicit confirmation before executing the operation, **with a preview of the changes**:
 
 ```text
-Write confirmation: Write file: ./output/report.md (1842 bytes)
+Write confirmation: Edit file: ./src/config.py (replacing 245 chars)
+
+Changes:
+--- a/src/config.py
++++ b/src/config.py
+@@ -10,7 +10,7 @@
+
+ class Config:
+     def __init__(self):
+-        self.timeout = 30
++        self.timeout = 60
+         self.retry = 3
+
 Allow? [y/N]
 ```
+
+**Preview types:**
+- **Edits**: Colored unified diff showing exact changes
+- **Writes/Appends**: Content preview (truncated if large)
+- **Inserts**: Context lines before and after insertion point
+- **Deletes**: First lines of file being deleted
+- **Directories**: List of contents
 
 This applies to all seven write tools: `write_file`, `edit_file`, `insert_text`, `append_file`, `delete_file`, `create_directory`, and `remove_directory`. If declined, the operation is cancelled and the agent is notified.
 
 Before destructive file operations, a backup is automatically saved to `.flavia/file_backups/` with a timestamped filename (e.g., `report.md.20250210_143022_123456.bak`).
 
 In Telegram mode, write operations are denied by default since there is no interactive confirmation mechanism.
+
+**See [SAFETY.md](SAFETY.md) for complete documentation on write tool safety features, including dry-run mode, permissions, and backups.**
 
 ### Prompt completion (Tab)
 
@@ -129,6 +150,7 @@ Numeric indexes follow the combined order shown by `flavia --list-providers`.
 | `--no-subagents` | Disable sub-agent spawning (single-agent mode) |
 | `--agent NAME` | Promote a sub-agent as the main agent |
 | `--parallel-workers N` | Maximum parallel sub-agents (default: 4) |
+| `--dry-run` | Preview file operations without actually modifying files |
 | `-p, --path PATH` | Base directory for file operations (default: current directory) |
 
 ### Information

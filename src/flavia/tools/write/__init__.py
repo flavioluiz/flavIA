@@ -13,6 +13,7 @@ from .append_file import AppendFileTool
 from .delete_file import DeleteFileTool
 from .create_directory import CreateDirectoryTool
 from .remove_directory import RemoveDirectoryTool
+from .preview import OperationPreview
 
 __all__ = [
     "WriteFileTool",
@@ -22,4 +23,5 @@ __all__ = [
     "DeleteFileTool",
     "CreateDirectoryTool",
     "RemoveDirectoryTool",
+    "OperationPreview",
 ]

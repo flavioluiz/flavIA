@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 from ..base import BaseTool, ToolParameter, ToolSchema
 from ..permissions import check_write_permission, resolve_path
 from ..registry import register_tool
+from .preview import OperationPreview, format_dir_contents
 
 if TYPE_CHECKING:
     from flavia.agent.context import AgentContext
@@ -74,9 +75,9 @@ class RemoveDirectoryTool(BaseTool):
             )
 
         # Build details
+        file_count = 0
+        dir_count = 0
         if recursive and contents:
-            file_count = 0
-            dir_count = 0
             for item in full_path.rglob("*"):
                 if item.is_file():
                     file_count += 1
@@ -86,12 +87,31 @@ class RemoveDirectoryTool(BaseTool):
         else:
             details = "empty directory"
 
+        try:
+            rel_path = full_path.relative_to(agent_context.base_dir)
+        except ValueError:
+            rel_path = full_path
+
+        # Generate preview with directory contents
+        dir_contents = format_dir_contents(full_path)
+        preview = OperationPreview(
+            operation="rmdir",
+            path=str(full_path),
+            dir_contents=dir_contents,
+        )
+
         # User confirmation
         wc = agent_context.write_confirmation
         if wc is None:
             return "Error: Write operations require confirmation but no confirmation handler is configured"
-        if not wc.confirm("Remove directory", str(full_path), details):
+        if not wc.confirm("Remove directory", str(full_path), details, preview=preview):
             return "Operation cancelled by user"
+
+        # Dry-run check (after confirmation, before actual removal)
+        if agent_context.dry_run:
+            if recursive and contents:
+                return f"[DRY-RUN] Would remove directory: {rel_path} ({details})"
+            return f"[DRY-RUN] Would remove directory: {rel_path}"
 
         try:
             if recursive:
@@ -102,11 +122,6 @@ class RemoveDirectoryTool(BaseTool):
             return f"Error: OS permission denied removing directory '{path}'"
         except OSError as e:
             return f"Error removing directory: {e}"
-
-        try:
-            rel_path = full_path.relative_to(agent_context.base_dir)
-        except ValueError:
-            rel_path = full_path
 
         if recursive and contents:
             return f"Directory removed: {rel_path} ({details})"

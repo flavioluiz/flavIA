@@ -113,6 +113,12 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be modified without actually changing files",
+    )
+
+    parser.add_argument(
         "-p",
         "--path",
         type=str,
@@ -226,6 +232,9 @@ def apply_args_to_settings(args: argparse.Namespace, settings: Settings) -> Sett
             )
         else:
             settings.parallel_workers = parallel_workers_arg
+
+    if getattr(args, "dry_run", False):
+        settings.dry_run = True
 
     return settings
 

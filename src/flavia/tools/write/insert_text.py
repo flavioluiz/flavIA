@@ -6,6 +6,7 @@ from ..backup import FileBackup
 from ..base import BaseTool, ToolParameter, ToolSchema
 from ..permissions import check_write_permission, resolve_path
 from ..registry import register_tool
+from .preview import OperationPreview, format_content_preview, format_insertion_context
 
 if TYPE_CHECKING:
     from flavia.agent.context import AgentContext
@@ -100,12 +101,34 @@ class InsertTextTool(BaseTool):
         # Build details for confirmation
         details = f"{num_inserted} line(s) at line {line_number}"
 
+        try:
+            rel_path = full_path.relative_to(agent_context.base_dir)
+        except ValueError:
+            rel_path = full_path
+
+        # Generate preview with insertion context
+        context_before, context_after = format_insertion_context(lines, line_number)
+        preview = OperationPreview(
+            operation="insert",
+            path=str(full_path),
+            content_preview=format_content_preview(text),
+            content_lines=num_inserted,
+            content_bytes=len(text.encode("utf-8")),
+            context_before=context_before,
+            context_after=context_after,
+            file_size=len(content.encode("utf-8")),
+        )
+
         # User confirmation
         wc = agent_context.write_confirmation
         if wc is None:
             return "Error: Write operations require confirmation but no confirmation handler is configured"
-        if not wc.confirm("Insert text", str(full_path), details):
+        if not wc.confirm("Insert text", str(full_path), details, preview=preview):
             return "Operation cancelled by user"
+
+        # Dry-run check (after confirmation, before actual write)
+        if agent_context.dry_run:
+            return f"[DRY-RUN] Would insert {num_inserted} line(s) at line {line_number} in {rel_path}"
 
         # Backup before insert
         FileBackup.backup(full_path, agent_context.base_dir)
@@ -121,11 +144,6 @@ class InsertTextTool(BaseTool):
             return f"Error: OS permission denied writing to '{path}'"
         except OSError as e:
             return f"Error writing file: {e}"
-
-        try:
-            rel_path = full_path.relative_to(agent_context.base_dir)
-        except ValueError:
-            rel_path = full_path
 
         return f"Inserted {num_inserted} line(s) at line {line_number} in {rel_path}"
 

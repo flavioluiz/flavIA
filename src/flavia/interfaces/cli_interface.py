@@ -13,12 +13,14 @@ from typing import Optional
 
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.syntax import Syntax
 
 from flavia.agent import AgentProfile, RecursiveAgent, StatusPhase, ToolStatus
 from flavia.agent.status import sanitize_terminal_text
 from flavia.config import ProviderConfig, Settings
 from flavia.interfaces.commands import CommandContext, dispatch_command, list_commands
 from flavia.tools.write_confirmation import WriteConfirmation
+from flavia.tools.write.preview import OperationPreview
 
 console = Console()
 
@@ -574,7 +576,12 @@ def _suppress_terminal_input() -> None:
 _confirmation_lock = threading.Lock()
 
 
-def _cli_write_confirmation_callback(operation: str, path: str, details: str) -> bool:
+def _cli_write_confirmation_callback(
+    operation: str,
+    path: str,
+    details: str,
+    preview: Optional[OperationPreview] = None,
+) -> bool:
     """Prompt the user to confirm a write operation from the agent thread.
 
     This callback is invoked from within `_suppress_terminal_input`.
@@ -607,6 +614,11 @@ def _cli_write_confirmation_callback(operation: str, path: str, details: str) ->
                 f"\n[bold yellow]Write confirmation:[/bold yellow] "
                 f"{operation}: [cyan]{path}[/cyan]{detail_str}"
             )
+
+            # Display preview if available
+            if preview is not None:
+                _display_operation_preview(preview)
+
             console.print("[bold yellow]Allow? [y/N][/bold yellow] ", end="")
 
             try:
@@ -630,6 +642,58 @@ def _cli_write_confirmation_callback(operation: str, path: str, details: str) ->
                     _termios.tcsetattr(fd, _termios.TCSANOW, old_settings)
                 except Exception:
                     pass
+
+
+def _display_operation_preview(preview: OperationPreview) -> None:
+    """Display operation preview with appropriate formatting."""
+    # Display diff for edit operations
+    if preview.diff:
+        console.print("\n[dim]Changes:[/dim]")
+        # Use Syntax for colored diff display
+        syntax = Syntax(
+            preview.diff,
+            "diff",
+            theme="monokai",
+            line_numbers=False,
+            word_wrap=True,
+        )
+        console.print(syntax)
+
+    # Display content preview for write/append operations
+    elif preview.content_preview:
+        console.print(f"\n[dim]Content ({preview.content_lines} lines, {preview.content_bytes} bytes):[/dim]")
+        # Truncate display if too long
+        lines = preview.content_preview.split("\n")
+        if len(lines) > 15:
+            display_content = "\n".join(lines[:15]) + f"\n... ({len(lines) - 15} more lines)"
+        else:
+            display_content = preview.content_preview
+        console.print(f"[dim]{display_content}[/dim]")
+
+    # Display insertion context
+    if preview.context_before or preview.context_after:
+        if preview.context_before:
+            console.print("\n[dim]Lines before insertion:[/dim]")
+            console.print(f"[dim]{preview.context_before}[/dim]")
+        console.print("[bold green]>>> INSERT HERE <<<[/bold green]")
+        if preview.context_after:
+            console.print("[dim]Lines after insertion:[/dim]")
+            console.print(f"[dim]{preview.context_after}[/dim]")
+
+    # Display file preview for delete operations
+    if preview.file_preview and preview.operation == "delete":
+        console.print(f"\n[dim]File content ({preview.file_size} bytes):[/dim]")
+        console.print(f"[dim]{preview.file_preview}[/dim]")
+
+    # Display directory contents for directory operations
+    if preview.dir_contents:
+        console.print("\n[dim]Directory contents:[/dim]")
+        for item in preview.dir_contents[:10]:
+            console.print(f"[dim]  {item}[/dim]")
+        if len(preview.dir_contents) > 10:
+            console.print(f"[dim]  ... ({len(preview.dir_contents) - 10} more items)[/dim]")
+
+    console.print()
 
 
 def _run_loading_animation(stop_event: threading.Event, model_ref: str) -> None:
@@ -942,6 +1006,8 @@ def _print_active_model_hint(agent: RecursiveAgent, settings: Optional[Settings]
             parts.append(f" | agent: [cyan]{settings.active_agent}[/cyan]")
         if not settings.subagents_enabled:
             parts.append(" | [yellow]subagents disabled[/yellow]")
+        if settings.dry_run:
+            parts.append(" | [bold yellow]DRY-RUN MODE[/bold yellow]")
 
     console.print(f"[dim]{''.join(parts)}[/dim]\n")
 
@@ -1042,6 +1108,7 @@ def run_cli(settings: Settings) -> None:
     write_confirm.set_callback(_cli_write_confirmation_callback)
     if hasattr(agent, "context"):
         agent.context.write_confirmation = write_confirm
+        agent.context.dry_run = settings.dry_run
 
     # Create command context for dispatch
     ctx = CommandContext(

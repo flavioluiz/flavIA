@@ -57,6 +57,7 @@ class Settings:
 
     # Runtime
     verbose: bool = False
+    dry_run: bool = False
 
     # Loaded configs
     models: list[ModelConfig] = field(default_factory=list)

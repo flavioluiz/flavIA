@@ -8,12 +8,16 @@ destructive operations. Supports three modes:
 3. Fail-safe: if neither is configured, operations are denied
 """
 
-from typing import Callable, Optional
+from typing import Callable, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from flavia.tools.write.preview import OperationPreview
 
 
 # Type alias for confirmation callbacks.
-# Signature: (operation, path, details) -> approved
-WriteConfirmationCallback = Callable[[str, str, str], bool]
+# Signature: (operation, path, details, preview) -> approved
+# The preview parameter is optional for backward compatibility.
+WriteConfirmationCallback = Callable[[str, str, str, Optional["OperationPreview"]], bool]
 
 
 class WriteConfirmation:
@@ -45,13 +49,19 @@ class WriteConfirmation:
         """Set the confirmation callback.
 
         Args:
-            callback: A callable ``(operation, path, details) -> bool``.
+            callback: A callable ``(operation, path, details, preview) -> bool``.
                       Return ``True`` to approve, ``False`` to deny.
                       Pass ``None`` to clear the callback.
         """
         self._callback = callback
 
-    def confirm(self, operation: str, path: str, details: str = "") -> bool:
+    def confirm(
+        self,
+        operation: str,
+        path: str,
+        details: str = "",
+        preview: Optional["OperationPreview"] = None,
+    ) -> bool:
         """Request confirmation for a write operation.
 
         Args:
@@ -60,6 +70,8 @@ class WriteConfirmation:
             path: The target path being modified.
             details: Optional extra context shown to the user (e.g.
                      number of bytes, lines affected).
+            preview: Optional detailed preview of the operation,
+                     including diffs, content previews, etc.
 
         Returns:
             ``True`` if the operation is approved, ``False`` otherwise.
@@ -69,7 +81,13 @@ class WriteConfirmation:
 
         if self._callback is not None:
             try:
-                return self._callback(operation, path, details)
+                return self._callback(operation, path, details, preview)
+            except TypeError:
+                # Backward compatibility: try calling without preview
+                try:
+                    return self._callback(operation, path, details)  # type: ignore[call-arg]
+                except Exception:
+                    return False
             except Exception:
                 # If the callback itself fails, deny the operation.
                 return False
