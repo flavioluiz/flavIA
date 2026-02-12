@@ -33,7 +33,10 @@ except Exception:  # pragma: no cover - platform-dependent
     _readline = None
 
 LOADING_DOTS = (".", "..", "...", "..")
-MAX_STATUS_EVENTS = 100
+# No cap on status events – the previous maxlen=100 deque silently dropped
+# events when many sub-agents ran in parallel, causing their tasks to vanish
+# from the display.
+MAX_STATUS_EVENTS = None  # unlimited
 LOADING_MESSAGES = (
     "Skimming conference proceedings",
     "Checking references in the lab notebook",
@@ -844,8 +847,8 @@ def _render_agent_branch(
         current_child = None
 
     for i, task in enumerate(tasks):
-        is_last_task = (i == len(tasks) - 1)
-        is_interrupted_agent = (agent_id == state.current_agent_id)
+        is_last_task = i == len(tasks) - 1
+        is_interrupted_agent = agent_id == state.current_agent_id
         is_spawn_task = "Spawning" in task
 
         if interrupted and is_last_task and is_interrupted_agent and state.current_task:
@@ -1126,7 +1129,7 @@ def _run_agent_with_feedback(
 
     # Thread-safe container for status updates
     status_holder: list[Optional[ToolStatus]] = [None]
-    status_events: deque[ToolStatus] = deque(maxlen=MAX_STATUS_EVENTS)
+    status_events: deque[ToolStatus] = deque()
     status_lock = threading.Lock()
 
     # Shared state for interrupt handling - allows us to show what was done
