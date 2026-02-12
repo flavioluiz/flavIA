@@ -12,9 +12,9 @@ This roadmap outlines **42 tasks** across **10 major areas** to extend flavIA fr
 
 ### Quick Stats
 - **9 Easy tasks** (< 1 day each) — Quick wins for immediate value — **5 completed** ✓
-- **24 Medium tasks** (1-2 days each) — Core feature development — **6 completed** ✓
+- **24 Medium tasks** (1-2 days each) — Core feature development — **7 completed** ✓
 - **9 Hard tasks** (3+ days each) — Complex integrations requiring careful design
-- **Total completed so far**: **11 / 42 tasks** ✓
+- **Total completed so far**: **12 / 42 tasks** ✓
 
 ### Strategic Priorities
 1. **Immediate value** (Tasks 4.1-4.8, 8.1): Improve CLI UX and add token tracking
@@ -76,7 +76,7 @@ Consolidate commands, eliminate redundancies, add runtime switching, and introdu
 ### [Area 6: Academic Workflow Tools](roadmap/area-6-academic-workflow-tools.md) (2 tasks)
 Bridge the gap between text generation and actual research output.
 
-- **6.1** LaTeX Compilation (Medium) — Compile .tex to PDF with pdflatex/latexmk
+- **6.1** ~~LaTeX Compilation (Medium)~~ — **DONE** ✓ Compile .tex to PDF with pdflatex/latexmk
 - **6.2** Sandboxed Script Execution (Hard) — Run Python/MATLAB scripts with user confirmation + AST-based safety
 
 ### [Area 7: External Service Integration](roadmap/area-7-external-service-integration.md) (2 tasks)
@@ -129,12 +129,12 @@ Improve CLI usability, add token tracking, expand file processing to Office docs
 ### Phase 2: Core Write Capabilities (Tasks 5.1-5.2, 6.1)
 **Timeline**: 1-2 weeks | **Effort**: 3 Medium = ~4-6 days
 
-Enable safe file modification and LaTeX compilation for productive academic workflows. Tasks 5.1 and 5.2 are complete.
+Enable safe file modification and LaTeX compilation for productive academic workflows. Tasks 5.1, 5.2, and 6.1 are complete.
 
 **Deliverables**:
 - ~~Agent can create, edit, and modify files (with permissions)~~ ✓
 - ~~Agent shows write operation previews and supports `--dry-run` for non-destructive execution~~ ✓
-- Compile LaTeX documents directly from chat
+- ~~Compile LaTeX documents directly from chat~~ ✓
 
 ### Phase 3: Multimodal Expansion (Tasks 1.1-1.2, 1.5)
 **Timeline**: 2 weeks | **Effort**: 3 Medium = ~4-6 days
@@ -305,7 +305,7 @@ Tasks ordered by a pragmatic implementation sequence that balances dependency re
 | 15 | **2.1** Structured agent profiles | Medium | Agents |
 | 16 | ~~**8.2** Context compaction with confirmation~~ | ~~Medium~~ | ~~Context Management~~ |
 | 17 | **3.1** YAML-based bot configuration | Medium | Messaging |
-| 18 | **6.1** LaTeX compilation tool | Medium | Academic Workflow |
+| 18 | ~~**6.1** LaTeX compilation tool~~ | ~~Medium~~ | ~~Academic Workflow~~ |
 | 19 | **4.6** Global agent definitions | Medium | CLI |
 | 20 | **2.2** CLI agent management commands | Medium | Agents |
 | 21 | **3.2** Per-conversation agent binding | Medium | Messaging |

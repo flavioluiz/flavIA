@@ -1,12 +1,14 @@
 # Area 6: Academic Workflow Tools
 
+**Status**: In Progress (Task 6.1 complete, Task 6.2 pending)
+
 flavIA is designed for research and academic work. Beyond reading and analyzing files, researchers need to compile LaTeX documents (papers, reports, presentations) and run computational scripts (data analysis, simulations, plotting). These tools bridge the gap between the agent's text generation capabilities and actual academic output.
 
 ---
 
-### Task 6.1 -- LaTeX Compilation Tool
+### Task 6.1 -- LaTeX Compilation Tool ✓
 
-**Difficulty**: Medium | **Dependencies**: Task 5.1 (agent needs write tools to generate `.tex` files first)
+**Difficulty**: Medium | **Dependencies**: Task 5.1 (agent needs write tools to generate `.tex` files first) | **Status**: Done
 
 Create a `tools/academic/compile_latex.py` tool that compiles LaTeX documents into PDFs.
 
