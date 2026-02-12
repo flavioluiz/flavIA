@@ -512,7 +512,7 @@ def _resolve_model_reference(
 def _choose_loading_message(current: str = "") -> str:
     """Pick a loading message, avoiding immediate repetition when possible."""
     if len(LOADING_MESSAGES) <= 1:
-        return LOADING_MESSAGES[0] if LOADING_MESSAGES else "Processando"
+        return LOADING_MESSAGES[0] if LOADING_MESSAGES else "Processing"
 
     candidates = [msg for msg in LOADING_MESSAGES if msg != current]
     return random.choice(candidates) if candidates else LOADING_MESSAGES[0]
@@ -737,13 +737,33 @@ def _run_status_animation(
         status_lock: Lock protecting shared status structures.
         verbose: Whether to show detailed tool arguments.
     """
+    def _render_status_block(lines: list[str], previous_line_count: int) -> int:
+        """Render a multi-line status block, rewriting the previous frame in place."""
+        output = console.file
+        if previous_line_count > 0:
+            # Move to start of previous frame before repainting.
+            output.write(f"\033[{previous_line_count}F")
+
+        total_lines = max(previous_line_count, len(lines))
+        for index in range(total_lines):
+            output.write("\r\033[2K")
+            if index < len(lines):
+                output.write(lines[index])
+            if index < total_lines - 1:
+                output.write("\n")
+        output.flush()
+        return len(lines)
+
     step = 0
     fallback_message = _choose_loading_message()
     next_message_step = random.randint(14, 24)
-    last_tool_line: Optional[str] = None
-    needs_gap_before_loading = False
-    seen_agent_headers: set[str] = set()
-    header_printed = False
+    rendered_line_count = 0
+
+    # Parallel-friendly grouped activity view.
+    agent_order: list[str] = []
+    agent_tasks: dict[str, list[str]] = {}
+    agent_omitted_count: dict[str, int] = {}
+    max_tasks_per_agent = 8
 
     while not stop_event.is_set():
         # Pause status rendering while a write-confirmation prompt is active,
@@ -753,13 +773,6 @@ def _run_status_animation(
                 break
             continue
 
-        if not header_printed:
-            output = console.file
-            header_line = _colorize_status(_build_session_header_line(model_ref), _ANSI_BOLD_CYAN)
-            output.write("\r\033[2K" + header_line + "\n\n")
-            output.flush()
-            header_printed = True
-
         with status_lock:
             current_status = status_holder[0] if status_holder else None
             pending_events = status_events[:]
@@ -768,23 +781,18 @@ def _run_status_animation(
         for event in pending_events:
             if event.phase not in (StatusPhase.EXECUTING_TOOL, StatusPhase.SPAWNING_AGENT):
                 continue
-            if event.agent_id not in seen_agent_headers:
-                header_line = _build_agent_header_line(event)
-                header_line = _colorize_status(header_line, _ANSI_BOLD_BLUE)
-                output = console.file
-                output.write("\r\033[2K" + header_line + "\n")
-                output.flush()
-                seen_agent_headers.add(event.agent_id)
+            if event.agent_id not in agent_tasks:
+                agent_tasks[event.agent_id] = []
+                agent_omitted_count[event.agent_id] = 0
+                agent_order.append(event.agent_id)
 
-            tool_line = _build_agent_activity_line(event, step, model_ref, verbose)
-            if tool_line == last_tool_line:
-                continue
-            tool_line = _colorize_status(tool_line, _ANSI_GREEN)
-            output = console.file
-            output.write("\r\033[2K" + tool_line + "\n")
-            output.flush()
-            last_tool_line = tool_line
-            needs_gap_before_loading = True
+            task_line = _build_agent_activity_line(event, step, model_ref, verbose).strip()
+            tasks = agent_tasks[event.agent_id]
+            tasks.append(task_line)
+            if len(tasks) > max_tasks_per_agent:
+                removed = len(tasks) - max_tasks_per_agent
+                agent_omitted_count[event.agent_id] += removed
+                del tasks[0:removed]
 
         tool_active = bool(
             current_status
@@ -792,19 +800,29 @@ def _run_status_animation(
         )
 
         if tool_active and current_status is not None:
-            line = _build_loading_line("Trabalhando", step, model_ref, include_prefix=False)
-            line = _colorize_status(line, _ANSI_DIM)
+            footer_line = _build_loading_line("Working", step, model_ref, include_prefix=False)
+            footer_line = _colorize_status(footer_line, _ANSI_DIM)
         else:
-            last_tool_line = None
-            line = _build_loading_line(fallback_message, step, model_ref, include_prefix=False)
-            line = _colorize_status(line, _ANSI_DIM)
+            footer_line = _build_loading_line(fallback_message, step, model_ref, include_prefix=False)
+            footer_line = _colorize_status(footer_line, _ANSI_DIM)
 
-        output = console.file
-        if needs_gap_before_loading:
-            output.write("\n")
-            needs_gap_before_loading = False
-        output.write("\r\033[2K" + line)
-        output.flush()
+        lines: list[str] = [
+            _colorize_status(_build_session_header_line(model_ref), _ANSI_BOLD_CYAN),
+            "",
+        ]
+
+        for agent_id in agent_order:
+            header_status = ToolStatus.waiting_llm(agent_id=agent_id, depth=0)
+            lines.append(_colorize_status(_build_agent_header_line(header_status), _ANSI_BOLD_BLUE))
+            omitted_count = agent_omitted_count.get(agent_id, 0)
+            if omitted_count > 0:
+                lines.append(_colorize_status(f"  ... ({omitted_count} previous)", _ANSI_DIM))
+            for task in agent_tasks.get(agent_id, []):
+                lines.append(_colorize_status(f"  {task}", _ANSI_GREEN))
+            lines.append("")
+
+        lines.append(footer_line)
+        rendered_line_count = _render_status_block(lines, rendered_line_count)
 
         step += 1
         if (not tool_active) and step % next_message_step == 0:

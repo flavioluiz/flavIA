@@ -1,5 +1,10 @@
 """Tests for CLI wait feedback helpers."""
 
+import threading
+from io import StringIO
+
+from rich.console import Console
+
 from flavia.agent.recursive import RecursiveAgent
 from flavia.agent.status import StatusPhase, ToolStatus
 from flavia.interfaces.cli_interface import (
@@ -14,6 +19,7 @@ from flavia.interfaces.cli_interface import (
     _choose_loading_message,
     _continue_after_max_iterations,
     _get_agent_model_ref,
+    _run_status_animation,
 )
 
 
@@ -155,3 +161,116 @@ def test_continue_after_max_iterations_returns_original_when_user_declines(monke
 
     assert result == initial
     assert called == []
+
+
+def test_run_status_animation_shows_interleaved_agents_with_same_activity():
+    class _StopAfterFirstWait:
+        def __init__(self):
+            self._stopped = False
+
+        def is_set(self):
+            return self._stopped
+
+        def wait(self, _timeout):
+            self._stopped = True
+            return True
+
+    event_a = ToolStatus(
+        phase=StatusPhase.EXECUTING_TOOL,
+        tool_name="list_files",
+        tool_display="Listing /tmp/docs",
+        agent_id="main.sub.1",
+        depth=1,
+    )
+    event_b = ToolStatus(
+        phase=StatusPhase.EXECUTING_TOOL,
+        tool_name="list_files",
+        tool_display="Listing /tmp/docs",
+        agent_id="main.sub.2",
+        depth=1,
+    )
+
+    status_holder = [event_b]
+    status_events = [event_a, event_b]
+    status_lock = threading.Lock()
+    stop_event = _StopAfterFirstWait()
+
+    buf = StringIO()
+    test_console = Console(file=buf, no_color=True, width=200)
+
+    import flavia.interfaces.cli_interface as cli_mod
+
+    original_console = cli_mod.console
+    cli_mod.console = test_console
+    try:
+        _run_status_animation(
+            stop_event=stop_event,
+            model_ref="",
+            status_holder=status_holder,
+            status_events=status_events,
+            status_lock=status_lock,
+            verbose=False,
+        )
+    finally:
+        cli_mod.console = original_console
+
+    output = buf.getvalue()
+    assert "sub-1:" in output
+    assert "sub-2:" in output
+    assert output.count("Listing /tmp/docs") == 2
+
+
+def test_run_status_animation_shows_ellipsis_when_agent_history_is_truncated():
+    class _StopAfterFirstWait:
+        def __init__(self):
+            self._stopped = False
+
+        def is_set(self):
+            return self._stopped
+
+        def wait(self, _timeout):
+            self._stopped = True
+            return True
+
+    events = [
+        ToolStatus(
+            phase=StatusPhase.EXECUTING_TOOL,
+            tool_name="list_files",
+            tool_display=f"Task {index}",
+            agent_id="main.sub.1",
+            depth=1,
+        )
+        for index in range(10)
+    ]
+
+    status_holder = [events[-1]]
+    status_events = events
+    status_lock = threading.Lock()
+    stop_event = _StopAfterFirstWait()
+
+    buf = StringIO()
+    test_console = Console(file=buf, no_color=True, width=200)
+
+    import flavia.interfaces.cli_interface as cli_mod
+
+    original_console = cli_mod.console
+    cli_mod.console = test_console
+    try:
+        _run_status_animation(
+            stop_event=stop_event,
+            model_ref="",
+            status_holder=status_holder,
+            status_events=status_events,
+            status_lock=status_lock,
+            verbose=False,
+        )
+    finally:
+        cli_mod.console = original_console
+
+    output = buf.getvalue()
+    assert "sub-1:" in output
+    assert "  ... (2 previous)" in output
+    assert "Task 0" not in output
+    assert "Task 1" not in output
+    assert "Task 2" in output
+    assert "Task 9" in output
