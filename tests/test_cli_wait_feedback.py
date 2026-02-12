@@ -539,9 +539,9 @@ def test_run_status_animation_shows_nested_agents_hierarchically():
             depth=1,
         ),
         ToolStatus(
-            phase=StatusPhase.SPAWNING_AGENT,
+            phase=StatusPhase.EXECUTING_TOOL,
             tool_name="spawn_agent",
-            tool_display="Spawning sub-agent",
+            tool_display="Spawning agent: do something",
             agent_id="main.sub.1",
             depth=1,
         ),
@@ -585,7 +585,7 @@ def test_run_status_animation_shows_nested_agents_hierarchically():
     assert "sub-1:" in output
     # Both tasks should appear
     assert "Reading config.yaml" in output
-    assert "Spawning sub-agent" in output
+    assert "Spawning agent:" in output
     assert "Searching documents" in output
 
 
@@ -613,9 +613,9 @@ def test_run_status_animation_keeps_child_visible_when_child_event_arrives_first
             depth=2,
         ),
         ToolStatus(
-            phase=StatusPhase.SPAWNING_AGENT,
+            phase=StatusPhase.EXECUTING_TOOL,
             tool_name="spawn_agent",
-            tool_display="Spawning sub-agent",
+            tool_display="Spawning agent: launch child",
             agent_id="main.sub.1",
             depth=1,
         ),
@@ -646,5 +646,5 @@ def test_run_status_animation_keeps_child_visible_when_child_event_arrives_first
         cli_mod.console = original_console
 
     output = buf.getvalue()
-    assert "Spawning sub-agent" in output
+    assert "Spawning agent:" in output
     assert "Child task" in output

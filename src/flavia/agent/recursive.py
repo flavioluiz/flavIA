@@ -235,26 +235,19 @@ class RecursiveAgent(BaseAgent):
                 spawn_info = self._parse_spawn_agent(result, args)
                 spawn_info["tool_call_id"] = tool_call.id
                 spawns.append(spawn_info)
-                self._notify_status(
-                    ToolStatus.spawning_agent(
-                        "sub-agent",
-                        self.context.agent_id,
-                        self.context.current_depth,
-                    )
-                )
+                # Note: we intentionally do NOT emit a second SPAWNING_AGENT
+                # status here.  The EXECUTING_TOOL notification above already
+                # contains "Spawning agent: ..." which the UI uses to detect
+                # spawn tasks and nest child agents.  Emitting a second status
+                # would cause the tree renderer to consume two children per
+                # spawn, breaking the hierarchy.
                 result = "[Spawning sub-agent...]"
 
             elif name == "spawn_predefined_agent" and result.startswith("__SPAWN_PREDEFINED__:"):
                 spawn_info = self._parse_spawn_predefined(result, args)
                 spawn_info["tool_call_id"] = tool_call.id
                 spawns.append(spawn_info)
-                self._notify_status(
-                    ToolStatus.spawning_agent(
-                        spawn_info.get("agent_name", "sub-agent"),
-                        self.context.agent_id,
-                        self.context.current_depth,
-                    )
-                )
+                # Same rationale as above – avoid duplicate spawn notification.
                 result = "[Spawning predefined agent...]"
 
             elif name == "compact_context" and result.startswith(COMPACT_SENTINEL):

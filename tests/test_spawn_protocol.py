@@ -222,7 +222,9 @@ def test_process_tool_calls_emits_spawning_status_for_predefined_agents():
 
     assert results[0]["content"] == "[Spawning predefined agent...]"
     assert spawns[0]["agent_name"] == "summarizer"
-    assert [s.phase for s in statuses] == [StatusPhase.EXECUTING_TOOL, StatusPhase.SPAWNING_AGENT]
+    # Only EXECUTING_TOOL is emitted; duplicate SPAWNING_AGENT was removed to
+    # prevent the tree renderer from consuming two children per spawn.
+    assert [s.phase for s in statuses] == [StatusPhase.EXECUTING_TOOL]
 
 
 def test_spawn_sentinel_from_non_spawn_tool_is_not_interpreted():
