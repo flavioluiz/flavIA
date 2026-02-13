@@ -833,6 +833,15 @@ def _render_agent_branch(
     tasks = state.agent_tasks.get(agent_id, [])
     children = state.agent_children.get(agent_id, [])
 
+    # Separate completion lines from regular tasks so they render last
+    regular_tasks = []
+    completed_tasks = []
+    for task in tasks:
+        if task.startswith("__COMPLETED__"):
+            completed_tasks.append(task)
+        else:
+            regular_tasks.append(task)
+
     # Build a map of which task index spawned which child
     # This is approximate - we assume children appear in order after spawn tasks
     child_iter = iter(children)
@@ -842,21 +851,23 @@ def _render_agent_branch(
     except StopIteration:
         current_child = None
 
-    for i, task in enumerate(tasks):
-        is_last_task = i == len(tasks) - 1
+    for i, task in enumerate(regular_tasks):
+        is_last_regular = i == len(regular_tasks) - 1
         is_interrupted_agent = agent_id == state.current_agent_id
         is_spawn_task = "Spawning" in task
-        is_completed = task.startswith("__COMPLETED__")
-        display_task = task[len("__COMPLETED__") :] if is_completed else task
 
-        if is_completed:
-            branch.add(f"[dim cyan]{display_task} [green]\\u2713[/green][/dim cyan]")
-        elif interrupted and is_last_task and is_interrupted_agent and state.current_task:
-            branch.add(f"[yellow]{display_task} (interrupted)[/yellow]")
+        if (
+            interrupted
+            and is_last_regular
+            and not completed_tasks
+            and is_interrupted_agent
+            and state.current_task
+        ):
+            branch.add(f"[yellow]{task} (interrupted)[/yellow]")
         elif interrupted:
-            branch.add(f"[green]{display_task}[/green] [dim]✓[/dim]")
+            branch.add(f"[green]{task}[/green] [dim]\u2713[/dim]")
         else:
-            branch.add(f"[green]{display_task}[/green]")
+            branch.add(f"[green]{task}[/green]")
 
         # If this is a spawn task and we have a pending child, render it nested
         if is_spawn_task and current_child:
@@ -873,6 +884,11 @@ def _render_agent_branch(
             current_child = next(child_iter)
         except StopIteration:
             current_child = None
+
+    # Render completion lines last
+    for task in completed_tasks:
+        display_task = task[len("__COMPLETED__") :]
+        branch.add(f"[dim cyan]{display_task} [green]\u2713[/green][/dim cyan]")
 
 
 def _render_interrupted_summary(state: _AnimationState) -> None:
@@ -974,6 +990,15 @@ def _run_status_animation(
         tasks = agent_tasks.get(agent_id, [])
         children = agent_children.get(agent_id, [])
 
+        # Separate completion lines from regular tasks so they render last
+        regular_tasks = []
+        completed_tasks = []
+        for task in tasks:
+            if task.startswith("__COMPLETED__"):
+                completed_tasks.append(task)
+            else:
+                regular_tasks.append(task)
+
         # Build iterator for children to interleave with spawn tasks
         child_iter = iter(children)
         current_child: Optional[str] = None
@@ -982,14 +1007,9 @@ def _run_status_animation(
         except StopIteration:
             current_child = None
 
-        for task in tasks:
+        for task in regular_tasks:
             is_spawn_task = "Spawning" in task
-            is_completed = task.startswith("__COMPLETED__")
-            display_task = task[len("__COMPLETED__") :] if is_completed else task
-            if is_completed:
-                branch.add(f"[dim cyan]{display_task} [green]\\u2713[/green][/dim cyan]")
-            else:
-                branch.add(f"[green]{display_task}[/green]")
+            branch.add(f"[green]{task}[/green]")
 
             # If this is a spawn task and we have a pending child, render it nested
             if is_spawn_task and current_child:
@@ -1006,6 +1026,11 @@ def _run_status_animation(
                 current_child = next(child_iter)
             except StopIteration:
                 current_child = None
+
+        # Render completion lines last
+        for task in completed_tasks:
+            display_task = task[len("__COMPLETED__") :]
+            branch.add(f"[dim cyan]{display_task} [green]\\u2713[/green][/dim cyan]")
 
     def build_status_tree() -> Tree:
         """Build a Rich Tree representing current agent status."""
