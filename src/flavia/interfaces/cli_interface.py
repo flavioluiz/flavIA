@@ -1057,9 +1057,10 @@ def _run_status_animation(
             if event.phase == StatusPhase.AGENT_COMPLETED:
                 task_line = f"__COMPLETED__{task_line}"
             tasks = agent_tasks[agent_id]
-            # Deduplicate consecutive identical spawn lines (LLM retries
-            # can emit the same spawn_agent call multiple times)
-            if "Spawning" in task_line and tasks and tasks[-1] == task_line:
+            # Deduplicate spawn lines anywhere in the list (LLM retries
+            # can re-emit the same spawn_agent call in later iterations,
+            # separated by other events like Done: completions)
+            if "Spawning" in task_line and task_line in tasks:
                 continue
             tasks.append(task_line)
 
