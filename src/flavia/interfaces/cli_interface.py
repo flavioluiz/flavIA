@@ -16,7 +16,6 @@ from rich.console import Console
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.syntax import Syntax
-from rich.text import Text
 from rich.tree import Tree
 
 from flavia.agent import AgentProfile, RecursiveAgent, StatusPhase, ToolStatus
@@ -1159,25 +1158,26 @@ def _run_status_animation(
         return tree
 
     # Use Rich Live for automatic cursor management and cleanup.
-    # Start with transient=True so the display erases itself when paused
-    # for write-confirmation prompts.  Before exiting, we flip to
-    # transient=False and render a clean final tree — this keeps the
-    # summary on screen without a separate print (which previously
-    # caused the "Agent" header to appear twice).
+    # transient=True makes Live erase its output when stopped — we rely
+    # on this to fully clear the screen before write-confirmation prompts.
+    # On final exit we flip to transient=False so the summary persists.
     with Live(build_status_tree(), console=console, refresh_per_second=4, transient=True) as live:
         while not stop_event.is_set():
             # Pause status rendering while a write-confirmation prompt is active.
-            # Clear the Live display and signal the confirmation callback
-            # that it's safe to print the prompt.
+            # Fully stop the Live display so the terminal is clean for the
+            # confirmation prompt (just updating with empty text leaves
+            # ghost lines from the previous tree).
             if not _confirmation_pause_event.is_set():
-                live.update(Text(""))
+                live.stop()
                 _confirmation_ack_event.set()
-                if not _confirmation_pause_event.wait(timeout=0.25):
-                    if stop_event.is_set():
-                        break
-                    continue
-                # Confirmation done — resume with a fresh tree
+                # Block until confirmation is done
+                _confirmation_pause_event.wait()
+                if stop_event.is_set():
+                    break
+                # Restart Live
+                live.start()
                 live.update(build_status_tree())
+                continue
 
             live.update(build_status_tree())
 
