@@ -608,6 +608,10 @@ _confirmation_lock = threading.Lock()
 # Event for signaling animation pause/resume (set = running, clear = paused)
 _confirmation_pause_event = threading.Event()
 _confirmation_pause_event.set()  # Not paused by default
+# Event set by the animation thread after it has cleared the Live display,
+# so the confirmation callback knows it's safe to print the prompt.
+_confirmation_ack_event = threading.Event()
+_confirmation_ack_event.set()  # No-op when no confirmation is pending
 
 
 def _cli_write_confirmation_callback(
@@ -629,8 +633,11 @@ def _cli_write_confirmation_callback(
     fd = sys.stdin.fileno() if hasattr(sys.stdin, "fileno") else None
     old_settings = None
 
-    # Signal animation to pause
+    # Signal animation to pause and wait for the animation thread to
+    # acknowledge (clear the Live display) before printing the prompt.
+    _confirmation_ack_event.clear()
     _confirmation_pause_event.clear()
+    _confirmation_ack_event.wait(timeout=2.0)
 
     with _confirmation_lock:
         try:
@@ -644,18 +651,19 @@ def _cli_write_confirmation_callback(
                 except Exception:
                     old_settings = None
 
-            # Clear animation line and show prompt.
+            # Show a clear, visually distinct prompt.
             _clear_terminal_line()
             detail_str = f" ({details})" if details else ""
-            console.print(
-                f"\n[bold yellow]Write confirmation:[/bold yellow] "
-                f"{operation}: [cyan]{path}[/cyan]{detail_str}"
-            )
+            console.print()
+            console.print("[bold yellow]" + "\u2500" * 60 + "[/bold yellow]")
+            console.print(f"[bold yellow]Write confirmation:[/bold yellow] {operation}:")
+            console.print(f"  [cyan]{path}[/cyan]{detail_str}")
 
             # Display preview if available
             if preview is not None:
                 _display_operation_preview(preview)
 
+            console.print()
             console.print("[bold yellow]Allow? [y/N][/bold yellow] ", end="")
 
             try:
@@ -669,6 +677,7 @@ def _cli_write_confirmation_callback(
                 console.print("[green]Approved[/green]")
             else:
                 console.print("[yellow]Denied[/yellow]")
+            console.print("[bold yellow]" + "\u2500" * 60 + "[/bold yellow]")
             return approved
 
         finally:
@@ -1158,9 +1167,11 @@ def _run_status_animation(
     with Live(build_status_tree(), console=console, refresh_per_second=4, transient=True) as live:
         while not stop_event.is_set():
             # Pause status rendering while a write-confirmation prompt is active.
-            # Clear the Live display so the confirmation prompt is visible.
+            # Clear the Live display and signal the confirmation callback
+            # that it's safe to print the prompt.
             if not _confirmation_pause_event.is_set():
                 live.update(Text(""))
+                _confirmation_ack_event.set()
                 if not _confirmation_pause_event.wait(timeout=0.25):
                     if stop_event.is_set():
                         break
