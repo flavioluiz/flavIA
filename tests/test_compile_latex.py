@@ -951,12 +951,20 @@ class TestCompileLatexTool:
         assert openai_schema["function"]["name"] == "compile_latex"
         params = openai_schema["function"]["parameters"]
         assert "path" in params["properties"]
+        assert "execution_note" in params["properties"]
         assert "path" in params["required"]
+        assert "execution_note" in params["required"]
         # Optional params should NOT be in required
         assert "compiler" not in params["required"]
         assert "passes" not in params["required"]
         assert "shell_escape" not in params["required"]
         assert "continue_on_error" not in params["required"]
+
+    def test_validate_args_requires_execution_note(self):
+        tool = CompileLatexTool()
+        is_valid, error = tool.validate_args({"path": "test.tex"})
+        assert is_valid is False
+        assert "execution_note" in error
 
     def test_is_available_always_true(self, tmp_path):
         tool = CompileLatexTool()

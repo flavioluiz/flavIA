@@ -111,8 +111,10 @@ class TestCompactContextToolSchema:
         assert schema["function"]["name"] == "compact_context"
         props = schema["function"]["parameters"]["properties"]
         assert "instructions" in props
+        assert "execution_note" in props
         # instructions should NOT be in required list
         assert "instructions" not in schema["function"]["parameters"].get("required", [])
+        assert "execution_note" in schema["function"]["parameters"].get("required", [])
 
 
 # ---------------------------------------------------------------------------

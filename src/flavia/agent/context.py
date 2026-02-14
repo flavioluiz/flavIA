@@ -149,6 +149,11 @@ def build_system_prompt(
         "- Never claim a file/directory was changed unless a write tool returned a success result.\n"
         "- If a write tool returns an error or cancellation, clearly report the failure."
     )
+    parts.append(
+        "\nTool-call policy:\n"
+        "- Every tool call must include `execution_note` with a detailed pre-execution message.\n"
+        "- `execution_note` should clearly explain the immediate next action and intent."
+    )
 
     # Tools info
     if tools_description:

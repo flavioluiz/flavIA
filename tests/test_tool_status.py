@@ -71,6 +71,14 @@ class TestFormatToolDisplay:
         display = format_tool_display("spawn_predefined_agent", {"agent_name": "researcher"})
         assert display == "Spawning researcher"
 
+    def test_execution_note_does_not_change_base_tool_display(self):
+        """execution_note is rendered by UI layer, not by tool formatter."""
+        display = format_tool_display(
+            "list_files",
+            {"path": "src/", "execution_note": "Vou listar os arquivos para procurar TODOs"},
+        )
+        assert display == "Listing src/"
+
     def test_unknown_tool_with_path(self):
         """Test unknown tool with path argument."""
         display = format_tool_display("custom_tool", {"path": "data.csv"})
@@ -175,6 +183,16 @@ class TestToolStatus:
         assert status.phase == StatusPhase.EXECUTING_TOOL
         assert status.args == {}
         assert status.tool_display == "Reading "
+
+    def test_executing_tool_ignores_execution_note_in_tool_display(self):
+        """ToolStatus tool_display should remain the tool-call label."""
+        status = ToolStatus.executing_tool(
+            "read_file",
+            {"path": "config.yaml", "execution_note": "Vou ler config.yaml"},
+            "main",
+            depth=0,
+        )
+        assert status.tool_display == "Reading config.yaml"
 
     def test_spawning_agent(self):
         """Test spawning_agent factory method."""

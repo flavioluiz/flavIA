@@ -108,7 +108,7 @@ def test_build_agent_header_and_activity_lines():
     header = _build_agent_header_line(status)
     activity = _build_agent_activity_line(status, step=0, model_ref="", verbose=False)
     assert header == "  summarizer:"
-    assert activity == "    Searching catalog: 'ITA'"
+    assert activity == "    [green]Searching catalog: 'ITA'[/green]"
 
 
 def test_choose_loading_message_avoids_immediate_repeat(monkeypatch):

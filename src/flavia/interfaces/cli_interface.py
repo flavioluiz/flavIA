@@ -213,7 +213,7 @@ def _build_agent_activity_line(
     verbose: bool = False,
 ) -> str:
     """Build a tool activity line nested under the agent header."""
-    display = _build_tool_status_line(
+    tool_line = _build_tool_status_line(
         status,
         step,
         model_ref,
@@ -221,8 +221,20 @@ def _build_agent_activity_line(
         show_dots=False,
         include_prefix=False,
     ).strip()
+    if status.phase in (StatusPhase.EXECUTING_TOOL, StatusPhase.SPAWNING_AGENT):
+        tool_line = f"[green]{tool_line}[/green]"
+
+    args = status.args if isinstance(status.args, dict) else {}
+    note_value = args.get("execution_note")
+    note = (
+        sanitize_terminal_text(note_value.strip())
+        if isinstance(note_value, str) and note_value.strip()
+        else ""
+    )
+
+    lines = [tool_line] if (verbose or not note) else [note, tool_line]
     indent = "  " * (status.depth + 1)
-    return f"{indent}{display}"
+    return "\n".join(f"{indent}{line}" for line in lines)
 
 
 def _history_paths(base_dir: Path) -> tuple[Path, Path]:
@@ -611,6 +623,8 @@ _confirmation_pause_event.set()  # Not paused by default
 # so the confirmation callback knows it's safe to print the prompt.
 _confirmation_ack_event = threading.Event()
 _confirmation_ack_event.set()  # No-op when no confirmation is pending
+_latest_tool_status_lock = threading.Lock()
+_latest_tool_status_line: str = ""
 
 
 def _cli_write_confirmation_callback(
@@ -653,7 +667,12 @@ def _cli_write_confirmation_callback(
             # Show a clear, visually distinct prompt.
             _clear_terminal_line()
             detail_str = f" ({details})" if details else ""
+            with _latest_tool_status_lock:
+                latest_status = _latest_tool_status_line
             console.print()
+            if latest_status:
+                console.print(latest_status)
+                console.print()
             console.print("[bold yellow]" + "\u2500" * 60 + "[/bold yellow]")
             console.print(f"[bold yellow]Write confirmation:[/bold yellow] {operation}:")
             console.print(f"  [cyan]{path}[/cyan]{detail_str}")
@@ -1018,7 +1037,7 @@ def _run_status_animation(
 
         for task in regular_tasks:
             is_spawn_task = "Spawning" in task
-            branch.add(f"[green]{task}[/green]")
+            branch.add(task)
 
             # If this is a spawn task and we have a pending child, render it nested
             if is_spawn_task and current_child:
@@ -1233,6 +1252,16 @@ def _run_agent_with_feedback(
     animation_state = _AnimationState()
 
     def update_status(status: ToolStatus) -> None:
+        global _latest_tool_status_line
+        if status.phase in (StatusPhase.EXECUTING_TOOL, StatusPhase.SPAWNING_AGENT):
+            tool_text = _build_agent_activity_line(
+                status,
+                step=0,
+                model_ref="",
+                verbose=False,
+            ).strip()
+            with _latest_tool_status_lock:
+                _latest_tool_status_line = tool_text
         with status_lock:
             status_holder[0] = status
             status_events.append(status)
@@ -1264,7 +1293,10 @@ def _run_agent_with_feedback(
         interrupted = True
         raise
     finally:
+        global _latest_tool_status_line
         agent.status_callback = None
+        with _latest_tool_status_lock:
+            _latest_tool_status_line = ""
         stop_event.set()
         animation_thread.join(timeout=1.0)
         if interrupted:

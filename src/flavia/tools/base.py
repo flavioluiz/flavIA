@@ -26,13 +26,34 @@ class ToolSchema:
     name: str
     description: str
     parameters: list[ToolParameter] = field(default_factory=list)
+    execution_note_param_name: str = "execution_note"
+    execution_note_description: str = (
+        "Detailed message describing what you are about to do. "
+        "This text is shown in the UI before the tool executes."
+    )
+
+    def parameters_with_common_fields(self) -> list[ToolParameter]:
+        """Return tool parameters including globally supported optional fields."""
+        if any(p.name == self.execution_note_param_name for p in self.parameters):
+            return list(self.parameters)
+
+        params = list(self.parameters)
+        params.append(
+            ToolParameter(
+                name=self.execution_note_param_name,
+                type="string",
+                description=self.execution_note_description,
+                required=True,
+            )
+        )
+        return params
 
     def to_openai_schema(self) -> dict[str, Any]:
         """Convert to OpenAI tool format."""
         properties = {}
         required = []
 
-        for param in self.parameters:
+        for param in self.parameters_with_common_fields():
             prop = {
                 "type": param.type,
                 "description": param.description,
@@ -85,7 +106,7 @@ class BaseTool(ABC):
     def validate_args(self, args: dict[str, Any]) -> tuple[bool, str]:
         """Validate tool arguments."""
         schema = self.get_schema()
-        for param in schema.parameters:
+        for param in schema.parameters_with_common_fields():
             if param.required and param.name not in args:
                 return False, f"Missing required parameter: {param.name}"
         return True, ""

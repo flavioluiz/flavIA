@@ -184,9 +184,15 @@ def display_tool_schema(
     _print(f"  Category: [cyan]{tool.category}[/cyan]")
     _print(f"  Description: {schema.description}")
 
-    if schema.parameters:
+    schema_params = (
+        schema.parameters_with_common_fields()
+        if hasattr(schema, "parameters_with_common_fields")
+        else schema.parameters
+    )
+
+    if schema_params:
         _print(f"\n  [bold]Parameters:[/bold]")
-        for param in schema.parameters:
+        for param in schema_params:
             required_marker = " [red](required)[/red]" if param.required else ""
             _print(f"\n    [cyan]{param.name}[/cyan]{required_marker}")
             _print(f"      Type: {param.type}")

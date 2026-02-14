@@ -170,12 +170,14 @@ def format_tool_display(tool_name: str, args: Any) -> str:
     formatter = formatters.get(safe_tool_name)
     if formatter:
         try:
-            return formatter(safe_args)
+            base_display = formatter(safe_args)
         except Exception:
-            return safe_tool_name
+            base_display = safe_tool_name
+    else:
+        # Default: show tool name with first argument
+        base_display = _format_default(safe_tool_name, safe_args)
 
-    # Default: show tool name with first argument
-    return _format_default(safe_tool_name, safe_args)
+    return base_display
 
 
 def _format_read_file(args: dict[str, Any]) -> str:
