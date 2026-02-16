@@ -33,7 +33,6 @@ flavia --telegram
 
 - Course material generation (summaries, exercise lists, flashcards)
 - Programming prototype development assistance
-- OCR support for scanned documents
 - Automatic citation and bibliography extraction
 
 ## Quick install

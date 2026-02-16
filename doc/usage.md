@@ -195,7 +195,7 @@ Inside a chat session, the following commands are available:
 | `/model` | Show the current active model |
 | `/model <ref>` | Switch model by index, model ID, or `provider:model_id` (resets conversation) |
 | `/model list` | Quick alias for `/providers` |
-| `/catalog` | Browse content catalog (overview, search, summaries, online sources) |
+| `/catalog` | Browse content catalog (overview, search, summaries, online sources, PDF manager) |
 | `/providers` | List configured providers with indexed models |
 | `/provider-setup` | Run interactive provider configuration wizard |
 | `/provider-manage [id]` | Manage provider models and settings |
@@ -307,6 +307,8 @@ Inside the interactive CLI:
 Notes:
 - Online source converters are currently placeholders (URLs are cataloged, but content fetching/conversion is not implemented yet).
 - Online sources are persisted in `.flavia/content_catalog.json`.
+- `PDF Files` menu in `/catalog` supports per-file quality display, local text extraction, and explicit Mistral OCR execution.
+- Mistral OCR requires installing the `ocr` extra and exporting `MISTRAL_API_KEY`.
 
 ## Startup connection check
 

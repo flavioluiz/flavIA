@@ -10,9 +10,11 @@ from flavia.interfaces.catalog_command import (
     _format_size,
     _show_overview,
     _browse_files,
+    _manage_pdf_files,
     _show_online_sources,
     run_catalog_command,
 )
+from flavia.content.scanner import FileEntry
 
 
 class TestFormatSize:
@@ -172,3 +174,41 @@ class TestCatalogCommandIntegration:
 
             result = run_catalog_command(settings)
             assert result is True
+
+
+def test_manage_pdf_files_blocks_path_traversal(monkeypatch, tmp_path):
+    config_dir = tmp_path / ".flavia"
+    config_dir.mkdir()
+
+    catalog = ContentCatalog(tmp_path)
+    catalog.files["../secret.pdf"] = FileEntry(
+        path="../secret.pdf",
+        name="secret.pdf",
+        extension=".pdf",
+        file_type="binary_document",
+        category="pdf",
+        size_bytes=10,
+        created_at="2026-01-01T00:00:00+00:00",
+        modified_at="2026-01-01T00:00:00+00:00",
+        indexed_at="2026-01-01T00:00:00+00:00",
+        checksum_sha256="abc",
+    )
+
+    settings = MagicMock()
+    settings.default_model = "openai:test"
+
+    convert_calls = []
+
+    def _fake_convert(self, source_path, output_dir, output_format="md"):
+        convert_calls.append((source_path, output_dir, output_format))
+        return None
+
+    with patch("flavia.interfaces.catalog_command.console") as mock_console, patch(
+        "flavia.interfaces.catalog_command.q_select",
+        side_effect=["../secret.pdf", "simple", "__back__"],
+    ), patch("flavia.content.converters.PdfConverter.convert", _fake_convert):
+        _manage_pdf_files(catalog, config_dir, settings)
+
+    assert convert_calls == []
+    printed = " ".join(" ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list)
+    assert "Blocked unsafe path outside project directory" in printed

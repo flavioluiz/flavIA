@@ -35,9 +35,17 @@ class MistralOcrConverter(BaseConverter):
 
         stem = source_path.stem
 
+        # Determine output path, preserving directory structure when possible
+        try:
+            relative_source = source_path.resolve().relative_to(output_dir.resolve().parent)
+            output_file = output_dir / relative_source.with_suffix(f".{output_format}")
+        except ValueError:
+            output_file = output_dir / (stem + f".{output_format}")
+
         # Save extracted images
         if images:
-            images_dir = output_dir / f"{stem}_images"
+            # Keep image assets next to the markdown file to preserve relative links.
+            images_dir = output_file.parent / f"{stem}_images"
             images_dir.mkdir(parents=True, exist_ok=True)
             img_name_map: dict[str, str] = {}
             for idx, (img_id, img_bytes) in enumerate(images, start=1):
@@ -53,13 +61,6 @@ class MistralOcrConverter(BaseConverter):
                 return f"![{alt}]({new_ref})"
 
             md_text = re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", _replace_img, md_text)
-
-        # Determine output path, preserving directory structure when possible
-        try:
-            relative_source = source_path.resolve().relative_to(output_dir.resolve().parent)
-            output_file = output_dir / relative_source.with_suffix(f".{output_format}")
-        except ValueError:
-            output_file = output_dir / (stem + f".{output_format}")
 
         output_file.parent.mkdir(parents=True, exist_ok=True)
         output_file.write_text(md_text, encoding="utf-8")

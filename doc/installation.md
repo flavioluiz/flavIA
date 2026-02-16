@@ -57,6 +57,20 @@ Or install with the extra:
 .venv/bin/pip install -e ".[telegram]"
 ```
 
+## OCR for scanned PDFs (optional)
+
+To enable Mistral OCR integration used by the `/catalog` PDF manager:
+
+```bash
+.venv/bin/pip install -e ".[ocr]"
+```
+
+Then set the API key in your environment or `.flavia/.env`:
+
+```bash
+MISTRAL_API_KEY=your_mistral_key
+```
+
 ## Development dependencies
 
 ```bash

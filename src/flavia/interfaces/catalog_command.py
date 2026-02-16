@@ -433,7 +433,14 @@ def _manage_pdf_files(catalog: ContentCatalog, config_dir: Path, settings: Setti
 
         base_dir = config_dir.parent
         converted_dir = base_dir / ".converted"
-        source = base_dir / entry.path
+        source = (base_dir / entry.path).resolve()
+        try:
+            source.relative_to(base_dir.resolve())
+        except ValueError:
+            console.print(
+                "[red]Blocked unsafe path outside project directory in catalog entry.[/red]"
+            )
+            continue
 
         if action in ("ocr", "Run full OCR (Mistral API)"):
             if not os.environ.get("MISTRAL_API_KEY"):

@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **PDF extraction quality + OCR manager in `/catalog`**:
+  - New `FileEntry.extraction_quality` field (`good` / `partial` / `poor`) persisted in catalog metadata
+  - New `summarize_file_with_quality()` path stores summary + extraction quality in one LLM call
+  - New `/catalog` menu item `PDF Files` with per-file quality badges and actions for:
+    - local PDF text extraction
+    - explicit Mistral OCR execution (with optional re-summarization)
+  - New optional dependency extra: `ocr` (`mistralai`)
 - **Context Compaction Tool (Task 8.5)**: New `compact_context` tool that allows agents to proactively compact their own context:
   - Uses sentinel string pattern (`__COMPACT_CONTEXT__`) for agent loop integration
   - Optional `instructions` parameter for customized compaction (e.g., "focus on technical decisions", "preserve all file paths")
@@ -132,6 +139,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **PDF OCR safety/behavior regressions**:
+  - `/catalog` PDF manager now blocks unsafe catalog paths that resolve outside project `base_dir`
+  - "Extract text (simple)" no longer triggers remote OCR implicitly
+  - OCR image assets are now written next to nested markdown outputs so image links remain valid
 - **CLI status animation frame rewind when block shrinks**:
   - `_render_status_block()` now returns the rendered frame height (`max(previous, current)`) instead of current line count only
   - Cursor rewind now moves to the first line of the previous frame (`line_count - 1`), avoiding progressive upward drift

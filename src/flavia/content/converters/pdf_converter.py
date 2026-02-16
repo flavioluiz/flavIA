@@ -20,13 +20,22 @@ class PdfConverter(BaseConverter):
         source_path: Path,
         output_dir: Path,
         output_format: str = "md",
+        allow_ocr: bool = False,
     ) -> Optional[Path]:
-        """Convert a PDF file to text or markdown."""
-        if self._is_scanned_pdf(source_path):
+        """Convert a PDF file to text or markdown.
+
+        Args:
+            source_path: Source PDF path.
+            output_dir: Output directory.
+            output_format: "md" or "txt".
+            allow_ocr: If True, scanned PDFs may be routed to Mistral OCR.
+        """
+        if allow_ocr and self._is_scanned_pdf(source_path):
             from .mistral_ocr_converter import MistralOcrConverter
 
             return MistralOcrConverter().convert(source_path, output_dir, output_format)
 
+        # OCR routing (if enabled) was already evaluated above.
         text = self.extract_text(source_path)
         if not text or not text.strip():
             return None
@@ -47,9 +56,14 @@ class PdfConverter(BaseConverter):
         output_file.write_text(content, encoding="utf-8")
         return output_file
 
-    def extract_text(self, source_path: Path) -> Optional[str]:
-        """Extract text from a PDF using pdfplumber (with pypdf fallback)."""
-        if self._is_scanned_pdf(source_path):
+    def extract_text(self, source_path: Path, allow_ocr: bool = False) -> Optional[str]:
+        """Extract text from a PDF using pdfplumber (with pypdf fallback).
+
+        Args:
+            source_path: Source PDF path.
+            allow_ocr: If True, scanned PDFs may be routed to Mistral OCR.
+        """
+        if allow_ocr and self._is_scanned_pdf(source_path):
             from .mistral_ocr_converter import MistralOcrConverter
 
             return MistralOcrConverter().extract_text(source_path)

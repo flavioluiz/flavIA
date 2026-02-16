@@ -4,7 +4,8 @@ import sys
 from types import SimpleNamespace
 
 from flavia.content.scanner import FileEntry
-from flavia.content.summarizer import summarize_file
+from flavia.content import summarizer as summarizer_module
+from flavia.content.summarizer import summarize_file, summarize_file_with_quality
 
 
 def _build_entry(path: str) -> FileEntry:
@@ -132,6 +133,52 @@ def test_summarize_file_handles_empty_choices(monkeypatch, tmp_path):
     )
 
     assert result is None
+
+
+def test_summarize_file_with_quality_parses_quality(monkeypatch, tmp_path):
+    md_file = tmp_path / "doc.md"
+    md_file.write_text("This is a document.", encoding="utf-8")
+    entry = _build_entry("doc.md")
+
+    monkeypatch.setattr(
+        summarizer_module,
+        "_call_llm",
+        lambda *args, **kwargs: "Concise summary.\ngood",
+    )
+
+    summary, quality = summarize_file_with_quality(
+        entry=entry,
+        base_dir=tmp_path,
+        api_key="test-key",
+        api_base_url="https://api.example.com/v1",
+        model="test-model",
+    )
+
+    assert summary == "Concise summary."
+    assert quality == "good"
+
+
+def test_summarize_file_with_quality_allows_missing_quality(monkeypatch, tmp_path):
+    md_file = tmp_path / "doc.md"
+    md_file.write_text("This is a document.", encoding="utf-8")
+    entry = _build_entry("doc.md")
+
+    monkeypatch.setattr(
+        summarizer_module,
+        "_call_llm",
+        lambda *args, **kwargs: "Concise summary only.",
+    )
+
+    summary, quality = summarize_file_with_quality(
+        entry=entry,
+        base_dir=tmp_path,
+        api_key="test-key",
+        api_base_url="https://api.example.com/v1",
+        model="test-model",
+    )
+
+    assert summary == "Concise summary only."
+    assert quality is None
 
 
 def test_summarize_file_uses_custom_timeouts(monkeypatch, tmp_path):

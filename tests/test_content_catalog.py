@@ -187,6 +187,7 @@ class TestFileEntrySerialization:
             status="current",
             converted_to="converted/papers/smith.md",
             summary="A paper about CFD",
+            extraction_quality="good",
             tags=["cfd", "navier-stokes"],
         )
 
@@ -196,6 +197,7 @@ class TestFileEntrySerialization:
         assert restored.path == entry.path
         assert restored.converted_to == entry.converted_to
         assert restored.summary == entry.summary
+        assert restored.extraction_quality == entry.extraction_quality
         assert restored.tags == entry.tags
         assert restored.status == entry.status
 
@@ -217,6 +219,7 @@ class TestFileEntrySerialization:
         d = entry.to_dict()
         assert "converted_to" not in d
         assert "summary" not in d
+        assert "extraction_quality" not in d
         assert "tags" not in d
 
     def test_online_source_fields_roundtrip(self):
