@@ -114,7 +114,7 @@ In interactive CLI mode, press `Tab` to autocomplete:
 |------|-------------|
 | `--init` | Initialize local configuration with interactive wizard |
 | `--update` | Refresh content catalog (new/modified/deleted files) |
-| `--update-convert` | Refresh catalog and convert pending/modified convertible files (PDFs, Office files, audio, and video); prompts for optional visual frame extraction from videos |
+| `--update-convert` | Refresh catalog and convert pending/modified convertible files (PDFs, Office files, audio, and video) |
 | `--update-summarize` | Refresh catalog and generate summaries for pending files |
 | `--update-full` | Rebuild catalog from scratch |
 | `--telegram` | Start in Telegram bot mode |
@@ -317,7 +317,7 @@ Notes:
 - Mistral OCR requires installing the `ocr` extra and exporting `MISTRAL_API_KEY`.
 - Audio/video transcription requires installing the `transcription` extra and exporting `MISTRAL_API_KEY` (shared with OCR).
 - Visual frame extraction from videos also requires a vision-capable model configured via `IMAGE_VISION_MODEL` or `providers.yaml` (uses existing vision API infrastructure).
-- Frame descriptions are generated as individual markdown files in `.converted/video_name_frames/` subdirectories and linked from the main transcription.
+- Frame descriptions are generated as individual markdown files in `.converted/video_name_frames/` subdirectories and can be viewed from `/catalog`.
 - Video transcription also requires `ffmpeg` to be installed on your system for audio extraction.
 - In `PDF Files`, you can run `Re-run summary/quality (no extraction)` to regenerate metadata from the existing converted markdown only.
 - If summary/quality generation fails, the CLI can prompt you to switch the active model and retry.

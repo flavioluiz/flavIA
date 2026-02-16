@@ -1,8 +1,5 @@
-Tests for video frame extraction and description functionality.
-"""
+"""Tests for video frame extraction and description functionality."""
 
-import json
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -12,7 +9,9 @@ from flavia.content.converters.video_frame_extractor import (
     _format_frame_filename,
     _seconds_to_timestamp,
     _timestamp_to_seconds,
+    describe_frames,
     extract_and_describe_video_frames,
+    extract_frames_at_timestamps,
     format_frame_description_markdown,
     parse_transcript_timestamps,
     select_timestamps,
@@ -131,12 +130,20 @@ class TestExtractFramesAtTimestamps:
         video_path = tmp_path / "test.mp4"
         timestamps = [30.0, 60.0]
 
-        mock_run.return_value = MagicMock(returncode=0)
+        def _fake_run(cmd, capture_output, text, timeout):
+            Path(cmd[-1]).write_bytes(b"frame")
+            return MagicMock(returncode=0, stderr="")
+
+        mock_run.side_effect = _fake_run
 
         frame_dir = tmp_path / "frames"
         extracted = extract_frames_at_timestamps(video_path, timestamps, frame_dir)
 
         assert len(extracted) == 2
+        assert extracted[0][1] == 30.0
+        assert extracted[1][1] == 60.0
+        assert extracted[0][0].exists()
+        assert extracted[1][0].exists()
         assert mock_run.call_count == 2
 
     @patch("shutil.which")
@@ -155,15 +162,22 @@ class TestExtractFramesAtTimestamps:
         video_path = tmp_path / "test.mp4"
         timestamps = [30.0, 60.0, 90.0]
 
-        first_call = MagicMock(returncode=0)
-        second_call = MagicMock(returncode=1)
-        third_call = MagicMock(returncode=0)
-        mock_run.side_effect = [first_call, second_call, third_call]
+        results = [0, 1, 0]
+
+        def _fake_run(cmd, capture_output, text, timeout):
+            return_code = results.pop(0)
+            if return_code == 0:
+                Path(cmd[-1]).write_bytes(b"frame")
+            return MagicMock(returncode=return_code, stderr="ffmpeg error")
+
+        mock_run.side_effect = _fake_run
 
         frame_dir = tmp_path / "frames"
         extracted = extract_frames_at_timestamps(video_path, timestamps, frame_dir)
 
         assert len(extracted) == 2
+        assert extracted[0][1] == 30.0
+        assert extracted[1][1] == 90.0
 
 
 class TestDescribeFrames:
@@ -176,23 +190,23 @@ class TestDescribeFrames:
         mock_image_converter.settings.image_vision_model = "test-model"
 
         frame_paths = [tmp_path / "frame_05m30s.jpg", tmp_path / "frame_10m00s.jpg"]
-        video_path = tmp_path / "video.mp4"
         timestamps = [330.0, 600.0]
+        frame_items = list(zip(frame_paths, timestamps))
+        video_path = tmp_path / "video.mp4"
 
-        # Create dummy frame files
         for frame_path in frame_paths:
             frame_path.write_text("dummy image data")
 
         description_dir = tmp_path / "descriptions"
         description_files = describe_frames(
-            frame_paths, description_dir, video_path, timestamps, mock_image_converter
+            frame_items, description_dir, video_path, mock_image_converter
         )
 
         assert len(description_files) == 2
-        assert all(f.exists() for f in description_files)
+        assert all(path.exists() for path, _ in description_files)
+        assert [timestamp for _, timestamp in description_files] == timestamps
 
-        # Check content of first description file
-        first_desc = description_files[0].read_text()
+        first_desc = description_files[0][0].read_text()
         assert "# Visual Frame at 05:30" in first_desc
         assert "A person talking." in first_desc
 
@@ -200,26 +214,27 @@ class TestDescribeFrames:
         mock_image_converter = MagicMock()
         mock_image_converter.extract_text.side_effect = [
             "First description.",
-            None,  # Failed
+            None,
             "Third description.",
         ]
         mock_image_converter.settings = MagicMock()
         mock_image_converter.settings.image_vision_model = "test-model"
 
         frame_paths = [tmp_path / f"frame_{i}.jpg" for i in range(3)]
-        video_path = tmp_path / "video.mp4"
         timestamps = [30.0, 60.0, 90.0]
+        frame_items = list(zip(frame_paths, timestamps))
+        video_path = tmp_path / "video.mp4"
 
-        # Create dummy frame files
         for frame_path in frame_paths:
             frame_path.write_text("dummy image data")
 
         description_dir = tmp_path / "descriptions"
         description_files = describe_frames(
-            frame_paths, description_dir, video_path, timestamps, mock_image_converter
+            frame_items, description_dir, video_path, mock_image_converter
         )
 
         assert len(description_files) == 2
+        assert [timestamp for _, timestamp in description_files] == [30.0, 90.0]
 
 
 class TestExtractAndDescribeVideoFrames:
@@ -241,16 +256,16 @@ class TestExtractAndDescribeVideoFrames:
     def test_end_to_end_success(self, mock_extract, tmp_path):
         mock_image_converter = MagicMock()
         video_path = tmp_path / "video.mp4"
-        transcript = "[0:30 - 2:00] Introduction\n[5:00 - 7:00] Main topic\n[10:00 - 12:00] Conclusion\n"
+        transcript = (
+            "[0:30 - 2:00] Introduction\n[5:00 - 7:00] Main topic\n[10:00 - 12:00] Conclusion\n"
+        )
 
-        # Mock frame extraction
         frame1 = tmp_path / "frame_05m00s.jpg"
         frame2 = tmp_path / "frame_10m00s.jpg"
         frame1.write_text("dummy1")
         frame2.write_text("dummy2")
-        mock_extract.return_value = [frame1, frame2]
+        mock_extract.return_value = [(frame1, 300.0), (frame2, 600.0)]
 
-        # Mock frame description
         mock_image_converter.extract_text.side_effect = [
             "First frame content",
             "Second frame content",
@@ -263,11 +278,33 @@ class TestExtractAndDescribeVideoFrames:
         )
 
         assert len(result) == 2
-        assert len(timestamps) == 2
-
-        # Verify description files were created
+        assert timestamps == [300.0, 600.0]
         assert all(f.exists() for f in result)
 
-        # Check content
         first_desc = result[0].read_text()
         assert "First frame content" in first_desc
+
+    @patch("flavia.content.converters.video_frame_extractor.extract_frames_at_timestamps")
+    def test_preserves_timestamp_mapping_on_partial_extraction(self, mock_extract, tmp_path):
+        mock_image_converter = MagicMock()
+        video_path = tmp_path / "video.mp4"
+        transcript = "[0:30 - 2:00] A\n[5:00 - 7:00] B\n[10:00 - 12:00] C\n"
+
+        frame1 = tmp_path / "frame_00m30s.jpg"
+        frame3 = tmp_path / "frame_10m00s.jpg"
+        frame1.write_text("dummy1")
+        frame3.write_text("dummy3")
+        mock_extract.return_value = [(frame1, 30.0), (frame3, 600.0)]
+
+        mock_image_converter.extract_text.side_effect = [
+            "Frame A",
+            "Frame C",
+        ]
+        mock_image_converter.settings = MagicMock()
+        mock_image_converter.settings.image_vision_model = "test-model"
+
+        _, timestamps = extract_and_describe_video_frames(
+            video_path, transcript, tmp_path, mock_image_converter, interval=1, max_frames=20
+        )
+
+        assert timestamps == [30.0, 600.0]

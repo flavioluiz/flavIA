@@ -797,12 +797,17 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
 
     # Build content catalog BEFORE AI analysis (so summaries can be used as context)
     config_dir.mkdir(parents=True, exist_ok=True)
+    catalog_kwargs = {
+        "convert_docs": convert_docs,
+        "binary_docs": files_to_convert if convert_docs else None,
+    }
+    if convert_docs and extract_visual_frames:
+        catalog_kwargs["extract_visual_frames"] = True
+
     catalog = _build_content_catalog(
         target_dir,
         config_dir,
-        convert_docs=convert_docs,
-        binary_docs=files_to_convert if convert_docs else None,
-        extract_visual_frames=extract_visual_frames if convert_docs else False,
+        **catalog_kwargs,
     )
 
     # Ask about LLM summaries
@@ -1066,6 +1071,14 @@ def _build_content_catalog(
 
                 for entry in video_entries:
                     transcript_path = (target_dir / entry.converted_to).resolve()
+                    try:
+                        transcript_path.relative_to(target_dir.resolve())
+                    except ValueError:
+                        console.print(
+                            f"    [yellow]Skipping unsafe transcript path: {entry.converted_to}[/yellow]"
+                        )
+                        continue
+
                     if not transcript_path.exists():
                         continue
 
@@ -1073,9 +1086,16 @@ def _build_content_catalog(
 
                     transcript = transcript_path.read_text(encoding="utf-8")
                     video_path = (target_dir / entry.path).resolve()
+                    try:
+                        video_path.relative_to(target_dir.resolve())
+                    except ValueError:
+                        console.print(
+                            f"    [yellow]Skipping unsafe video path: {entry.path}[/yellow]"
+                        )
+                        continue
 
                     try:
-                        description_files, selected_timestamps = (
+                        description_files, description_timestamps = (
                             converter.extract_and_describe_frames(
                                 transcript=transcript,
                                 video_path=video_path,
@@ -1085,7 +1105,7 @@ def _build_content_catalog(
 
                         if description_files:
                             for i, (desc_file_path, timestamp) in enumerate(
-                                zip(description_files, selected_timestamps), 1
+                                zip(description_files, description_timestamps), 1
                             ):
                                 console.print(
                                     f"    [dim]Frame {i}/{len(description_files)} at "

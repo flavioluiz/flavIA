@@ -128,7 +128,6 @@ def select_timestamps(
         return []
 
     selected = []
-    total_segments = len(timestamps)
 
     for i, (start, _) in enumerate(timestamps):
         if i % interval == 0 and len(selected) < max_frames:
@@ -142,7 +141,7 @@ def extract_frames_at_timestamps(
     timestamps: List[float],
     output_dir: Path,
     quality: int = _DEFAULT_FRAME_QUALITY,
-) -> List[Path]:
+) -> List[Tuple[Path, float]]:
     """Extract frames from video at specific timestamps using ffmpeg.
 
     Args:
@@ -152,7 +151,7 @@ def extract_frames_at_timestamps(
         quality: JPEG quality (1-31, lower=better)
 
     Returns:
-        List of paths to extracted frame files
+        List of tuples (frame_path, timestamp) for successfully extracted frames
 
     Raises:
         RuntimeError: If ffmpeg is not available
@@ -163,7 +162,7 @@ def extract_frames_at_timestamps(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    extracted_files = []
+    extracted_files: List[Tuple[Path, float]] = []
 
     for timestamp in timestamps:
         filename = _format_frame_filename(timestamp)
@@ -196,7 +195,7 @@ def extract_frames_at_timestamps(
                 continue
 
             if output_path.exists() and output_path.stat().st_size > 0:
-                extracted_files.append(output_path)
+                extracted_files.append((output_path, timestamp))
                 logger.debug(f"Extracted frame: {output_path}")
 
         except subprocess.TimeoutExpired:
@@ -247,33 +246,28 @@ def format_frame_description_markdown(
 
 
 def describe_frames(
-    frame_paths: List[Path],
+    frame_items: List[Tuple[Path, float]],
     output_dir: Path,
     video_path: Path,
-    timestamps: List[float],
     image_converter,
-) -> List[Path]:
+) -> List[Tuple[Path, float]]:
     """Generate descriptions for extracted video frames.
 
     Args:
-        frame_paths: List of frame image paths
+        frame_items: List of tuples (frame image path, timestamp)
         output_dir: Directory to save description markdown files
         video_path: Path to the original video file
-        timestamps: Timestamps corresponding to each frame
         image_converter: ImageConverter instance for vision analysis
 
     Returns:
-        List of paths to generated description markdown files
+        List of tuples (description markdown path, timestamp)
     """
-    if len(frame_paths) != len(timestamps):
-        raise ValueError("frame_paths and timestamps must have same length")
-
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    description_files = []
+    description_files: List[Tuple[Path, float]] = []
 
-    for frame_path, timestamp in zip(frame_paths, timestamps):
+    for frame_path, timestamp in frame_items:
         stem = frame_path.stem
         output_path = output_dir / f"{stem}.md"
 
@@ -298,7 +292,7 @@ def describe_frames(
             )
 
             output_path.write_text(formatted_md, encoding="utf-8")
-            description_files.append(output_path)
+            description_files.append((output_path, timestamp))
             logger.debug(f"Generated description: {output_path}")
 
         except Exception as e:
@@ -340,15 +334,15 @@ def extract_and_describe_video_frames(
 
     if not extracted_frames:
         logger.warning(f"No frames extracted from {video_path.name}")
-        return [], selected_timestamps
+        return [], []
 
-    descriptions = describe_frames(
-        extracted_frames, frames_dir, video_path, selected_timestamps, image_converter
-    )
+    descriptions = describe_frames(extracted_frames, frames_dir, video_path, image_converter)
 
     logger.info(
         f"Extracted {len(extracted_frames)} frames and generated "
         f"{len(descriptions)} descriptions for {video_path.name}"
     )
 
-    return descriptions, selected_timestamps
+    description_paths = [desc_path for desc_path, _ in descriptions]
+    description_timestamps = [timestamp for _, timestamp in descriptions]
+    return description_paths, description_timestamps

@@ -922,6 +922,12 @@ def _manage_media_files(catalog: ContentCatalog, config_dir: Path, settings: Set
                 )
 
         elif action in ("extract_frames", "Extract & describe visual frames"):
+            if entry.file_type != "video":
+                console.print(
+                    "[yellow]Visual frame extraction is only available for video files.[/yellow]"
+                )
+                continue
+
             if not entry.converted_to:
                 console.print("[yellow]No transcript found. Run transcription first.[/yellow]")
                 continue
@@ -945,7 +951,7 @@ def _manage_media_files(catalog: ContentCatalog, config_dir: Path, settings: Set
                 continue
 
             transcript = transcript_path.read_text(encoding="utf-8")
-            description_files, selected_timestamps = converter.extract_and_describe_frames(
+            description_files, description_timestamps = converter.extract_and_describe_frames(
                 transcript=transcript,
                 video_path=source,
                 base_output_dir=converted_dir,
@@ -953,7 +959,7 @@ def _manage_media_files(catalog: ContentCatalog, config_dir: Path, settings: Set
 
             if description_files:
                 for i, (desc_file_path, timestamp) in enumerate(
-                    zip(description_files, selected_timestamps), 1
+                    zip(description_files, description_timestamps), 1
                 ):
                     console.print(
                         f"  [dim]Frame {i}/{len(description_files)} at timestamp "
@@ -1065,9 +1071,11 @@ def _show_media_entry_details(entry, base_dir: Path, settings: Settings) -> None
     )
     details.add_row(
         "Frame descriptions",
-        f"[green]{len(entry.frame_descriptions)}[/green]"
-        if entry.frame_descriptions
-        else "[dim]no[/dim]",
+        (
+            f"[green]{len(entry.frame_descriptions)}[/green]"
+            if entry.frame_descriptions
+            else "[dim]no[/dim]"
+        ),
     )
     details.add_row("Summary", "[green]yes[/green]" if entry.summary else "[dim]no[/dim]")
     details.add_row("Extraction quality", _quality_badge(entry.extraction_quality))

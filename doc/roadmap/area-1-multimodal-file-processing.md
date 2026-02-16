@@ -124,7 +124,7 @@ Implemented visual frame extraction and description for video files using vision
 - Configurable max frames limit (default: 20 frames per video)
 - Frame descriptions generated using existing `ImageConverter` and LLM vision APIs
 - Individual markdown files per frame with metadata (timestamp, vision model)
-- Links to frame descriptions in the main video transcription markdown
+- Frame descriptions persisted in catalog metadata for interactive viewing via `/catalog`
 - New `frame_descriptions` field in `FileEntry` for catalog management
 - Interactive `/catalog` menu options for frame extraction and viewing
 - `--init` wizard integration for batch processing of video files
@@ -132,7 +132,7 @@ Implemented visual frame extraction and description for video files using vision
 **Output format**:
 - Subdirectory structure: `.converted/video_name_frames/frame_XXmYYs.jpg` + `.md`
 - Frame markdown includes: video_source, frame_file, timestamp, vision_model, description
-- Main transcription includes "Visual Frame Descriptions" section with links
+- Frame descriptions are viewable through `/catalog` and stored in `frame_descriptions`
 
 **Implemented files**:
 - `src/flavia/content/converters/video_frame_extractor.py` (new, 360 lines)
