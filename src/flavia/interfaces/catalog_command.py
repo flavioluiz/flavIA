@@ -51,6 +51,8 @@ def run_catalog_command(settings: Settings) -> bool:
             _add_online_source(catalog, config_dir)
         elif choice == "7":
             _manage_pdf_files(catalog, config_dir, settings)
+        elif choice == "8":
+            _manage_office_files(catalog, config_dir, settings)
         elif choice in ("q", "Q", ""):
             break
         else:
@@ -75,6 +77,7 @@ def _print_catalog_menu() -> str:
             questionary.Choice(title="Online Sources", value="5"),
             questionary.Choice(title="Add Online Source", value="6"),
             questionary.Choice(title="PDF Files", value="7"),
+            questionary.Choice(title="Office Documents", value="8"),
             questionary.Choice(title="Back to chat", value="q"),
         ]
     except ImportError:
@@ -86,6 +89,7 @@ def _print_catalog_menu() -> str:
             "Online Sources",
             "Add Online Source",
             "PDF Files",
+            "Office Documents",
             "Back to chat",
         ]
 
@@ -103,6 +107,7 @@ def _print_catalog_menu() -> str:
         "Online Sources": "5",
         "Add Online Source": "6",
         "PDF Files": "7",
+        "Office Documents": "8",
         "Back to chat": "q",
     }
 
@@ -499,6 +504,173 @@ def _manage_pdf_files(catalog: ContentCatalog, config_dir: Path, settings: Setti
             )
             catalog.save(config_dir)
             console.print("[dim]Catalog saved.[/dim]")
+
+
+def _manage_office_files(catalog: ContentCatalog, config_dir: Path, settings: Settings) -> None:
+    """Interactive Office document manager with conversion support."""
+    base_dir = config_dir.parent
+    converted_dir = base_dir / ".converted"
+
+    # Categories for Office documents
+    office_categories = {"word", "spreadsheet", "presentation", "document"}
+
+    office_files = [
+        e for e in catalog.files.values()
+        if e.category in office_categories and e.status != "missing"
+    ]
+
+    if not office_files:
+        console.print("[yellow]No Office documents in catalog.[/yellow]")
+        return
+
+    while True:
+        console.print(f"\n[bold]Office Documents ({len(office_files)})[/bold]")
+
+        table = Table(show_header=True)
+        table.add_column("Path", style="cyan", max_width=50)
+        table.add_column("Type", style="dim")
+        table.add_column("Converted", style="dim")
+        table.add_column("Quality")
+        table.add_column("Size", justify="right")
+
+        for entry in sorted(office_files, key=lambda e: e.path):
+            converted = "[green]yes[/green]" if entry.converted_to else "[dim]no[/dim]"
+            badge = _quality_badge(entry.extraction_quality)
+            doc_type = entry.category or "unknown"
+            table.add_row(entry.path, doc_type, converted, badge, _format_size(entry.size_bytes))
+
+        console.print(table)
+
+        try:
+            import questionary
+            office_choices = [
+                questionary.Choice(title=e.path, value=e.path)
+                for e in sorted(office_files, key=lambda e: e.path)
+            ]
+            office_choices.append(questionary.Choice(title="Back", value="__back__"))
+        except ImportError:
+            office_choices = [e.path for e in sorted(office_files, key=lambda e: e.path)] + ["Back"]
+
+        selected = q_select("Select an Office document:", choices=office_choices)
+        if selected in (None, "__back__", "Back"):
+            break
+
+        entry = catalog.files.get(selected)
+        if entry is None:
+            break
+
+        _show_office_entry_details(entry, base_dir, settings)
+
+        # Action menu
+        try:
+            import questionary as _q
+            action_choices = [
+                _q.Choice(title="Extract text / Convert to Markdown", value="convert"),
+                _q.Choice(title="Re-run summary/quality (no extraction)", value="resummarize"),
+                _q.Choice(title="Back", value="back"),
+            ]
+        except ImportError:
+            action_choices = [
+                "Extract text / Convert to Markdown",
+                "Re-run summary/quality (no extraction)",
+                "Back",
+            ]
+
+        action = q_select("Action:", choices=action_choices)
+
+        if action in (None, "back", "Back"):
+            continue
+
+        source = (base_dir / entry.path).resolve()
+        try:
+            source.relative_to(base_dir.resolve())
+        except ValueError:
+            console.print(
+                "[red]Blocked unsafe path outside project directory in catalog entry.[/red]"
+            )
+            continue
+
+        if action in ("convert", "Extract text / Convert to Markdown"):
+            console.print(f"[dim]Converting {entry.path}...[/dim]")
+            from flavia.content.converters import OfficeConverter
+
+            converter = OfficeConverter()
+
+            # Check dependencies
+            deps_ok, missing = converter.check_dependencies()
+            if not deps_ok:
+                console.print(
+                    f"[red]Missing dependencies: {', '.join(missing)}. "
+                    f"Install with: pip install {' '.join(missing)}[/red]"
+                )
+                continue
+
+            result_path = converter.convert(source, converted_dir)
+            if result_path:
+                try:
+                    entry.converted_to = str(result_path.relative_to(base_dir))
+                except ValueError:
+                    entry.converted_to = str(result_path)
+                console.print(f"[green]Conversion complete:[/green] {entry.converted_to}")
+                _offer_resummarization_with_quality(entry, base_dir, settings)
+                catalog.save(config_dir)
+                console.print("[dim]Catalog saved.[/dim]")
+            else:
+                console.print("[red]Conversion failed.[/red]")
+
+        elif action in ("resummarize", "Re-run summary/quality (no extraction)"):
+            if not entry.converted_to:
+                console.print(
+                    "[yellow]No converted text found. Run extraction first.[/yellow]"
+                )
+                continue
+
+            _offer_resummarization_with_quality(
+                entry,
+                base_dir,
+                settings,
+                ask_confirmation=False,
+            )
+            catalog.save(config_dir)
+            console.print("[dim]Catalog saved.[/dim]")
+
+
+def _show_office_entry_details(entry, base_dir: Path, settings: Settings) -> None:
+    """Show selected Office document details including conversion and summary metadata."""
+    console.print(f"\n[bold cyan]{entry.path}[/bold cyan]  {_quality_badge(entry.extraction_quality)}")
+
+    converted_exists = False
+    if entry.converted_to:
+        converted_path = (base_dir / entry.converted_to).resolve()
+        try:
+            converted_path.relative_to(base_dir.resolve())
+            converted_exists = converted_path.exists()
+        except ValueError:
+            converted_exists = False
+
+    try:
+        summary_model_ref = _get_summary_model_ref(settings)
+        provider, model_id = settings.resolve_model_with_provider(summary_model_ref)
+    except Exception:
+        provider, model_id = None, str(_get_summary_model_ref(settings))
+    provider_id = getattr(provider, "id", None) if provider else None
+    active_model_ref = f"{provider_id}:{model_id}" if provider_id else str(model_id)
+
+    details = Table(show_header=False, box=None)
+    details.add_column("Field", style="dim")
+    details.add_column("Value")
+    details.add_row("Document type", entry.category or "unknown")
+    details.add_row("Converted file", entry.converted_to or "[dim](none)[/dim]")
+    details.add_row("Converted exists", "[green]yes[/green]" if converted_exists else "[dim]no[/dim]")
+    details.add_row("Summary", "[green]yes[/green]" if entry.summary else "[dim]no[/dim]")
+    details.add_row("Extraction quality", _quality_badge(entry.extraction_quality))
+    details.add_row("Summary model", f"[cyan]{active_model_ref}[/cyan]")
+    console.print(details)
+
+    if entry.summary:
+        console.print(Panel(entry.summary, title="Summary", expand=False))
+    else:
+        console.print("[dim]No summary available for this file.[/dim]")
 
 
 def _show_pdf_entry_details(entry, base_dir: Path, settings: Settings) -> None:

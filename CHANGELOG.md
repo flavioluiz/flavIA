@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Office Document Converter (Task 1.3)**: New `OfficeConverter` in `content/converters/` supporting Microsoft Office and OpenDocument formats:
+  - Modern Office: `.docx`, `.xlsx`, `.pptx` (via python-docx, openpyxl, python-pptx)
+  - Legacy Office: `.doc`, `.xls`, `.ppt` (via LibreOffice CLI fallback)
+  - OpenDocument: `.odt`, `.ods`, `.odp`
+  - Word documents preserve headings (H1/H2/H3) and tables as markdown
+  - Excel spreadsheets convert to markdown tables with sheet headers
+  - PowerPoint extracts slides, titles, bullet points, and speaker notes
+  - New optional dependency extra: `office` (`python-docx`, `openpyxl`, `python-pptx`)
+  - Integrated with `flavia --init` for automatic conversion during setup
+  - New `/catalog` menu item `Office Documents` for managing Office files
+  - 30 new unit tests covering all formats and edge cases
 - **PDF extraction quality + OCR manager in `/catalog`**:
   - New `FileEntry.extraction_quality` field (`good` / `partial` / `poor`) persisted in catalog metadata
   - New `summarize_file_with_quality()` path stores summary + extraction quality in one LLM call

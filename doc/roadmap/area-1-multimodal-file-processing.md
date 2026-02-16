@@ -37,17 +37,33 @@ Create `content/converters/image_converter.py`. Use the GPT-4o vision API (or an
 
 ---
 
-### Task 1.3 -- Word/Office Document Converter
+### ~~Task 1.3 -- Word/Office Document Converter~~ ✅ DONE
 
-**Difficulty**: Easy | **Dependencies**: None
+**Difficulty**: ~~Easy~~ | **Dependencies**: ~~None~~
 
-Create `content/converters/docx_converter.py`. Use `python-docx` for `.docx`, `openpyxl` for `.xlsx`, `python-pptx` for `.pptx`. These are pure-Python libraries requiring no external services. For legacy formats (`.doc`, `.xls`, `.ppt`), consider a `libreoffice --headless` subprocess fallback. Register for extensions defined in `BINARY_DOCUMENT_EXTENSIONS` in `scanner.py`.
+Implemented `OfficeConverter` supporting Microsoft Office and OpenDocument formats.
 
-**Key files to modify/create**:
-- `content/converters/docx_converter.py` (new)
-- `content/converters/__init__.py` (register)
+**What was delivered**:
+- New `content/converters/office_converter.py` with full `BaseConverter` implementation
+- Modern Office support: `.docx`, `.xlsx`, `.pptx` (via python-docx, openpyxl, python-pptx)
+- Legacy Office fallback: `.doc`, `.xls`, `.ppt` (via LibreOffice CLI)
+- OpenDocument support: `.odt`, `.ods`, `.odp`
+- Word documents preserve headings (H1/H2/H3) and tables as markdown tables
+- Excel spreadsheets convert to markdown tables with sheet headers
+- PowerPoint extracts slides, titles, bullet points, and speaker notes as blockquotes
+- Integrated with `flavia --init` for automatic conversion during setup
+- New `/catalog` menu item `Office Documents` for managing Office files
+- 30 unit tests covering all formats and edge cases
 
-**New dependencies** (optional extras, like `python-telegram-bot`): `python-docx`, `openpyxl`, `python-pptx`.
+**Implemented files**:
+- `src/flavia/content/converters/office_converter.py` (new)
+- `src/flavia/content/converters/__init__.py` (register)
+- `src/flavia/setup_wizard.py` (include Office extensions)
+- `src/flavia/interfaces/catalog_command.py` (Office Documents menu)
+- `pyproject.toml` (new `[office]` optional dependency)
+- `tests/test_office_converter.py` (30 tests)
+
+**New dependencies** (optional `[office]` extra): `python-docx>=0.8.11`, `openpyxl>=3.1.0`, `python-pptx>=0.6.21`.
 
 ---
 

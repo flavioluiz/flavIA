@@ -2,6 +2,7 @@
 
 from .base import BaseConverter
 from .mistral_ocr_converter import MistralOcrConverter
+from .office_converter import OfficeConverter
 from .pdf_converter import PdfConverter
 from .registry import (
     ConverterRegistry,
@@ -17,6 +18,7 @@ from .online import OnlineSourceConverter, WebPageConverter, YouTubeConverter
 __all__ = [
     "BaseConverter",
     "MistralOcrConverter",
+    "OfficeConverter",
     "PdfConverter",
     "TextReader",
     "ConverterRegistry",
@@ -33,6 +35,7 @@ def _register_default_converters() -> None:
     """Register all default converters with the global registry."""
     # File extension converters
     register_converter(PdfConverter())
+    register_converter(OfficeConverter())
     register_converter(TextReader())
 
     # Online source converters

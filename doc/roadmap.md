@@ -11,10 +11,10 @@ Planned features and improvements for flavIA, organized by area. Each task inclu
 This roadmap outlines **45 tasks** across **10 major areas** to extend flavIA from a read-only research assistant into a comprehensive, production-ready AI agent system with multimodal processing, write capabilities, external service integration, web & academic research tools, multi-platform deployment, and file delivery through messaging interfaces.
 
 ### Quick Stats
-- **10 Easy tasks** (< 1 day each) — Quick wins for immediate value — **6 completed** ✓
+- **10 Easy tasks** (< 1 day each) — Quick wins for immediate value — **7 completed** ✓
 - **26 Medium tasks** (1-2 days each) — Core feature development — **7 completed** ✓
 - **9 Hard tasks** (3+ days each) — Complex integrations requiring careful design — **1 completed** ✓
-- **Total completed so far**: **14 / 45 tasks** ✓
+- **Total completed so far**: **15 / 45 tasks** ✓
 
 ### Strategic Priorities
 1. **Immediate value** (Tasks 4.1-4.8, 8.1): Improve CLI UX and add token tracking
@@ -34,7 +34,7 @@ Expand content processing beyond PDF/text to audio, video, images, Office docs, 
 
 - **1.1** Audio/Video Transcription (Medium) — Whisper API transcription
 - **1.2** Image Description (Medium) — GPT-4o vision for images
-- **1.3** Word/Office Documents (Easy) — python-docx, openpyxl, python-pptx
+- ~~**1.3** Word/Office Documents (Easy)~~ — **DONE** ✓ OfficeConverter with python-docx, openpyxl, python-pptx
 - ~~**1.4** OCR + LaTeX Equations (Hard)~~ — **DONE** ✓ Scanned PDF OCR pipeline + quality assessment in `/catalog`
 - **1.5** YouTube/Web Converters (Medium) — yt-dlp, trafilatura
 
@@ -126,7 +126,7 @@ Improve CLI usability, add token tracking, expand file processing to Office docs
 **Deliverables**:
 - Unified, consistent CLI commands with better help
 - Real-time token usage visibility in CLI and Telegram
-- Support for .docx, .xlsx, .pptx files
+- ~~Support for .docx, .xlsx, .pptx files~~ ✓
 - Interactive prompts with autocomplete, file paths, and menus
 
 ### Phase 2: Core Write Capabilities (Tasks 5.1-5.2, 6.1)
@@ -220,7 +220,7 @@ Build the article download pipeline, CAPES publisher access, and research sessio
 Area 1 -- Multimodal File Processing:
 Task 1.1 (Audio/Video) ──────────────────────┐
 Task 1.2 (Image Description) ─────┐          │
-Task 1.3 (Word/Office) ───────────┤          │
+~~Task 1.3 (Word/Office)~~ ✓ ─────┤          │
                                     ├── ~~Task 1.4 (OCR + LaTeX)~~ ✓
                                     │          │
                                     │          └── Task 1.5 (YouTube/Web)
@@ -298,7 +298,7 @@ Tasks ordered by a pragmatic implementation sequence that balances dependency re
 | 2 | ~~**4.2** Runtime agent switching in CLI~~ | ~~Easy~~ | ~~CLI~~ |
 | 3 | ~~**4.3** Runtime model switching in CLI~~ | ~~Easy~~ | ~~CLI~~ |
 | 4 | ~~**4.7** Unified slash command help system~~ | ~~Easy~~ | ~~CLI~~ |
-| 5 | **1.3** Word/Office document converter | Easy | File Processing |
+| 5 | ~~**1.3** Word/Office document converter~~ ✓ | ~~Easy~~ | ~~File Processing~~ |
 | 6 | ~~**8.1** Token usage tracking & display~~ | ~~Easy~~ | ~~Context Management~~ |
 | 7 | ~~**8.3** Manual /compact slash command~~ | ~~Easy~~ | ~~Context Management~~ |
 | 8 | **8.4** Tool result size protection | Medium | Context Management |

@@ -157,9 +157,22 @@ def find_pdf_files(directory: Path) -> List[Path]:
 
 
 def find_binary_documents(directory: Path) -> List[Path]:
-    """Find all binary documents that can be converted (PDF, DOCX, etc.)."""
-    # Supported extensions for conversion (expandable in the future)
-    convertible_extensions = {".pdf"}  # TODO: add .docx, .xlsx, .pptx when supported
+    """Find all binary documents that can be converted (PDF, Office docs, etc.)."""
+    convertible_extensions = {
+        ".pdf",
+        # Modern Office
+        ".docx",
+        ".xlsx",
+        ".pptx",
+        # Legacy Office (requires LibreOffice)
+        ".doc",
+        ".xls",
+        ".ppt",
+        # OpenDocument
+        ".odt",
+        ".ods",
+        ".odp",
+    }
 
     return sorted(
         (
@@ -869,18 +882,29 @@ def _build_content_catalog(
         The ContentCatalog instance, or None on failure.
     """
     from flavia.content.catalog import ContentCatalog
-    from flavia.content.converters import PdfConverter
+    from flavia.content.converters import converter_registry
 
     # Convert binary documents first if requested
     if convert_docs and binary_docs:
         console.print("\n[dim]Converting binary documents...[/dim]")
-        converter = PdfConverter()
         converted_dir = target_dir / CONVERTED_DIR_NAME
         converted_count = 0
         failed_count = 0
+        skipped_count = 0
 
         for doc in binary_docs:
-            if not converter.can_handle(doc):
+            converter = converter_registry.get_for_file(doc)
+            if not converter:
+                skipped_count += 1
+                continue
+
+            # Check if dependencies are available for this converter
+            deps_ok, missing = converter.check_dependencies()
+            if not deps_ok:
+                skipped_count += 1
+                console.print(
+                    f"  [yellow]Skipping {doc.name}: missing deps ({', '.join(missing)})[/yellow]"
+                )
                 continue
 
             try:
@@ -898,6 +922,8 @@ def _build_content_catalog(
             console.print(f"[dim]  {converted_count} document(s) converted[/dim]")
         if failed_count > 0:
             console.print(f"[yellow]  {failed_count} document(s) failed conversion[/yellow]")
+        if skipped_count > 0:
+            console.print(f"[dim]  {skipped_count} document(s) skipped (no converter)[/dim]")
 
     console.print("\n[dim]Building content catalog...[/dim]")
     try:
@@ -907,8 +933,16 @@ def _build_content_catalog(
         # Link converted files if they exist in .converted/
         converted_dir = target_dir / CONVERTED_DIR_NAME
         if converted_dir.exists():
+            # Categories that can be converted to text/markdown
+            convertible_categories = {
+                "pdf",
+                "word",
+                "spreadsheet",
+                "presentation",
+                "document",
+            }
             for entry in catalog.files.values():
-                if entry.file_type == "binary_document" and entry.category == "pdf":
+                if entry.file_type == "binary_document" and entry.category in convertible_categories:
                     # Check both preserved relative structure and flat output naming.
                     relative_md = Path(entry.path).with_suffix(".md")
                     candidates = [
