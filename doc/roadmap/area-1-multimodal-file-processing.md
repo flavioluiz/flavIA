@@ -110,7 +110,42 @@ Implemented OCR workflow for scanned PDFs with quality feedback in catalog opera
 
 ---
 
-### Task 1.5 -- Online Source Converters (YouTube, Webpage)
+### ~~Task 1.5 -- Visual Frame Extraction from Videos~~ ✅ DONE
+
+**Difficulty**: ~~Medium~~ | **Dependencies**: ~~Task 1.1, Task 1.2~~
+
+Implemented visual frame extraction and description for video files using vision-capable LLMs.
+
+**What was delivered**:
+- New `video_frame_extractor.py` module with complete frame extraction pipeline
+- Frame extraction via `ffmpeg` at sampled timestamps from video transcriptions
+- Automatic timestamp parsing from transcript segments (e.g., `[00:30 - 02:45]`)
+- Configurable sampling interval (default: extract 1 frame every 10 segments)
+- Configurable max frames limit (default: 20 frames per video)
+- Frame descriptions generated using existing `ImageConverter` and LLM vision APIs
+- Individual markdown files per frame with metadata (timestamp, vision model)
+- Links to frame descriptions in the main video transcription markdown
+- New `frame_descriptions` field in `FileEntry` for catalog management
+- Interactive `/catalog` menu options for frame extraction and viewing
+- `--init` wizard integration for batch processing of video files
+
+**Output format**:
+- Subdirectory structure: `.converted/video_name_frames/frame_XXmYYs.jpg` + `.md`
+- Frame markdown includes: video_source, frame_file, timestamp, vision_model, description
+- Main transcription includes "Visual Frame Descriptions" section with links
+
+**Implemented files**:
+- `src/flavia/content/converters/video_frame_extractor.py` (new, 360 lines)
+- `src/flavia/content/converters/video_converter.py` (updated with frame extraction integration)
+- `src/flavia/content/scanner.py` (FileEntry with `frame_descriptions` field)
+- `src/flavia/interfaces/catalog_command.py` (new menu options for frames)
+- `src/flavia/setup_wizard.py` (batch frame extraction support)
+- `tests/test_video_frame_extractor.py` (new test file)
+- `tests/test_content_catalog.py` (frame_descriptions serialization tests)
+
+---
+
+### Task 1.6 -- Online Source Converters (YouTube, Webpage)
 
 **Difficulty**: Medium | **Dependencies**: Task 1.1 (YouTube shares transcription infrastructure)
 

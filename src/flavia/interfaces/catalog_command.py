@@ -840,6 +840,8 @@ def _manage_media_files(catalog: ContentCatalog, config_dir: Path, settings: Set
                 _q.Choice(title="Transcribe", value="transcribe"),
                 _q.Choice(title="Re-transcribe", value="retranscribe"),
                 _q.Choice(title="View transcript", value="view"),
+                _q.Choice(title="Extract & describe visual frames", value="extract_frames"),
+                _q.Choice(title="View frame descriptions", value="view_frames"),
                 _q.Choice(title="Re-run summary/quality (no extraction)", value="resummarize"),
                 _q.Choice(title="Back", value="back"),
             ]
@@ -848,6 +850,8 @@ def _manage_media_files(catalog: ContentCatalog, config_dir: Path, settings: Set
                 "Transcribe",
                 "Re-transcribe",
                 "View transcript",
+                "Extract & describe visual frames",
+                "View frame descriptions",
                 "Re-run summary/quality (no extraction)",
                 "Back",
             ]
@@ -858,6 +862,10 @@ def _manage_media_files(catalog: ContentCatalog, config_dir: Path, settings: Set
 
         if action in ("view", "View transcript"):
             _view_transcription(entry, base_dir)
+            continue
+
+        if action in ("view_frames", "View frame descriptions"):
+            _view_frame_descriptions(entry, base_dir)
             continue
 
         source = (base_dir / entry.path).resolve()
@@ -871,7 +879,9 @@ def _manage_media_files(catalog: ContentCatalog, config_dir: Path, settings: Set
 
         if action in ("transcribe", "Transcribe", "retranscribe", "Re-transcribe"):
             if action in ("retranscribe", "Re-transcribe") and not entry.converted_to:
-                console.print("[yellow]No existing transcript found. Running first transcription.[/yellow]")
+                console.print(
+                    "[yellow]No existing transcript found. Running first transcription.[/yellow]"
+                )
 
             if entry.file_type == "audio":
                 from flavia.content.converters import AudioConverter
@@ -909,6 +919,69 @@ def _manage_media_files(catalog: ContentCatalog, config_dir: Path, settings: Set
                 console.print(
                     "[red]Transcription failed. Check MISTRAL_API_KEY, mistralai package, "
                     "and ffmpeg (for video files).[/red]"
+                )
+
+        elif action in ("extract_frames", "Extract & describe visual frames"):
+            if not entry.converted_to:
+                console.print("[yellow]No transcript found. Run transcription first.[/yellow]")
+                continue
+
+            from flavia.content.converters import VideoConverter
+
+            console.print(
+                "[dim]Extracting and describing visual frames (uses vision LLM and can consume tokens)...[/dim]"
+            )
+            converter = VideoConverter(settings)
+
+            transcript_path = (base_dir / entry.converted_to).resolve()
+            try:
+                transcript_path.relative_to(base_dir.resolve())
+            except ValueError:
+                console.print("[red]Blocked unsafe path outside project directory.[/red]")
+                continue
+
+            if not transcript_path.exists():
+                console.print("[yellow]Transcript file not found.[/yellow]")
+                continue
+
+            transcript = transcript_path.read_text(encoding="utf-8")
+            description_files, selected_timestamps = converter.extract_and_describe_frames(
+                transcript=transcript,
+                video_path=source,
+                base_output_dir=converted_dir,
+            )
+
+            if description_files:
+                for i, (desc_file_path, timestamp) in enumerate(
+                    zip(description_files, selected_timestamps), 1
+                ):
+                    console.print(
+                        f"  [dim]Frame {i}/{len(description_files)} at timestamp "
+                        f"{timestamp:.1f}s: {desc_file_path.name}[/dim]"
+                    )
+
+                console.print(
+                    f"[green]Generated {len(description_files)} frame descriptions[/green]"
+                )
+
+                frame_description_paths = []
+                for desc_path in description_files:
+                    try:
+                        frame_description_paths.append(str(desc_path.relative_to(base_dir)))
+                    except ValueError:
+                        frame_description_paths.append(str(desc_path))
+
+                entry.frame_descriptions = frame_description_paths
+
+                if _prompt_yes_no("View frame descriptions now?", "Yes", "No"):
+                    _view_frame_descriptions(entry, base_dir)
+
+                catalog.save(config_dir)
+                console.print("[dim]Catalog saved.[/dim]")
+            else:
+                console.print(
+                    "[yellow]No frame descriptions generated. "
+                    "Video may be too short or transcript may not have timestamps.[/yellow]"
                 )
 
         elif action in ("resummarize", "Re-run summary/quality (no extraction)"):
@@ -990,6 +1063,12 @@ def _show_media_entry_details(entry, base_dir: Path, settings: Settings) -> None
     details.add_row(
         "Transcript exists", "[green]yes[/green]" if converted_exists else "[dim]no[/dim]"
     )
+    details.add_row(
+        "Frame descriptions",
+        f"[green]{len(entry.frame_descriptions)}[/green]"
+        if entry.frame_descriptions
+        else "[dim]no[/dim]",
+    )
     details.add_row("Summary", "[green]yes[/green]" if entry.summary else "[dim]no[/dim]")
     details.add_row("Extraction quality", _quality_badge(entry.extraction_quality))
     details.add_row("Summary model", f"[cyan]{active_model_ref}[/cyan]")
@@ -1047,6 +1126,37 @@ def _view_image_description(entry, base_dir: Path) -> None:
         console.print(Panel(content, title=f"Description: {entry.path}", expand=False))
     except Exception as e:
         console.print(f"[red]Failed to read description: {e}[/red]")
+
+
+def _view_frame_descriptions(entry, base_dir: Path) -> None:
+    """View generated frame descriptions."""
+    if not entry.frame_descriptions:
+        console.print("[yellow]No frame descriptions available.[/yellow]")
+        return
+
+    console.print(f"\n[bold]Frame Descriptions ({len(entry.frame_descriptions)})[/bold]")
+
+    for frame_desc_path_str in entry.frame_descriptions:
+        frame_desc_path = (base_dir / frame_desc_path_str).resolve()
+        try:
+            frame_desc_path.relative_to(base_dir.resolve())
+        except ValueError:
+            console.print(
+                f"[red]Blocked unsafe path outside project directory: {frame_desc_path_str}[/red]"
+            )
+            continue
+
+        if not frame_desc_path.exists():
+            console.print(
+                f"[yellow]Frame description file not found: {frame_desc_path_str}[/yellow]"
+            )
+            continue
+
+        try:
+            content = frame_desc_path.read_text(encoding="utf-8")
+            console.print(Panel(content, title=str(frame_desc_path_str), expand=False))
+        except Exception as e:
+            console.print(f"[red]Failed to read frame description: {e}[/red]")
 
 
 def _select_vision_model(settings: Settings) -> bool:

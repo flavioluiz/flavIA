@@ -29,14 +29,15 @@ This roadmap outlines **45 tasks** across **10 major areas** to extend flavIA fr
 
 ## 📖 Table of Contents
 
-### [Area 1: Multimodal File Processing](roadmap/area-1-multimodal-file-processing.md) (5 tasks)
+### [Area 1: Multimodal File Processing](roadmap/area-1-multimodal-file-processing.md) (6 tasks)
 Expand content processing beyond PDF/text to audio, video, images, Office docs, and online sources.
 
 - ~~**1.1** Audio/Video Transcription (Medium)~~ — **DONE** ✓ Mistral voxtral-mini-latest transcription with segment timestamps and `/catalog` media manager
 - ~~**1.2** Image Description (Medium)~~ — **DONE** ✓ Vision-capable image-to-text descriptions via multimodal models
 - ~~**1.3** Word/Office Documents (Easy)~~ — **DONE** ✓ OfficeConverter with python-docx, openpyxl, python-pptx
 - ~~**1.4** OCR + LaTeX Equations (Hard)~~ — **DONE** ✓ Scanned PDF OCR pipeline + quality assessment in `/catalog`
-- **1.5** YouTube/Web Converters (Medium) — yt-dlp, trafilatura
+- ~~**1.5** Visual Frame Extraction from Videos (Medium)~~ — **DONE** ✓ Sampled frame extraction + LLM vision descriptions with catalog integration
+- **1.6** YouTube/Web Converters (Medium) — yt-dlp, trafilatura
 
 ### [Area 2: Agent System Improvements](roadmap/area-2-agent-system-improvements.md) (3 tasks)
 Redesign agent configuration for richer, more maintainable agent definitions.
@@ -306,8 +307,9 @@ Tasks ordered by a pragmatic implementation sequence that balances dependency re
 | 10 | ~~**5.1** Write/Edit file tools~~ | ~~Medium~~ | ~~File Modification~~ |
 | 11 | ~~**5.2** Write operation preview + dry-run mode~~ | ~~Medium~~ | ~~File Modification~~ |
 | 12 | ~~**1.1** Audio/Video transcription converter~~ — **DONE** ✓ | ~~Medium~~ | ~~File Processing~~ |
-| 13 | ~~**1.2** Image description converter~~ ✓ | ~~Medium~~ | ~~File Processing~~ |
-| 14 | ~~**4.4** In-session provider & model management~~ | ~~Medium~~ | ~~CLI~~ |
+| 13 | ~~**1.2** Image description converter~~ — **DONE** ✓ | ~~Medium~~ | ~~File Processing~~ |
+| 14 | ~~**1.5** Visual frame extraction from videos~~ — **DONE** ✓ | ~~Medium~~ | ~~File Processing~~ |
+| 15 | ~~**4.4** In-session provider & model management~~ | ~~Medium~~ | ~~CLI~~ |
 | 15 | **4.5** Standard default agent | Medium | CLI |
 | 16 | ~~**4.8** Expand questionary adoption for prompts~~ | ~~Medium~~ | ~~CLI~~ |
 | 17 | **4.9** Configurable LLM API timeout management | Medium | CLI |
@@ -320,7 +322,7 @@ Tasks ordered by a pragmatic implementation sequence that balances dependency re
 | 24 | **2.2** CLI agent management commands | Medium | Agents |
 | 25 | **3.2** Per-conversation agent binding | Medium | Messaging |
 | 26 | **3.3** Multi-bot support | Medium | Messaging |
-| 27 | **1.5** Online source converters (YouTube/Web) | Medium | File Processing |
+| 27 | **1.6** Online source converters (YouTube/Web) | Medium | File Processing |
 | 28 | **3.6** Web API interface | Medium | Messaging |
 | 29 | ~~**1.4** OCR + LaTeX equation support~~ — **DONE** ✓ | ~~Hard~~ | ~~File Processing~~ |
 | 30 | **3.4** Abstract messaging interface | Hard | Messaging |

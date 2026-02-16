@@ -9,14 +9,20 @@ import platform
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, List, Optional, Tuple
+
+if TYPE_CHECKING:
+    from flavia.config import Settings
 
 from rich.console import Console
 
+from flavia.config import get_settings
 from flavia.content.scanner import VIDEO_EXTENSIONS
 
 from .audio_converter import AudioConverter, _format_file_size, _format_timestamp
 from .base import BaseConverter
+from .image_converter import ImageConverter
+from .video_frame_extractor import extract_and_describe_video_frames, _seconds_to_timestamp
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -28,13 +34,34 @@ class VideoConverter(BaseConverter):
     The audio track is extracted via ffmpeg into a temporary directory
     (``.flavia/.tmp_audio/``) and then transcribed using the Mistral
     Transcription API (delegated to :class:`AudioConverter`).
+
+    Optionally can extract and describe visual frames using vision models.
     """
 
     supported_extensions = VIDEO_EXTENSIONS
     requires_dependencies = ["mistralai"]
 
-    def __init__(self) -> None:
+    def __init__(self, settings: Optional["Settings"] = None) -> None:
         self._audio_converter = AudioConverter()
+        self._settings = None
+        self.settings = settings
+
+    @property
+    def settings(self):
+        """Get settings, loading global settings if not provided."""
+        if self._settings is None:
+            self._settings = get_settings()
+        return self._settings
+
+    @settings.setter
+    def settings(self, value):
+        """Set settings."""
+        self._settings = value
+
+    @settings.deleter
+    def settings(self):
+        """Delete settings."""
+        self._settings = None
 
     def convert(
         self,
@@ -91,6 +118,36 @@ class VideoConverter(BaseConverter):
         finally:
             # Clean up temporary audio file
             self._cleanup_temp_audio(audio_path)
+
+    def extract_and_describe_frames(
+        self,
+        transcript: str,
+        video_path: Path,
+        base_output_dir: Path,
+        interval: int = 10,
+        max_frames: int = 20,
+    ) -> Tuple[List[Path], List[float]]:
+        """Extract and describe visual frames from video.
+
+        Args:
+            transcript: Transcript text with timestamp markers
+            video_path: Path to the video file
+            base_output_dir: Base output directory (.converted/)
+            interval: Select 1 frame every N transcript segments
+            max_frames: Maximum number of frames to extract
+
+        Returns:
+            Tuple of (description_file_paths, selected_timestamps)
+        """
+        image_converter = ImageConverter(self.settings)
+        return extract_and_describe_video_frames(
+            video_path=video_path,
+            transcript=transcript,
+            base_output_dir=base_output_dir,
+            image_converter=image_converter,
+            interval=interval,
+            max_frames=max_frames,
+        )
 
     def _check_ffmpeg(self) -> bool:
         """Check if ffmpeg is available on the system."""
@@ -201,12 +258,17 @@ class VideoConverter(BaseConverter):
         )
 
     @staticmethod
-    def _format_as_markdown(transcription: str, source_path: Path) -> str:
+    def _format_as_markdown(
+        transcription: str,
+        source_path: Path,
+        frame_descriptions: Optional[List[Tuple[Path, float]]] = None,
+    ) -> str:
         """Format the transcription as a markdown document.
 
         Args:
             transcription: Transcribed text (possibly with timestamps).
             source_path: Original video file path.
+            frame_descriptions: Optional list of (md_path, timestamp) tuples.
 
         Returns:
             Markdown-formatted content with metadata header.
@@ -240,6 +302,25 @@ class VideoConverter(BaseConverter):
         lines.append(f"transcription_model: {TRANSCRIPTION_MODEL}")
         lines.append("---")
         lines.append("")
+
+        # Frame descriptions section
+        if frame_descriptions:
+            lines.append("## Visual Frame Descriptions")
+            lines.append("")
+            lines.append("The following frames were extracted and described at sampled timestamps:")
+            lines.append("")
+
+            for md_path, timestamp in frame_descriptions:
+                try:
+                    md_name = md_path.name
+                    timestamp_str = _seconds_to_timestamp(timestamp)
+                    lines.append(f"- [{timestamp_str}] [{md_name}]({md_path})")
+                except Exception:
+                    pass
+
+            lines.append("")
+            lines.append("---")
+            lines.append("")
 
         # Transcription content
         lines.append("## Transcription")

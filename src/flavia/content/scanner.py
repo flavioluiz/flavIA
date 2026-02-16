@@ -198,6 +198,7 @@ class FileEntry:
     checksum_sha256: str  # SHA-256 hash of file content
     status: str = "current"  # "current", "new", "modified", "missing"
     converted_to: Optional[str] = None  # Path to converted text version
+    frame_descriptions: list[str] = field(default_factory=list)
     summary: Optional[str] = None
     extraction_quality: Optional[str] = None  # "good", "partial", "poor", or None
     tags: list[str] = field(default_factory=list)
@@ -225,6 +226,8 @@ class FileEntry:
         }
         if self.converted_to:
             d["converted_to"] = self.converted_to
+        if self.frame_descriptions:
+            d["frame_descriptions"] = self.frame_descriptions
         if self.summary:
             d["summary"] = self.summary
         if self.extraction_quality:
@@ -258,6 +261,7 @@ class FileEntry:
             checksum_sha256=data["checksum_sha256"],
             status=data.get("status", "current"),
             converted_to=data.get("converted_to"),
+            frame_descriptions=data.get("frame_descriptions", []),
             summary=data.get("summary"),
             extraction_quality=data.get("extraction_quality"),
             tags=data.get("tags", []),

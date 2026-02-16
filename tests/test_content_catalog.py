@@ -250,6 +250,59 @@ class TestFileEntrySerialization:
         assert d["source_metadata"] == {"title": "Test Video", "duration": 300}
         assert d["fetch_status"] == "not_implemented"
 
+    def test_frame_descriptions_roundtrip(self):
+        """frame_descriptions field serializes and deserializes correctly."""
+        entry = FileEntry(
+            path="videos/lecture1.mp4",
+            name="lecture1.mp4",
+            extension=".mp4",
+            file_type="video",
+            category="mp4",
+            size_bytes=1024000,
+            created_at="2025-01-01T00:00:00+00:00",
+            modified_at="2025-06-01T00:00:00+00:00",
+            indexed_at="2026-02-09T10:00:00+00:00",
+            checksum_sha256="abc123",
+            status="current",
+            converted_to="converted/videos/lecture1.mp4.md",
+            frame_descriptions=[
+                "converted/videos/lecture1_frames/frame_05m30s.md",
+                "converted/videos/lecture1_frames/frame_10m00s.md",
+            ],
+        )
+
+        d = entry.to_dict()
+        assert "frame_descriptions" in d
+        assert len(d["frame_descriptions"]) == 2
+
+        restored = FileEntry.from_dict(d)
+        assert restored.frame_descriptions == entry.frame_descriptions
+        assert len(restored.frame_descriptions) == 2
+
+    def test_frame_descriptions_defaults_to_empty_list(self):
+        """frame_descriptions defaults to empty list when not provided."""
+        entry = FileEntry(
+            path="videos/lecture1.mp4",
+            name="lecture1.mp4",
+            extension=".mp4",
+            file_type="video",
+            category="mp4",
+            size_bytes=1024000,
+            created_at="2025-01-01T00:00:00+00:00",
+            modified_at="2025-06-01T00:00:00+00:00",
+            indexed_at="2026-02-09T10:00:00+00:00",
+            checksum_sha256="abc123",
+        )
+
+        assert entry.frame_descriptions == []
+
+        # Still empty list after deserialization
+        d = entry.to_dict()
+        assert "frame_descriptions" not in d
+
+        restored = FileEntry.from_dict(d)
+        assert restored.frame_descriptions == []
+
         restored = FileEntry.from_dict(d)
         assert restored.source_type == entry.source_type
         assert restored.source_url == entry.source_url
@@ -886,6 +939,7 @@ class TestOnlineSources:
 
         # Small delay to ensure timestamp changes
         import time
+
         time.sleep(0.01)
 
         catalog.add_online_source("https://example.com")

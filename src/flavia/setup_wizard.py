@@ -11,6 +11,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
+from flavia.content.scanner import VIDEO_EXTENSIONS
 from flavia.setup.prompt_utils import (
     SetupCancelled,
     q_select,
@@ -160,21 +161,25 @@ def find_binary_documents(directory: Path) -> List[Path]:
     """Find all files that can be converted to text (docs, audio, video)."""
     from flavia.content.scanner import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
 
-    convertible_extensions = {
-        ".pdf",
-        # Modern Office
-        ".docx",
-        ".xlsx",
-        ".pptx",
-        # Legacy Office (requires LibreOffice)
-        ".doc",
-        ".xls",
-        ".ppt",
-        # OpenDocument
-        ".odt",
-        ".ods",
-        ".odp",
-    } | set(AUDIO_EXTENSIONS) | set(VIDEO_EXTENSIONS)
+    convertible_extensions = (
+        {
+            ".pdf",
+            # Modern Office
+            ".docx",
+            ".xlsx",
+            ".pptx",
+            # Legacy Office (requires LibreOffice)
+            ".doc",
+            ".xls",
+            ".ppt",
+            # OpenDocument
+            ".odt",
+            ".ods",
+            ".odp",
+        }
+        | set(AUDIO_EXTENSIONS)
+        | set(VIDEO_EXTENSIONS)
+    )
 
     return sorted(
         (
@@ -397,10 +402,7 @@ def _select_model_for_setup(settings, allow_cancel: bool = False) -> str:
                 for choice in choices
             ]
         except ImportError:
-            model_choices = [
-                f"{choice['provider']} / {choice['name']}"
-                for choice in choices
-            ]
+            model_choices = [f"{choice['provider']} / {choice['name']}" for choice in choices]
 
         selected = q_select(
             "Select model:",
@@ -719,6 +721,7 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
     image_files = find_image_files(target_dir)
     convert_docs = False
     files_to_convert: list[Path] = []
+    extract_visual_frames = False
 
     if binary_docs:
         # Group by extension for display
@@ -769,6 +772,29 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
 
     convert_docs = bool(files_to_convert)
 
+    # Ask about visual frame extraction for video files
+    video_files = (
+        [doc for doc in binary_docs if doc.suffix.lower() in VIDEO_EXTENSIONS]
+        if binary_docs
+        else []
+    )
+    if convert_docs and video_files:
+        console.print(
+            f"\n[bold]Found {len(video_files)} video file(s) that will be transcribed:[/bold]"
+        )
+
+        table = Table(show_header=False, box=None, padding=(0, 2))
+        for video in video_files[:10]:
+            size_kb = video.stat().st_size / 1024
+            table.add_row(f"  [cyan]{video.name}[/cyan]", f"[dim]{size_kb:.1f} KB[/dim]")
+        if len(video_files) > 10:
+            table.add_row(f"  [dim]... and {len(video_files) - 10} more[/dim]", "")
+        console.print(table)
+
+        console.print("\n[bold]Extract and describe visual frames from videos?[/bold]")
+        console.print("  (Uses vision-capable LLM calls and can consume tokens)")
+        extract_visual_frames = safe_confirm("Extract visual frames from videos?", default=False)
+
     # Build content catalog BEFORE AI analysis (so summaries can be used as context)
     config_dir.mkdir(parents=True, exist_ok=True)
     catalog = _build_content_catalog(
@@ -776,6 +802,7 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
         config_dir,
         convert_docs=convert_docs,
         binary_docs=files_to_convert if convert_docs else None,
+        extract_visual_frames=extract_visual_frames if convert_docs else False,
     )
 
     # Ask about LLM summaries
@@ -916,6 +943,7 @@ def _build_content_catalog(
     config_dir: Path,
     convert_docs: bool = False,
     binary_docs: Optional[List[Path]] = None,
+    extract_visual_frames: bool = False,
 ) -> Optional["ContentCatalog"]:
     """
     Build and save the content catalog during setup.
@@ -925,6 +953,7 @@ def _build_content_catalog(
         config_dir: The .flavia/ directory.
         convert_docs: Whether to convert files first.
         binary_docs: List of file paths to convert (binary docs and/or images).
+        extract_visual_frames: Whether to extract and describe visual frames from videos.
 
     Returns:
         The ContentCatalog instance, or None on failure.
@@ -991,7 +1020,8 @@ def _build_content_catalog(
             }
             for entry in catalog.files.values():
                 is_convertible_binary_doc = (
-                    entry.file_type == "binary_document" and entry.category in convertible_categories
+                    entry.file_type == "binary_document"
+                    and entry.category in convertible_categories
                 )
                 is_convertible_av = entry.file_type in {"audio", "video"}
                 is_convertible_image = entry.file_type == "image"
@@ -1018,6 +1048,70 @@ def _build_content_catalog(
             f"[dim]Content catalog created: {stats['total_files']} files indexed "
             f"({stats['total_size_bytes'] / 1024 / 1024:.1f} MB)[/dim]"
         )
+
+        # Extract and describe visual frames from videos if requested
+        if extract_visual_frames:
+            from flavia.content.converters import VideoConverter
+
+            video_entries = [
+                entry
+                for entry in catalog.files.values()
+                if entry.file_type == "video" and entry.converted_to
+            ]
+
+            if video_entries:
+                console.print("\n[dim]Extracting and describing visual frames...[/dim]")
+                converter = VideoConverter()
+                video_count = 0
+
+                for entry in video_entries:
+                    transcript_path = (target_dir / entry.converted_to).resolve()
+                    if not transcript_path.exists():
+                        continue
+
+                    console.print(f"  [dim]Processing video: {entry.path}[/dim]")
+
+                    transcript = transcript_path.read_text(encoding="utf-8")
+                    video_path = (target_dir / entry.path).resolve()
+
+                    try:
+                        description_files, selected_timestamps = (
+                            converter.extract_and_describe_frames(
+                                transcript=transcript,
+                                video_path=video_path,
+                                base_output_dir=converted_dir,
+                            )
+                        )
+
+                        if description_files:
+                            for i, (desc_file_path, timestamp) in enumerate(
+                                zip(description_files, selected_timestamps), 1
+                            ):
+                                console.print(
+                                    f"    [dim]Frame {i}/{len(description_files)} at "
+                                    f"timestamp {timestamp:.1f}s: {desc_file_path.name}[/dim]"
+                                )
+
+                            frame_description_paths = []
+                            for desc_path in description_files:
+                                try:
+                                    frame_description_paths.append(
+                                        str(desc_path.relative_to(target_dir))
+                                    )
+                                except ValueError:
+                                    frame_description_paths.append(str(desc_path))
+
+                            entry.frame_descriptions = frame_description_paths
+                            video_count += 1
+
+                    except Exception as e:
+                        console.print(f"    [yellow]Failed to extract frames: {e}[/yellow]")
+
+                if video_count > 0:
+                    console.print(f"[dim]  {video_count} video(s) processed with frames[/dim]")
+                    catalog.save(config_dir)
+                    console.print("[dim]  Catalog saved with frame descriptions.[/dim]")
+
         return catalog
     except Exception as e:
         console.print(f"[yellow]Warning: Could not build content catalog: {e}[/yellow]")
@@ -1839,7 +1933,9 @@ def _run_full_reconfiguration_inner(
                     ],
                 ).ask()
             except ImportError:
-                console.print("[dim]Tip: install 'questionary' for interactive rebuild selection[/dim]")
+                console.print(
+                    "[dim]Tip: install 'questionary' for interactive rebuild selection[/dim]"
+                )
 
                 rebuild_options = [
                     ("docs", f"Documents ({doc_status})"),
@@ -1901,9 +1997,7 @@ def _run_full_reconfiguration_inner(
 
             # Keep summary generation as explicit opt-in since it consumes tokens.
             if needs_summaries or needs_catalog:
-                console.print(
-                    "  (Generating summaries improves context, but uses LLM tokens)"
-                )
+                console.print("  (Generating summaries improves context, but uses LLM tokens)")
                 run_summaries = safe_confirm(
                     "Generate summaries with LLM?",
                     default=False,
