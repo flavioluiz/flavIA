@@ -2,24 +2,44 @@
 
 The content system (`content/converters/`) has a clean `BaseConverter` / `ConverterRegistry` architecture. It supports PDF conversion (pdfplumber/pypdf) and scanned-PDF OCR with quality assessment via the catalog workflow. The `FileScanner` already classifies files into types (image, audio, video, binary\_document) but still lacks dedicated converters for most non-text formats. Online converters (YouTube, webpage) are placeholders.
 
-All new converters follow the same pattern: implement `BaseConverter`, register in `ConverterRegistry`, output Markdown to `.converted/`. The general approach for multimodal processing is to use external APIs (OpenAI Whisper for audio, GPT-4o vision for images/OCR).
+All new converters follow the same pattern: implement `BaseConverter`, register in `ConverterRegistry`, output Markdown to `.converted/`. The general approach for multimodal processing is to use external APIs (Mistral API for audio transcription and OCR, GPT-4o vision for images).
 
 ---
 
-### Task 1.1 -- Audio/Video Transcription Converter
+### ~~Task 1.1 -- Audio/Video Transcription Converter~~ ✅ DONE
 
-**Difficulty**: Medium | **Dependencies**: None
+**Difficulty**: ~~Medium~~ | **Dependencies**: ~~None~~
 
-Create `content/converters/audio_converter.py` and `content/converters/video_converter.py` implementing `BaseConverter`. Use the OpenAI Whisper API (`/v1/audio/transcriptions`) for transcription. For video files, extract the audio track first (via `ffmpeg` subprocess or `pydub`) then transcribe. Register for extensions already defined in `scanner.py` (`AUDIO_EXTENSIONS`, `VIDEO_EXTENSIONS`).
+Implemented audio and video transcription using Mistral Transcription API (`voxtral-mini-latest`).
 
-**Key files to modify/create**:
-- `content/converters/audio_converter.py` (new)
-- `content/converters/video_converter.py` (new)
-- `content/converters/__init__.py` (register new converters)
+**What was delivered**:
+- New `AudioConverter` in `content/converters/audio_converter.py` with Mistral API integration
+- New `VideoConverter` in `content/converters/video_converter.py` with ffmpeg audio extraction
+- Centralized `get_mistral_api_key()` in `mistral_key_manager.py` with interactive prompting and persistence
+- Segment-level timestamps in transcription output (e.g., `[00:01:23 - 00:01:45] Text...`)
+- Metadata headers with source file, format, file size, duration, and model information
+- Video audio extraction to `.flavia/.tmp_audio/` with automatic cleanup
+- Platform-specific ffmpeg installation instructions when not available
+- Duration detection via ffprobe for accurate metadata
+- Refactored existing `MistralOcrConverter` and `catalog_command.py` to use centralized key manager
+- Integrated with `flavia --init` for automatic transcription during setup
+- New `/catalog` support for audio/video files (planned for future enhancement)
 
-**Output format**: Markdown files in `.converted/` with transcription text, timestamps (if available from the API), and a metadata header (duration, source format, etc.).
+**Implemented files**:
+- `src/flavia/content/converters/mistral_key_manager.py` (new)
+- `src/flavia/content/converters/audio_converter.py` (new)
+- `src/flavia/content/converters/video_converter.py` (new)
+- `src/flavia/content/converters/__init__.py` (updated)
+- `src/flavia/content/converters/mistral_ocr_converter.py` (refactored)
+- `src/flavia/interfaces/catalog_command.py` (refactored)
+- `pyproject.toml` (new `[transcription]` optional dependency)
+- `tests/test_audio_video_converter.py` (45 tests)
 
-**New dependencies**: `pydub` or direct `ffmpeg` subprocess (for video audio extraction). The OpenAI SDK already present handles the Whisper API.
+**New dependencies**: 
+- Python package: `mistralai` (optional `[transcription]` extra)
+- System requirement: `ffmpeg` (for video processing) and `ffprobe` (for duration detection)
+
+**Output format**: Markdown files in `.converted/` with transcription text, segment-level timestamps, and metadata header (source file, format, file size, duration, model).
 
 ---
 
@@ -96,7 +116,7 @@ Implemented OCR workflow for scanned PDFs with quality feedback in catalog opera
 
 Implement the existing placeholder converters in `content/converters/online/`. These files already exist with `is_implemented = False`.
 
-**YouTube**: Use `yt-dlp` to download audio, then transcribe via Whisper API. Alternatively, use the `youtube-transcript-api` library for videos that already have transcripts/subtitles (faster, free, no API cost). Ideally support both: try transcript API first, fall back to audio download + Whisper.
+**YouTube**: Use `yt-dlp` to download audio, then transcribe via Mistral Transcription API. Alternatively, use the `youtube-transcript-api` library for videos that already have transcripts/subtitles (faster, free, no API cost). Ideally support both: try transcript API first, fall back to audio download + Mistral transcription.
 
 **Webpage**: Use `httpx` (already a dependency) with `readability-lxml` or `trafilatura` to extract clean article text from web pages. Output as Markdown.
 

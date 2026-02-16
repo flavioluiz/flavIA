@@ -71,6 +71,29 @@ Then set the API key in your environment or `.flavia/.env`:
 MISTRAL_API_KEY=your_mistral_key
 ```
 
+## Audio/Video transcription (optional)
+
+To enable audio and video transcription via Mistral Transcription API:
+
+```bash
+.venv/bin/pip install -e ".[transcription]"
+```
+
+The `MISTRAL_API_KEY` is shared with the OCR feature. If not already configured, set it in `.flavia/.env`:
+
+```bash
+MISTRAL_API_KEY=your_mistral_key
+```
+
+**Video transcription requires ffmpeg**:
+
+- **macOS**: `brew install ffmpeg`
+- **Ubuntu/Debian**: `sudo apt-get install ffmpeg`
+- **Fedora/RHEL**: `sudo dnf install ffmpeg`
+- **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html) or use `choco install ffmpeg`
+
+The system will detect if ffmpeg is missing and provide platform-specific installation instructions.
+
 ## Office document conversion (optional)
 
 To enable Office conversion used by setup and `/catalog` (`.docx`, `.xlsx`, `.pptx`, plus legacy/OpenDocument variants):

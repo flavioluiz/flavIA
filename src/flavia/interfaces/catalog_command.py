@@ -29,9 +29,7 @@ def run_catalog_command(settings: Settings) -> bool:
 
     catalog = ContentCatalog.load(config_dir)
     if catalog is None:
-        console.print(
-            "[yellow]No catalog found. Run `flavia --init` to create one.[/yellow]"
-        )
+        console.print("[yellow]No catalog found. Run `flavia --init` to create one.[/yellow]")
         return False
 
     while True:
@@ -148,9 +146,7 @@ def _show_overview(catalog: ContentCatalog) -> None:
         type_table.add_column("Type", style="dim")
         type_table.add_column("Count", style="cyan", justify="right")
 
-        for file_type, count in sorted(
-            stats["by_type"].items(), key=lambda x: -x[1]
-        ):
+        for file_type, count in sorted(stats["by_type"].items(), key=lambda x: -x[1]):
             type_table.add_row(file_type, str(count))
         console.print(type_table)
 
@@ -173,9 +169,7 @@ def _show_overview(catalog: ContentCatalog) -> None:
         src_table.add_column("Source Type", style="dim")
         src_table.add_column("Count", style="cyan", justify="right")
 
-        for src_type, count in sorted(
-            stats["by_source_type"].items(), key=lambda x: -x[1]
-        ):
+        for src_type, count in sorted(stats["by_source_type"].items(), key=lambda x: -x[1]):
             src_table.add_row(src_type, str(count))
         console.print(src_table)
 
@@ -189,8 +183,7 @@ def _browse_files(catalog: ContentCatalog) -> None:
     console.print("\n[bold]Directory Structure[/bold]")
 
     tree = Tree(
-        f"[bold]{catalog.directory_tree.name}[/bold] "
-        f"({catalog.directory_tree.file_count} files)"
+        f"[bold]{catalog.directory_tree.name}[/bold] ({catalog.directory_tree.file_count} files)"
     )
 
     def add_node(parent_tree: Tree, node) -> None:
@@ -274,10 +267,7 @@ def _quality_badge(quality: str | None) -> str:
 
 def _show_summaries(catalog: ContentCatalog) -> None:
     """Display files that have summaries."""
-    files_with_summary = [
-        e for e in catalog.files.values()
-        if e.summary and e.status != "missing"
-    ]
+    files_with_summary = [e for e in catalog.files.values() if e.summary and e.status != "missing"]
 
     if not files_with_summary:
         console.print("[yellow]No files have summaries yet.[/yellow]")
@@ -327,8 +317,10 @@ def _show_online_sources(catalog: ContentCatalog) -> None:
     not_impl = sum(1 for e in online_sources if e.fetch_status == "not_implemented")
     failed = sum(1 for e in online_sources if e.fetch_status == "failed")
 
-    console.print(f"\n[dim]Pending: {pending} | Completed: {completed} | "
-                  f"Not Implemented: {not_impl} | Failed: {failed}[/dim]")
+    console.print(
+        f"\n[dim]Pending: {pending} | Completed: {completed} | "
+        f"Not Implemented: {not_impl} | Failed: {failed}[/dim]"
+    )
 
 
 def _add_online_source(catalog: ContentCatalog, config_dir: Path) -> None:
@@ -378,10 +370,7 @@ def _manage_pdf_files(catalog: ContentCatalog, config_dir: Path, settings: Setti
     base_dir = config_dir.parent
     converted_dir = base_dir / ".converted"
 
-    pdf_files = [
-        e for e in catalog.files.values()
-        if e.category == "pdf" and e.status != "missing"
-    ]
+    pdf_files = [e for e in catalog.files.values() if e.category == "pdf" and e.status != "missing"]
 
     if not pdf_files:
         console.print("[yellow]No PDF files in catalog.[/yellow]")
@@ -405,6 +394,7 @@ def _manage_pdf_files(catalog: ContentCatalog, config_dir: Path, settings: Setti
 
         try:
             import questionary
+
             pdf_choices = [
                 questionary.Choice(title=e.path, value=e.path)
                 for e in sorted(pdf_files, key=lambda e: e.path)
@@ -426,6 +416,7 @@ def _manage_pdf_files(catalog: ContentCatalog, config_dir: Path, settings: Setti
         # Action menu
         try:
             import questionary as _q
+
             action_choices = [
                 _q.Choice(title="Run full OCR (Mistral API)", value="ocr"),
                 _q.Choice(title="Extract text (simple)", value="simple"),
@@ -455,15 +446,18 @@ def _manage_pdf_files(catalog: ContentCatalog, config_dir: Path, settings: Setti
             continue
 
         if action in ("ocr", "Run full OCR (Mistral API)"):
-            if not os.environ.get("MISTRAL_API_KEY"):
+            from flavia.content.converters.mistral_key_manager import get_mistral_api_key
+
+            api_key = get_mistral_api_key(interactive=True)
+            if not api_key:
                 console.print(
-                    "[red]MISTRAL_API_KEY environment variable is not set. "
-                    "Export it before running OCR.[/red]"
+                    "[red]MISTRAL_API_KEY is required for OCR. Please provide it to continue.[/red]"
                 )
                 continue
 
             console.print(f"[dim]Running Mistral OCR on {entry.path}...[/dim]")
             from flavia.content.converters.mistral_ocr_converter import MistralOcrConverter
+
             result_path = MistralOcrConverter().convert(source, converted_dir)
             if result_path:
                 try:
@@ -481,6 +475,7 @@ def _manage_pdf_files(catalog: ContentCatalog, config_dir: Path, settings: Setti
         elif action in ("simple", "Extract text (simple)"):
             console.print(f"[dim]Extracting text from {entry.path}...[/dim]")
             from flavia.content.converters import PdfConverter
+
             result_path = PdfConverter().convert(source, converted_dir)
             if result_path:
                 try:
@@ -520,7 +515,8 @@ def _manage_office_files(catalog: ContentCatalog, config_dir: Path, settings: Se
     office_categories = {"word", "spreadsheet", "presentation", "document"}
 
     office_files = [
-        e for e in catalog.files.values()
+        e
+        for e in catalog.files.values()
         if e.category in office_categories and e.status != "missing"
     ]
 
@@ -548,6 +544,7 @@ def _manage_office_files(catalog: ContentCatalog, config_dir: Path, settings: Se
 
         try:
             import questionary
+
             office_choices = [
                 questionary.Choice(title=e.path, value=e.path)
                 for e in sorted(office_files, key=lambda e: e.path)
@@ -569,6 +566,7 @@ def _manage_office_files(catalog: ContentCatalog, config_dir: Path, settings: Se
         # Action menu
         try:
             import questionary as _q
+
             action_choices = [
                 _q.Choice(title="Extract text / Convert to Markdown", value="convert"),
                 _q.Choice(title="Re-run summary/quality (no extraction)", value="resummarize"),
@@ -625,9 +623,7 @@ def _manage_office_files(catalog: ContentCatalog, config_dir: Path, settings: Se
 
         elif action in ("resummarize", "Re-run summary/quality (no extraction)"):
             if not entry.converted_to:
-                console.print(
-                    "[yellow]No converted text found. Run extraction first.[/yellow]"
-                )
+                console.print("[yellow]No converted text found. Run extraction first.[/yellow]")
                 continue
 
             _offer_resummarization_with_quality(
@@ -646,8 +642,7 @@ def _manage_image_files(catalog: ContentCatalog, config_dir: Path, settings: Set
     converted_dir = base_dir / ".converted"
 
     image_files = [
-        e for e in catalog.files.values()
-        if e.file_type == "image" and e.status != "missing"
+        e for e in catalog.files.values() if e.file_type == "image" and e.status != "missing"
     ]
 
     if not image_files:
@@ -672,6 +667,7 @@ def _manage_image_files(catalog: ContentCatalog, config_dir: Path, settings: Set
 
         try:
             import questionary
+
             image_choices = [
                 questionary.Choice(title=e.path, value=e.path)
                 for e in sorted(image_files, key=lambda e: e.path)
@@ -693,6 +689,7 @@ def _manage_image_files(catalog: ContentCatalog, config_dir: Path, settings: Set
         # Action menu
         try:
             import questionary as _q
+
             action_choices = [
                 _q.Choice(title="Generate description (vision LLM)", value="generate"),
                 _q.Choice(title="Re-generate description", value="regenerate"),
@@ -723,9 +720,16 @@ def _manage_image_files(catalog: ContentCatalog, config_dir: Path, settings: Set
             )
             continue
 
-        if action in ("generate", "Generate description (vision LLM)", "regenerate", "Re-generate description"):
+        if action in (
+            "generate",
+            "Generate description (vision LLM)",
+            "regenerate",
+            "Re-generate description",
+        ):
             if action in ("regenerate", "Re-generate description") and not entry.converted_to:
-                console.print("[yellow]No existing description to regenerate. Generating new one.[/yellow]")
+                console.print(
+                    "[yellow]No existing description to regenerate. Generating new one.[/yellow]"
+                )
 
             console.print(f"[dim]Analyzing image {entry.path} with vision model...[/dim]")
             from flavia.content.converters import ImageConverter
@@ -747,7 +751,9 @@ def _manage_image_files(catalog: ContentCatalog, config_dir: Path, settings: Set
                 catalog.save(config_dir)
                 console.print("[dim]Catalog saved.[/dim]")
             else:
-                console.print("[red]Description generation failed. Check vision model configuration.[/red]")
+                console.print(
+                    "[red]Description generation failed. Check vision model configuration.[/red]"
+                )
                 _suggest_vision_model_change(settings)
 
         elif action in ("view", "View description"):
@@ -784,7 +790,9 @@ def _show_image_entry_details(entry, base_dir: Path, settings: Settings) -> None
     details.add_row("Format", Path(entry.path).suffix.lstrip(".").upper())
     details.add_row("Size", _format_size(entry.size_bytes))
     details.add_row("Description file", entry.converted_to or "[dim](none)[/dim]")
-    details.add_row("Description exists", "[green]yes[/green]" if converted_exists else "[dim]no[/dim]")
+    details.add_row(
+        "Description exists", "[green]yes[/green]" if converted_exists else "[dim]no[/dim]"
+    )
     details.add_row("Vision model", f"[cyan]{vision_model}[/cyan]")
     console.print(details)
 
@@ -825,7 +833,9 @@ def _select_vision_model(settings: Settings) -> bool:
         return False
 
     settings.image_vision_model = selection
-    console.print(f"[green]Vision model switched to:[/green] [cyan]{settings.image_vision_model}[/cyan]")
+    console.print(
+        f"[green]Vision model switched to:[/green] [cyan]{settings.image_vision_model}[/cyan]"
+    )
     console.print("[dim]Note: This change applies to the current session only.[/dim]")
     console.print(f"[dim]To persist, set IMAGE_VISION_MODEL={selection} in your .env file.[/dim]")
     return True
@@ -845,7 +855,9 @@ def _suggest_vision_model_change(settings: Settings) -> None:
 
 def _show_office_entry_details(entry, base_dir: Path, settings: Settings) -> None:
     """Show selected Office document details including conversion and summary metadata."""
-    console.print(f"\n[bold cyan]{entry.path}[/bold cyan]  {_quality_badge(entry.extraction_quality)}")
+    console.print(
+        f"\n[bold cyan]{entry.path}[/bold cyan]  {_quality_badge(entry.extraction_quality)}"
+    )
 
     converted_exists = False
     if entry.converted_to:
@@ -869,7 +881,9 @@ def _show_office_entry_details(entry, base_dir: Path, settings: Settings) -> Non
     details.add_column("Value")
     details.add_row("Document type", entry.category or "unknown")
     details.add_row("Converted file", entry.converted_to or "[dim](none)[/dim]")
-    details.add_row("Converted exists", "[green]yes[/green]" if converted_exists else "[dim]no[/dim]")
+    details.add_row(
+        "Converted exists", "[green]yes[/green]" if converted_exists else "[dim]no[/dim]"
+    )
     details.add_row("Summary", "[green]yes[/green]" if entry.summary else "[dim]no[/dim]")
     details.add_row("Extraction quality", _quality_badge(entry.extraction_quality))
     details.add_row("Summary model", f"[cyan]{active_model_ref}[/cyan]")
@@ -883,7 +897,9 @@ def _show_office_entry_details(entry, base_dir: Path, settings: Settings) -> Non
 
 def _show_pdf_entry_details(entry, base_dir: Path, settings: Settings) -> None:
     """Show selected PDF details including conversion and summary metadata."""
-    console.print(f"\n[bold cyan]{entry.path}[/bold cyan]  {_quality_badge(entry.extraction_quality)}")
+    console.print(
+        f"\n[bold cyan]{entry.path}[/bold cyan]  {_quality_badge(entry.extraction_quality)}"
+    )
 
     converted_exists = False
     if entry.converted_to:
@@ -906,7 +922,9 @@ def _show_pdf_entry_details(entry, base_dir: Path, settings: Settings) -> None:
     details.add_column("Field", style="dim")
     details.add_column("Value")
     details.add_row("Converted file", entry.converted_to or "[dim](none)[/dim]")
-    details.add_row("Converted exists", "[green]yes[/green]" if converted_exists else "[dim]no[/dim]")
+    details.add_row(
+        "Converted exists", "[green]yes[/green]" if converted_exists else "[dim]no[/dim]"
+    )
     details.add_row("Summary", "[green]yes[/green]" if entry.summary else "[dim]no[/dim]")
     details.add_row("Extraction quality", _quality_badge(entry.extraction_quality))
     details.add_row("Summary model", f"[cyan]{active_model_ref}[/cyan]")
@@ -922,6 +940,7 @@ def _prompt_yes_no(prompt: str, yes_title: str = "Yes", no_title: str = "No") ->
     """Prompt for a yes/no choice and return True only on yes."""
     try:
         import questionary as _q
+
         choices = [
             _q.Choice(title=yes_title, value=True),
             _q.Choice(title=no_title, value=False),
@@ -962,6 +981,7 @@ def _select_model_for_summary(settings: Settings) -> bool:
 
     try:
         import questionary as _q
+
         model_choices = [_q.Choice(title=label, value=ref) for label, ref in choices]
         model_choices.append(_q.Choice(title="Cancel", value="__cancel__"))
     except ImportError:
@@ -980,7 +1000,9 @@ def _select_model_for_summary(settings: Settings) -> bool:
         selection = reverse.get(selection, selection)
 
     settings.summary_model = str(selection)
-    console.print(f"[green]Summary model switched to:[/green] [cyan]{settings.summary_model}[/cyan]")
+    console.print(
+        f"[green]Summary model switched to:[/green] [cyan]{settings.summary_model}[/cyan]"
+    )
     return True
 
 

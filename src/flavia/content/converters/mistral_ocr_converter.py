@@ -2,7 +2,6 @@
 
 import base64
 import json
-import os
 import re
 from pathlib import Path
 from typing import Optional
@@ -71,16 +70,16 @@ class MistralOcrConverter(BaseConverter):
         md_text, _ = self._run_mistral_ocr(source_path)
         return md_text
 
-    def _run_mistral_ocr(
-        self, pdf_path: Path
-    ) -> tuple[Optional[str], list[tuple[str, bytes]]]:
+    def _run_mistral_ocr(self, pdf_path: Path) -> tuple[Optional[str], list[tuple[str, bytes]]]:
         """Upload the PDF to Mistral and run OCR.
 
         Returns:
             (markdown_text, [(img_id, img_bytes), ...])
             On failure returns (None, []).
         """
-        api_key = os.environ.get("MISTRAL_API_KEY")
+        from .mistral_key_manager import get_mistral_api_key
+
+        api_key = get_mistral_api_key(interactive=False)
         if not api_key:
             return None, []
 

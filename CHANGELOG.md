@@ -8,6 +8,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Audio/Video Transcription Converter (Task 1.1)**: New `AudioConverter` and `VideoConverter` in `content/converters/` supporting audio and video file transcription:
+  - Audio formats: `.mp3`, `.wav`, `.flac`, `.ogg`, `.m4a`, `.aac`, `.wma`, `.opus`, `.aiff`, `.ape`, `.alac`, `.amr`
+  - Video formats: `.mp4`, `.avi`, `.mkv`, `.mov`, `.wmv`, `.flv`, `.webm`, `.mpeg`, `.mpg`, `.3gp`, `.m4v`, `.ts`, `.vob`, `.ogv`
+  - Uses Mistral Transcription API (`voxtral-mini-latest`) for transcription with segment-level timestamps
+  - Video audio extraction to `.flavia/.tmp_audio/` using ffmpeg subprocess with automatic cleanup
+  - Duration detection via ffprobe for accurate metadata
+  - Platform-specific ffmpeg installation instructions when not available
+  - Centralized `get_mistral_api_key()` in `mistral_key_manager.py`:
+    - Interactive prompting when API key is not found
+    - Persistence options: local project (`.flavia/.env`), global (`~/.config/flavia/.env`), or session-only
+    - Shared with OCR feature for unified key management
+  - Refactored `MistralOcrConverter` and `catalog_command.py` to use centralized key manager
+  - Transcription output format: Markdown with metadata header (source file, format, file size, duration, model) and segment-level timestamps (e.g., `[00:01:23 - 00:01:45] Text...`)
+  - New optional dependency extra: `transcription` (`mistralai`)
+  - System requirement: `ffmpeg` and `ffprobe` (for video processing and duration detection)
+  - Integrated with `flavia --init` for automatic transcription during setup
+  - 45 new unit tests covering key manager, audio converter, video converter, and utilities
 - **Image analysis with vision-capable models**:
   - New `ImageConverter` for `.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.webp`, `.ico`, `.tiff`, `.tif`, `.svg`
   - New `flavia.content.vision` module for image encoding, optional SVG->PNG conversion, and multimodal chat completion calls
