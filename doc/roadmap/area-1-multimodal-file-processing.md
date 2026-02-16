@@ -1,6 +1,6 @@
 # Area 1: Multimodal File Processing
 
-The content system (`content/converters/`) has a clean `BaseConverter` / `ConverterRegistry` architecture. It currently supports PDF (via pdfplumber) and text passthrough. The `FileScanner` already classifies files into types (image, audio, video, binary\_document) but does nothing with non-text/non-PDF files. Online converters (YouTube, webpage) are placeholders.
+The content system (`content/converters/`) has a clean `BaseConverter` / `ConverterRegistry` architecture. It supports PDF conversion (pdfplumber/pypdf) and scanned-PDF OCR with quality assessment via the catalog workflow. The `FileScanner` already classifies files into types (image, audio, video, binary\_document) but still lacks dedicated converters for most non-text formats. Online converters (YouTube, webpage) are placeholders.
 
 All new converters follow the same pattern: implement `BaseConverter`, register in `ConverterRegistry`, output Markdown to `.converted/`. The general approach for multimodal processing is to use external APIs (OpenAI Whisper for audio, GPT-4o vision for images/OCR).
 
@@ -33,7 +33,7 @@ Create `content/converters/image_converter.py`. Use the GPT-4o vision API (or an
 - `content/converters/image_converter.py` (new)
 - `content/converters/__init__.py` (register)
 
-**Design consideration**: The provider system currently uses the OpenAI-compatible API; vision endpoints require the multimodal message format (`content: [{type: "image_url", ...}]`). This may require a utility function in `BaseAgent` or a standalone helper for vision calls that can be shared with Task 1.4.
+**Design consideration**: The provider system currently uses the OpenAI-compatible API; vision endpoints require the multimodal message format (`content: [{type: "image_url", ...}]`). This pattern is already exercised by Task 1.4's OCR flow and can be reused for image descriptions.
 
 ---
 
@@ -51,20 +51,26 @@ Create `content/converters/docx_converter.py`. Use `python-docx` for `.docx`, `o
 
 ---
 
-### Task 1.4 -- OCR for Handwritten Documents and Equation-Heavy PDFs
+### ~~Task 1.4 -- OCR for Handwritten Documents and Equation-Heavy PDFs~~ ✅ DONE
 
-**Difficulty**: Hard | **Dependencies**: Task 1.2 (shares vision API infrastructure)
+**Difficulty**: ~~Hard~~ | **Dependencies**: ~~Task 1.2~~ (implemented independently via OCR provider integration)
 
-Create `content/converters/ocr_converter.py`. Use the GPT-4o vision API with a specialized prompt for OCR of handwritten documents. The prompt should instruct the model to transcribe handwritten text faithfully, preserving structure.
+Implemented OCR workflow for scanned PDFs with quality feedback in catalog operations.
 
-**Sub-feature -- LaTeX equation OCR**: The OCR prompt should include instructions to render mathematical equations in LaTeX notation within `$...$` (inline) or `$$...$$` (display) delimiters. The output should be valid Markdown with embedded LaTeX. This is primarily a prompt engineering challenge.
+**What was delivered**:
+- Dedicated OCR converter (`MistralOcrConverter`) with PDF upload + markdown extraction pipeline
+- Scanned-PDF detection in `PdfConverter` (average extracted chars/page heuristic)
+- Explicit OCR execution path in `/catalog` (`PDF Files` manager)
+- Per-file summary + extraction quality (`good` / `partial` / `poor`)
+- Model fallback and manual model selection for summary/quality retries
 
-**Sub-feature -- Scanned PDF OCR**: Extend `PdfConverter` to detect image-based PDF pages (pages where pdfplumber extracts no text or very little text) and route those pages to the vision API for per-page OCR. Combine extracted text pages with OCR pages in the final output.
-
-**Key files to modify/create**:
-- `content/converters/ocr_converter.py` (new)
-- `content/converters/pdf_converter.py` (extend for scanned page detection)
-- Shared vision API helper (from Task 1.2)
+**Implemented files**:
+- `src/flavia/content/converters/mistral_ocr_converter.py`
+- `src/flavia/content/converters/pdf_converter.py`
+- `src/flavia/content/summarizer.py`
+- `src/flavia/content/scanner.py`
+- `src/flavia/interfaces/catalog_command.py`
+- `src/flavia/cli.py`
 
 ---
 

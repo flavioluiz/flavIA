@@ -13,8 +13,8 @@ This roadmap outlines **45 tasks** across **10 major areas** to extend flavIA fr
 ### Quick Stats
 - **10 Easy tasks** (< 1 day each) — Quick wins for immediate value — **6 completed** ✓
 - **26 Medium tasks** (1-2 days each) — Core feature development — **7 completed** ✓
-- **9 Hard tasks** (3+ days each) — Complex integrations requiring careful design
-- **Total completed so far**: **13 / 45 tasks** ✓
+- **9 Hard tasks** (3+ days each) — Complex integrations requiring careful design — **1 completed** ✓
+- **Total completed so far**: **14 / 45 tasks** ✓
 
 ### Strategic Priorities
 1. **Immediate value** (Tasks 4.1-4.8, 8.1): Improve CLI UX and add token tracking
@@ -35,7 +35,7 @@ Expand content processing beyond PDF/text to audio, video, images, Office docs, 
 - **1.1** Audio/Video Transcription (Medium) — Whisper API transcription
 - **1.2** Image Description (Medium) — GPT-4o vision for images
 - **1.3** Word/Office Documents (Easy) — python-docx, openpyxl, python-pptx
-- **1.4** OCR + LaTeX Equations (Hard) — Handwritten docs, scanned PDFs, equation OCR
+- ~~**1.4** OCR + LaTeX Equations (Hard)~~ — **DONE** ✓ Scanned PDF OCR pipeline + quality assessment in `/catalog`
 - **1.5** YouTube/Web Converters (Medium) — yt-dlp, trafilatura
 
 ### [Area 2: Agent System Improvements](roadmap/area-2-agent-system-improvements.md) (3 tasks)
@@ -169,15 +169,15 @@ Structured agent profiles, global agents, and sandboxed script execution.
 - User-level agents available across all projects
 - Safe execution of Python/MATLAB scripts
 
-### Phase 6: Platform Expansion (Tasks 3.4, 3.6, 1.4)
-**Timeline**: 2-3 weeks | **Effort**: 2 Hard + 1 Medium = ~7-10 days
+### Phase 6: Platform Expansion (Tasks 3.4, 3.6; 1.4 completed)
+**Timeline**: 2-3 weeks | **Effort**: 1 Hard + 1 Medium = ~4-7 days (pending)
 
-Abstract bot interface, Web API, and advanced OCR.
+Abstract bot interface and Web API. OCR milestone from Area 1 is complete.
 
 **Deliverables**:
 - HTTP/WebSocket API for custom integrations
 - Platform-independent bot architecture
-- OCR for handwritten notes and equations
+- ~~OCR for handwritten notes and equations~~ ✓
 
 ### Phase 7: External Services (Tasks 7.1-7.2, 2.3, 3.5)
 **Timeline**: 3-4 weeks | **Effort**: 4 Hard = ~12-16 days
@@ -221,7 +221,7 @@ Area 1 -- Multimodal File Processing:
 Task 1.1 (Audio/Video) ──────────────────────┐
 Task 1.2 (Image Description) ─────┐          │
 Task 1.3 (Word/Office) ───────────┤          │
-                                    ├── Task 1.4 (OCR + LaTeX)
+                                    ├── ~~Task 1.4 (OCR + LaTeX)~~ ✓
                                     │          │
                                     │          └── Task 1.5 (YouTube/Web)
 
@@ -322,7 +322,7 @@ Tasks ordered by a pragmatic implementation sequence that balances dependency re
 | 26 | **3.3** Multi-bot support | Medium | Messaging |
 | 27 | **1.5** Online source converters (YouTube/Web) | Medium | File Processing |
 | 28 | **3.6** Web API interface | Medium | Messaging |
-| 29 | **1.4** OCR + LaTeX equation support | Hard | File Processing |
+| 29 | ~~**1.4** OCR + LaTeX equation support~~ — **DONE** ✓ | ~~Hard~~ | ~~File Processing~~ |
 | 30 | **3.4** Abstract messaging interface | Hard | Messaging |
 | 31 | **2.3** Meta-agent for agent generation | Hard | Agents |
 | 32 | **6.2** Sandboxed script execution (Python/MATLAB) | Hard | Academic Workflow |
