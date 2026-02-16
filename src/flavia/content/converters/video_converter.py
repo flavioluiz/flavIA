@@ -22,7 +22,12 @@ from flavia.content.scanner import VIDEO_EXTENSIONS
 from .audio_converter import AudioConverter, _format_file_size, _format_timestamp
 from .base import BaseConverter
 from .image_converter import ImageConverter
-from .video_frame_extractor import extract_and_describe_video_frames, _seconds_to_timestamp
+from .video_frame_extractor import (
+    DEFAULT_FRAME_SAMPLE_INTERVAL,
+    DEFAULT_MAX_FRAMES,
+    _seconds_to_timestamp,
+    extract_and_describe_video_frames,
+)
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -124,8 +129,8 @@ class VideoConverter(BaseConverter):
         transcript: str,
         video_path: Path,
         base_output_dir: Path,
-        interval: int = 10,
-        max_frames: int = 20,
+        interval: int = DEFAULT_FRAME_SAMPLE_INTERVAL,
+        max_frames: int = DEFAULT_MAX_FRAMES,
     ) -> Tuple[List[Path], List[float]]:
         """Extract and describe visual frames from video.
 

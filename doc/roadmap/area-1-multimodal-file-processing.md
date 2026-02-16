@@ -121,7 +121,7 @@ Implemented visual frame extraction and description for video files using vision
 - Frame extraction via `ffmpeg` at sampled timestamps from video transcriptions
 - Automatic timestamp parsing from transcript segments (e.g., `[00:30 - 02:45]`)
 - Configurable sampling interval (default: extract 1 frame every 10 segments)
-- Configurable max frames limit (default: 20 frames per video)
+- Configurable max frames limit (default: 10 frames per video)
 - Frame descriptions generated using existing `ImageConverter` and LLM vision APIs
 - Individual markdown files per frame with metadata (timestamp, vision model)
 - Frame descriptions persisted in catalog metadata for interactive viewing via `/catalog`

@@ -8,6 +8,7 @@ import logging
 import re
 import shutil
 import subprocess
+from hashlib import sha256
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -15,8 +16,11 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_FRAME_SAMPLE_INTERVAL = 10
-DEFAULT_MAX_FRAMES = 20
-_DEFAULT_FRAME_QUALITY = 2
+DEFAULT_MAX_FRAMES = 10
+DEFAULT_FRAME_MAX_WIDTH = 768
+_DEFAULT_FRAME_QUALITY = 12
+_DEFAULT_VISUAL_SIMILARITY_THRESHOLD = 0.97
+_VISUAL_SIGNATURE_SIZE = 16
 
 
 def _timestamp_to_seconds(timestamp: str) -> Optional[float]:
@@ -126,14 +130,54 @@ def select_timestamps(
     """
     if not timestamps:
         return []
+    if max_frames <= 0:
+        return []
+
+    safe_interval = max(1, interval)
+    selectable_count = (len(timestamps) + safe_interval - 1) // safe_interval
+    if selectable_count >= max_frames:
+        return _select_uniform_segment_starts(timestamps, max_frames)
 
     selected = []
-
     for i, (start, _) in enumerate(timestamps):
-        if i % interval == 0 and len(selected) < max_frames:
+        if i % safe_interval == 0 and len(selected) < max_frames:
             selected.append(start)
 
     return selected
+
+
+def _select_uniform_segment_starts(
+    timestamps: List[Tuple[float, float]],
+    count: int,
+) -> List[float]:
+    """Select segment starts uniformly across the transcript timeline."""
+    if not timestamps or count <= 0:
+        return []
+    if count == 1:
+        return [timestamps[0][0]]
+
+    max_index = len(timestamps) - 1
+    raw_indices = [round(i * max_index / (count - 1)) for i in range(count)]
+
+    # Guard against rounding collisions for small lists by keeping order and
+    # filling with remaining indices.
+    unique_indices: List[int] = []
+    seen = set()
+    for idx in raw_indices:
+        if idx not in seen:
+            unique_indices.append(idx)
+            seen.add(idx)
+    if len(unique_indices) < count:
+        for idx in range(len(timestamps)):
+            if idx in seen:
+                continue
+            unique_indices.append(idx)
+            seen.add(idx)
+            if len(unique_indices) == count:
+                break
+
+    unique_indices.sort()
+    return [timestamps[idx][0] for idx in unique_indices[:count]]
 
 
 def extract_frames_at_timestamps(
@@ -141,6 +185,7 @@ def extract_frames_at_timestamps(
     timestamps: List[float],
     output_dir: Path,
     quality: int = _DEFAULT_FRAME_QUALITY,
+    max_width: int = DEFAULT_FRAME_MAX_WIDTH,
 ) -> List[Tuple[Path, float]]:
     """Extract frames from video at specific timestamps using ffmpeg.
 
@@ -149,6 +194,7 @@ def extract_frames_at_timestamps(
         timestamps: List of timestamps (in seconds) to extract
         output_dir: Directory to save extracted frames
         quality: JPEG quality (1-31, lower=better)
+        max_width: Maximum frame width in pixels (maintains aspect ratio)
 
     Returns:
         List of tuples (frame_path, timestamp) for successfully extracted frames
@@ -163,6 +209,8 @@ def extract_frames_at_timestamps(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     extracted_files: List[Tuple[Path, float]] = []
+    jpeg_quality = max(1, min(31, int(quality)))
+    max_width_px = max(128, int(max_width))
 
     for timestamp in timestamps:
         filename = _format_frame_filename(timestamp)
@@ -178,8 +226,12 @@ def extract_frames_at_timestamps(
                     str(video_path),
                     "-vframes",
                     "1",
+                    "-vf",
+                    f"scale=w={max_width_px}:h=-2:force_original_aspect_ratio=decrease",
                     "-q:v",
-                    str(quality),
+                    str(jpeg_quality),
+                    "-map_metadata",
+                    "-1",
                     "-y",
                     str(output_path),
                 ],
@@ -204,6 +256,108 @@ def extract_frames_at_timestamps(
             logger.warning(f"Error extracting frame at {timestamp:.2f}s: {e}")
 
     return extracted_files
+
+
+def _deduplicate_frame_items(
+    frame_items: List[Tuple[Path, float]],
+) -> List[Tuple[Path, float]]:
+    """Remove duplicate/similar adjacent frames, preserving the latest frame."""
+    unique_items: List[Tuple[Path, float]] = []
+    unique_hashes: List[str] = []
+    unique_signatures: List[Optional[bytes]] = []
+
+    for frame_path, timestamp in frame_items:
+        try:
+            file_hash = sha256(frame_path.read_bytes()).hexdigest()
+        except OSError as e:
+            logger.warning(f"Failed to hash frame {frame_path}: {e}")
+            continue
+
+        signature = _compute_visual_signature(frame_path)
+
+        should_replace_last = False
+        if unique_items:
+            last_hash = unique_hashes[-1]
+            last_signature = unique_signatures[-1]
+            is_exact_duplicate = file_hash == last_hash
+            is_visually_similar = (
+                signature is not None
+                and last_signature is not None
+                and _visual_similarity(signature, last_signature)
+                >= _DEFAULT_VISUAL_SIMILARITY_THRESHOLD
+            )
+            should_replace_last = is_exact_duplicate or is_visually_similar
+
+        if should_replace_last:
+            previous_path = unique_items[-1][0]
+            if previous_path != frame_path:
+                try:
+                    previous_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            unique_items[-1] = (frame_path, timestamp)
+            unique_hashes[-1] = file_hash
+            unique_signatures[-1] = signature
+            logger.debug(f"Skipping similar frame, keeping latest: {frame_path.name}")
+            continue
+
+        unique_items.append((frame_path, timestamp))
+        unique_hashes.append(file_hash)
+        unique_signatures.append(signature)
+
+    return unique_items
+
+
+def _compute_visual_signature(frame_path: Path) -> Optional[bytes]:
+    """Compute a compact grayscale signature for visual similarity checks."""
+    if not shutil.which("ffmpeg"):
+        return None
+
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-loglevel",
+                "error",
+                "-i",
+                str(frame_path),
+                "-vf",
+                f"scale={_VISUAL_SIGNATURE_SIZE}:{_VISUAL_SIGNATURE_SIZE},format=gray",
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                "gray",
+                "-vframes",
+                "1",
+                "-",
+            ],
+            capture_output=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    expected_size = _VISUAL_SIGNATURE_SIZE * _VISUAL_SIGNATURE_SIZE
+    if len(result.stdout) != expected_size:
+        return None
+
+    return result.stdout
+
+
+def _visual_similarity(signature_a: bytes, signature_b: bytes) -> float:
+    """Return normalized similarity [0.0, 1.0] between grayscale signatures."""
+    if len(signature_a) != len(signature_b) or not signature_a:
+        return 0.0
+
+    total_diff = 0
+    for a, b in zip(signature_a, signature_b):
+        total_diff += abs(a - b)
+
+    max_diff = len(signature_a) * 255
+    return 1.0 - (total_diff / max_diff)
 
 
 def format_frame_description_markdown(
@@ -336,10 +490,16 @@ def extract_and_describe_video_frames(
         logger.warning(f"No frames extracted from {video_path.name}")
         return [], []
 
-    descriptions = describe_frames(extracted_frames, frames_dir, video_path, image_converter)
+    deduplicated_frames = _deduplicate_frame_items(extracted_frames)
+    if not deduplicated_frames:
+        logger.warning(f"All extracted frames were duplicates for {video_path.name}")
+        return [], []
+
+    descriptions = describe_frames(deduplicated_frames, frames_dir, video_path, image_converter)
 
     logger.info(
-        f"Extracted {len(extracted_frames)} frames and generated "
+        f"Extracted {len(extracted_frames)} frames "
+        f"({len(deduplicated_frames)} unique) and generated "
         f"{len(descriptions)} descriptions for {video_path.name}"
     )
 

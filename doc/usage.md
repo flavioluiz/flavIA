@@ -317,6 +317,7 @@ Notes:
 - Mistral OCR requires installing the `ocr` extra and exporting `MISTRAL_API_KEY`.
 - Audio/video transcription requires installing the `transcription` extra and exporting `MISTRAL_API_KEY` (shared with OCR).
 - Visual frame extraction from videos also requires a vision-capable model configured via `IMAGE_VISION_MODEL` or `providers.yaml` (uses existing vision API infrastructure).
+- Extracted frames are downscaled/compressed and visually similar consecutive frames are deduplicated (keeping the latest frame) to reduce token usage and processing time.
 - Frame descriptions are generated as individual markdown files in `.converted/video_name_frames/` subdirectories and can be viewed from `/catalog`.
 - Video transcription also requires `ffmpeg` to be installed on your system for audio extraction.
 - In `PDF Files`, you can run `Re-run summary/quality (no extraction)` to regenerate metadata from the existing converted markdown only.

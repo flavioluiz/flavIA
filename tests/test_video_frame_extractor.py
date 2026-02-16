@@ -7,8 +7,11 @@ import pytest
 
 from flavia.content.converters.video_frame_extractor import (
     _format_frame_filename,
+    _compute_visual_signature,
     _seconds_to_timestamp,
     _timestamp_to_seconds,
+    _deduplicate_frame_items,
+    _visual_similarity,
     describe_frames,
     extract_and_describe_video_frames,
     extract_frames_at_timestamps,
@@ -81,11 +84,11 @@ class TestSelectTimestamps:
         assert len(selected) == 3
         assert selected == [30.0, 90.0, 150.0]
 
-    def test_select_with_max_frames_limit(self):
+    def test_select_with_max_frames_limit_uses_uniform_sampling(self):
         timestamps = [(30, 60), (60, 90), (90, 120), (120, 150), (150, 180)]
         selected = select_timestamps(timestamps, interval=1, max_frames=3)
         assert len(selected) == 3
-        assert selected == [30.0, 60.0, 90.0]
+        assert selected == [30.0, 90.0, 150.0]
 
     def test_select_empty_list(self):
         selected = select_timestamps([], interval=10, max_frames=20)
@@ -96,6 +99,11 @@ class TestSelectTimestamps:
         selected = select_timestamps(timestamps, interval=10, max_frames=20)
         assert len(selected) == 1
         assert selected == [30.0]
+
+    def test_select_with_zero_interval_is_safe(self):
+        timestamps = [(30, 60), (60, 90), (90, 120)]
+        selected = select_timestamps(timestamps, interval=0, max_frames=20)
+        assert selected == [30.0, 60.0, 90.0]
 
 
 class TestFormatFrameDescriptionMarkdown:
@@ -146,6 +154,12 @@ class TestExtractFramesAtTimestamps:
         assert extracted[1][0].exists()
         assert mock_run.call_count == 2
 
+        called_args = mock_run.call_args_list[0].args[0]
+        assert "-vf" in called_args
+        assert "scale=w=768:h=-2:force_original_aspect_ratio=decrease" in called_args
+        assert "-q:v" in called_args
+        assert "12" in called_args
+
     @patch("shutil.which")
     def test_extract_frames_no_ffmpeg(self, mock_which, tmp_path):
         mock_which.return_value = None
@@ -178,6 +192,69 @@ class TestExtractFramesAtTimestamps:
         assert len(extracted) == 2
         assert extracted[0][1] == 30.0
         assert extracted[1][1] == 90.0
+
+
+class TestFrameDeduplication:
+    """Test duplicate frame detection and pruning."""
+
+    def test_deduplicate_frame_items_by_content_keeps_latest(self, tmp_path):
+        frame1 = tmp_path / "frame_1.jpg"
+        frame2 = tmp_path / "frame_2.jpg"
+        frame3 = tmp_path / "frame_3.jpg"
+
+        frame1.write_bytes(b"same-image-content")
+        frame2.write_bytes(b"same-image-content")
+        frame3.write_bytes(b"different-image-content")
+
+        items = [(frame1, 30.0), (frame2, 60.0), (frame3, 90.0)]
+        deduped = _deduplicate_frame_items(items)
+
+        assert len(deduped) == 2
+        assert deduped[0] == (frame2, 60.0)
+        assert deduped[1] == (frame3, 90.0)
+        assert not frame1.exists()
+
+    @patch("flavia.content.converters.video_frame_extractor._compute_visual_signature")
+    def test_deduplicate_by_visual_similarity_keeps_latest(self, mock_signature, tmp_path):
+        frame1 = tmp_path / "frame_1.jpg"
+        frame2 = tmp_path / "frame_2.jpg"
+        frame3 = tmp_path / "frame_3.jpg"
+
+        frame1.write_bytes(b"a")
+        frame2.write_bytes(b"b")
+        frame3.write_bytes(b"c")
+
+        sig_a = bytes([120] * 256)
+        sig_b = bytes([122] * 256)  # very close to sig_a
+        sig_c = bytes([20] * 256)  # very different
+        mock_signature.side_effect = [sig_a, sig_b, sig_c]
+
+        items = [(frame1, 30.0), (frame2, 60.0), (frame3, 90.0)]
+        deduped = _deduplicate_frame_items(items)
+
+        assert len(deduped) == 2
+        assert deduped[0] == (frame2, 60.0)
+        assert deduped[1] == (frame3, 90.0)
+        assert not frame1.exists()
+
+
+class TestVisualSignatureHelpers:
+    """Test visual signature and similarity helpers."""
+
+    def test_visual_similarity_bounds(self):
+        sig_a = bytes([100] * 256)
+        sig_b = bytes([100] * 256)
+        sig_c = bytes([0] * 256)
+
+        assert _visual_similarity(sig_a, sig_b) == 1.0
+        assert 0.0 <= _visual_similarity(sig_a, sig_c) < 1.0
+
+    def test_compute_visual_signature_returns_none_when_ffmpeg_missing(self, tmp_path):
+        frame = tmp_path / "frame.jpg"
+        frame.write_bytes(b"not-a-real-image")
+
+        with patch("shutil.which", return_value=None):
+            assert _compute_visual_signature(frame) is None
 
 
 class TestDescribeFrames:
@@ -308,3 +385,29 @@ class TestExtractAndDescribeVideoFrames:
         )
 
         assert timestamps == [30.0, 600.0]
+
+    @patch("flavia.content.converters.video_frame_extractor.extract_frames_at_timestamps")
+    def test_skips_duplicate_frames_before_description_keeping_latest(
+        self, mock_extract, tmp_path
+    ):
+        mock_image_converter = MagicMock()
+        video_path = tmp_path / "video.mp4"
+        transcript = "[0:30 - 2:00] A\n[5:00 - 7:00] B\n"
+
+        frame1 = tmp_path / "frame_00m30s.jpg"
+        frame2 = tmp_path / "frame_05m00s.jpg"
+        frame1.write_bytes(b"identical")
+        frame2.write_bytes(b"identical")
+        mock_extract.return_value = [(frame1, 30.0), (frame2, 300.0)]
+
+        mock_image_converter.extract_text.return_value = "Frame content"
+        mock_image_converter.settings = MagicMock()
+        mock_image_converter.settings.image_vision_model = "test-model"
+
+        result, timestamps = extract_and_describe_video_frames(
+            video_path, transcript, tmp_path, mock_image_converter, interval=1, max_frames=20
+        )
+
+        assert len(result) == 1
+        assert timestamps == [300.0]
+        assert mock_image_converter.extract_text.call_count == 1
