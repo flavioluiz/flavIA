@@ -127,7 +127,7 @@ flavia --init
 The interactive wizard will:
 
 1. Ask which model/provider to use (and test the connection)
-2. Find binary documents (PDFs and Office files) and offer conversion to text
+2. Find convertible files (PDF/Office/audio/video) and offer conversion to text/transcription
 3. Build the project content catalog in `.flavia/content_catalog.json`
 4. Optionally generate LLM summaries for files that need them
 5. Let you choose simple configuration or AI-assisted configuration

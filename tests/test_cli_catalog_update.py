@@ -51,6 +51,49 @@ def test_run_catalog_update_reconverts_modified_pdf(monkeypatch, tmp_path):
     assert converted_calls == [pdf_path]
 
 
+def test_run_catalog_update_reconverts_modified_audio(monkeypatch, tmp_path):
+    audio_path = tmp_path / "meeting.mp3"
+    audio_path.write_bytes(b"audio-original")
+
+    config_dir = tmp_path / ".flavia"
+    config_dir.mkdir()
+
+    catalog = ContentCatalog(tmp_path)
+    catalog.build()
+    catalog.files["meeting.mp3"].converted_to = ".converted/meeting.md"
+    catalog.save(config_dir)
+
+    time.sleep(0.05)
+    audio_path.write_bytes(b"audio-modified")
+
+    converted_calls: list[Path] = []
+
+    def _fake_convert(source_path: Path, output_dir: Path, output_format: str = "md"):
+        converted_calls.append(source_path)
+        output_file = output_dir / source_path.with_suffix(f".{output_format}").name
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_text("converted", encoding="utf-8")
+        return output_file
+
+    class _FakeConverter:
+        @staticmethod
+        def check_dependencies():
+            return True, []
+
+        @staticmethod
+        def convert(source_path: Path, output_dir: Path, output_format: str = "md"):
+            return _fake_convert(source_path, output_dir, output_format)
+
+    monkeypatch.setattr(
+        "flavia.content.converters.converter_registry.get_for_file",
+        lambda _path: _FakeConverter(),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert run_catalog_update(convert=True) == 0
+    assert converted_calls == [audio_path]
+
+
 def test_main_passes_path_to_run_catalog_update(monkeypatch, tmp_path):
     args = SimpleNamespace(
         version=False,

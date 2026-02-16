@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--update-convert",
         action="store_true",
-        help="Update catalog and convert new binary documents to text",
+        help="Update catalog and convert new/modified docs, audio, and video to text",
     )
 
     parser.add_argument(
@@ -509,11 +509,11 @@ def run_catalog_update(
                 removed = catalog.remove_missing()
                 print(f"\nRemoved {len(removed)} missing file(s) from catalog")
 
-    # Convert binary documents if requested
+    # Convert supported non-text files if requested
     if convert:
         needs_conversion = catalog.get_files_needing_conversion()
         if needs_conversion:
-            print(f"\nConverting {len(needs_conversion)} binary document(s)...")
+            print(f"\nConverting {len(needs_conversion)} file(s)...")
             converted_dir = base_dir / ".converted"
             converted_count = 0
             failed_count = 0
@@ -555,7 +555,7 @@ def run_catalog_update(
             if skipped_count:
                 print(f"  {skipped_count} file(s) skipped")
         else:
-            print("\nNo binary documents need conversion.")
+            print("\nNo files need conversion.")
 
     # Generate summaries if requested
     if summarize:

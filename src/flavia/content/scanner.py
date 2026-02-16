@@ -113,6 +113,11 @@ AUDIO_EXTENSIONS = {
     ".ogg",
     ".wma",
     ".m4a",
+    ".opus",
+    ".aiff",
+    ".ape",
+    ".alac",
+    ".amr",
 }
 
 VIDEO_EXTENSIONS = {
@@ -126,6 +131,10 @@ VIDEO_EXTENSIONS = {
     ".m4v",
     ".mpg",
     ".mpeg",
+    ".3gp",
+    ".ts",
+    ".vob",
+    ".ogv",
 }
 
 ARCHIVE_EXTENSIONS = {

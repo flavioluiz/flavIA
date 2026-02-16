@@ -133,7 +133,9 @@ class TestFileScanner:
         assert classify(".png") == ("image", "png")
         assert classify(".svg") == ("image", "svg")
         assert classify(".mp3") == ("audio", "mp3")
+        assert classify(".opus") == ("audio", "opus")
         assert classify(".mp4") == ("video", "mp4")
+        assert classify(".3gp") == ("video", "3gp")
         assert classify(".zip") == ("archive", "zip")
         assert classify(".xyz") == ("other", "xyz")
 
@@ -719,19 +721,22 @@ class TestCatalogUpdate:
         assert result["counts"]["modified"] == 0
 
     def test_get_files_needing_conversion(self, tmp_path):
-        """Identify binary documents without conversions."""
+        """Identify convertible files (docs/audio/video) without conversions."""
         (tmp_path / "doc.pdf").write_bytes(b"%PDF")
+        (tmp_path / "song.mp3").write_bytes(b"\x00")
+        (tmp_path / "clip.mp4").write_bytes(b"\x00")
         (tmp_path / "code.py").write_text("code")
 
         catalog = ContentCatalog(tmp_path)
         catalog.build()
 
         needs_conversion = catalog.get_files_needing_conversion()
-        assert len(needs_conversion) == 1
-        assert needs_conversion[0].name == "doc.pdf"
+        assert {entry.name for entry in needs_conversion} == {"doc.pdf", "song.mp3", "clip.mp4"}
 
         # After setting converted_to, it should not be listed
         catalog.files["doc.pdf"].converted_to = "converted/doc.md"
+        catalog.files["song.mp3"].converted_to = "converted/song.md"
+        catalog.files["clip.mp4"].converted_to = "converted/clip.md"
         needs_conversion = catalog.get_files_needing_conversion()
         assert len(needs_conversion) == 0
 

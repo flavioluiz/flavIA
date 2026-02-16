@@ -272,11 +272,12 @@ class ContentCatalog:
         return results
 
     def get_files_needing_conversion(self) -> list[FileEntry]:
-        """Get binary documents that should be (re)converted to text."""
+        """Get files that should be (re)converted to text."""
+        convertible_types = {"binary_document", "audio", "video"}
         return [
             e
             for e in self.files.values()
-            if e.file_type == "binary_document"
+            if e.file_type in convertible_types
             and e.status != "missing"
             and (not e.converted_to or e.status in ("new", "modified"))
         ]

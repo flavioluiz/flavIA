@@ -57,7 +57,7 @@ flavia           # start chatting
 flavia --update
 ```
 
-The wizard guides you through each step: model/provider selection, connection test, optional file conversion (documents and images), content catalog build, optional LLM summaries, and agent configuration (simple or AI-assisted, with optional subagents).
+The wizard guides you through each step: model/provider selection, connection test, optional file conversion/transcription (documents, images, audio, and video), content catalog build, optional LLM summaries, and agent configuration (simple or AI-assisted, with optional subagents).
 
 ## Documentation
 

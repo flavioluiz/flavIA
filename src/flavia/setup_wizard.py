@@ -157,7 +157,9 @@ def find_pdf_files(directory: Path) -> List[Path]:
 
 
 def find_binary_documents(directory: Path) -> List[Path]:
-    """Find all binary documents that can be converted (PDF, Office docs, etc.)."""
+    """Find all files that can be converted to text (docs, audio, video)."""
+    from flavia.content.scanner import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
+
     convertible_extensions = {
         ".pdf",
         # Modern Office
@@ -172,7 +174,7 @@ def find_binary_documents(directory: Path) -> List[Path]:
         ".odt",
         ".ods",
         ".odp",
-    }
+    } | set(AUDIO_EXTENSIONS) | set(VIDEO_EXTENSIONS)
 
     return sorted(
         (
@@ -727,7 +729,7 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
 
         ext_summary = ", ".join(f"{count} {ext.upper()}" for ext, count in ext_counts.items())
         console.print(
-            f"\n[bold]Found {len(binary_docs)} binary document(s) ({ext_summary}):[/bold]"
+            f"\n[bold]Found {len(binary_docs)} convertible file(s) ({ext_summary}):[/bold]"
         )
 
         table = Table(show_header=False, box=None, padding=(0, 2))
@@ -738,8 +740,8 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
             table.add_row(f"  [dim]... and {len(binary_docs) - 10} more[/dim]", "")
         console.print(table)
 
-        console.print("\n[bold]Convert documents to text for analysis?[/bold]")
-        console.print("  (This allows the AI to read and search the documents)")
+        console.print("\n[bold]Convert these files to text for analysis?[/bold]")
+        console.print("  (Includes document conversion and audio/video transcription)")
         if safe_confirm("Convert documents?", default=True):
             files_to_convert.extend(binary_docs)
 
@@ -991,9 +993,10 @@ def _build_content_catalog(
                 is_convertible_binary_doc = (
                     entry.file_type == "binary_document" and entry.category in convertible_categories
                 )
+                is_convertible_av = entry.file_type in {"audio", "video"}
                 is_convertible_image = entry.file_type == "image"
 
-                if is_convertible_binary_doc or is_convertible_image:
+                if is_convertible_binary_doc or is_convertible_av or is_convertible_image:
                     # Check both preserved relative structure and flat output naming.
                     relative_md = Path(entry.path).with_suffix(".md")
                     candidates = [

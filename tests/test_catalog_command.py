@@ -11,6 +11,7 @@ from flavia.interfaces.catalog_command import (
     _format_size,
     _show_overview,
     _browse_files,
+    _manage_media_files,
     _manage_office_files,
     _manage_pdf_files,
     _offer_resummarization_with_quality,
@@ -256,6 +257,101 @@ def test_manage_office_files_blocks_path_traversal(monkeypatch, tmp_path):
     assert convert_calls == []
     printed = " ".join(" ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list)
     assert "Blocked unsafe path outside project directory" in printed
+
+
+def test_manage_media_files_blocks_path_traversal(monkeypatch, tmp_path):
+    config_dir = tmp_path / ".flavia"
+    config_dir.mkdir()
+
+    catalog = ContentCatalog(tmp_path)
+    catalog.files["../secret.mp3"] = FileEntry(
+        path="../secret.mp3",
+        name="secret.mp3",
+        extension=".mp3",
+        file_type="audio",
+        category="mp3",
+        size_bytes=10,
+        created_at="2026-01-01T00:00:00+00:00",
+        modified_at="2026-01-01T00:00:00+00:00",
+        indexed_at="2026-01-01T00:00:00+00:00",
+        checksum_sha256="abc",
+    )
+
+    settings = MagicMock()
+    settings.default_model = "openai:test"
+
+    convert_calls = []
+
+    def _fake_convert(self, source_path, output_dir, output_format="md"):
+        convert_calls.append((source_path, output_dir, output_format))
+        return None
+
+    with patch("flavia.interfaces.catalog_command.console") as mock_console, patch(
+        "flavia.interfaces.catalog_command.q_select",
+        side_effect=["../secret.mp3", "transcribe", "__back__"],
+    ), patch("flavia.content.converters.AudioConverter.convert", _fake_convert):
+        _manage_media_files(catalog, config_dir, settings)
+
+    assert convert_calls == []
+    printed = " ".join(" ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list)
+    assert "Blocked unsafe path outside project directory" in printed
+
+
+def test_manage_media_files_transcribe_can_resummarize_with_quality(monkeypatch, tmp_path):
+    config_dir = tmp_path / ".flavia"
+    config_dir.mkdir()
+    (tmp_path / "lecture.mp3").write_bytes(b"\xff\xfb\x90\x00")
+    (tmp_path / ".converted").mkdir()
+    converted_path = tmp_path / ".converted" / "lecture.md"
+    converted_path.write_text("transcript", encoding="utf-8")
+
+    catalog = ContentCatalog(tmp_path)
+    catalog.files["lecture.mp3"] = FileEntry(
+        path="lecture.mp3",
+        name="lecture.mp3",
+        extension=".mp3",
+        file_type="audio",
+        category="mp3",
+        size_bytes=10,
+        created_at="2026-01-01T00:00:00+00:00",
+        modified_at="2026-01-01T00:00:00+00:00",
+        indexed_at="2026-01-01T00:00:00+00:00",
+        checksum_sha256="abc",
+    )
+
+    settings = MagicMock()
+    settings.default_model = "openai:test"
+    settings.resolve_model_with_provider.return_value = (
+        SimpleNamespace(
+            id="openai",
+            api_key="test-key",
+            api_base_url="https://api.example.com/v1",
+            headers={},
+        ),
+        "test-model",
+    )
+
+    with patch("flavia.interfaces.catalog_command.console") as mock_console, patch(
+        "flavia.interfaces.catalog_command.q_select",
+        side_effect=["lecture.mp3", "transcribe", "Yes", "Yes", "__back__"],
+    ), patch(
+        "flavia.content.converters.AudioConverter.check_dependencies",
+        return_value=(True, []),
+    ), patch(
+        "flavia.content.converters.AudioConverter.convert",
+        lambda self, source_path, output_dir, output_format="md": converted_path,
+    ), patch(
+        "flavia.content.summarizer.summarize_file_with_quality",
+        lambda *args, **kwargs: ("Resumo da transcrição", "good"),
+    ):
+        _manage_media_files(catalog, config_dir, settings)
+
+    assert catalog.files["lecture.mp3"].converted_to == ".converted/lecture.md"
+    assert catalog.files["lecture.mp3"].summary == "Resumo da transcrição"
+    assert catalog.files["lecture.mp3"].extraction_quality == "good"
+    printed = " ".join(" ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list)
+    assert "Transcription complete:" in printed
+    assert "Re-summarized." in printed
 
 
 def test_manage_pdf_files_simple_can_resummarize_with_quality(monkeypatch, tmp_path):
@@ -539,3 +635,32 @@ def test_offer_resummarization_auto_fallbacks_to_instruct(monkeypatch, tmp_path)
     assert entry.extraction_quality == "good"
     printed = " ".join(" ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list)
     assert "Retrying automatically with instruct model" in printed
+
+
+def test_run_catalog_command_media_option_dispatches(monkeypatch, tmp_path):
+    (tmp_path / "note.txt").write_text("hello")
+    config_dir = tmp_path / ".flavia"
+    config_dir.mkdir()
+
+    catalog = ContentCatalog(tmp_path)
+    catalog.build()
+    catalog.save(config_dir)
+
+    settings = MagicMock()
+    settings.base_dir = tmp_path
+
+    called = {"media": 0}
+
+    def _fake_manage_media(_catalog, _config_dir, _settings):
+        called["media"] += 1
+
+    with patch(
+        "flavia.interfaces.catalog_command.q_select",
+        side_effect=["10", "q"],
+    ), patch(
+        "flavia.interfaces.catalog_command._manage_media_files",
+        _fake_manage_media,
+    ):
+        assert run_catalog_command(settings) is True
+
+    assert called["media"] == 1

@@ -114,7 +114,7 @@ In interactive CLI mode, press `Tab` to autocomplete:
 |------|-------------|
 | `--init` | Initialize local configuration with interactive wizard |
 | `--update` | Refresh content catalog (new/modified/deleted files) |
-| `--update-convert` | Refresh catalog and convert pending/modified binary documents (PDFs, Office files, audio, and video) |
+| `--update-convert` | Refresh catalog and convert pending/modified convertible files (PDFs, Office files, audio, and video) |
 | `--update-summarize` | Refresh catalog and generate summaries for pending files |
 | `--update-full` | Rebuild catalog from scratch |
 | `--telegram` | Start in Telegram bot mode |
@@ -195,7 +195,7 @@ Inside a chat session, the following commands are available:
 | `/model` | Show the current active model |
 | `/model <ref>` | Switch model by index, model ID, or `provider:model_id` (resets conversation) |
 | `/model list` | Quick alias for `/providers` |
-| `/catalog` | Browse content catalog (overview, search, summaries, online sources, PDF/Office/Image managers) |
+| `/catalog` | Browse content catalog (overview, search, summaries, online sources, PDF/Office/Image/Audio-Video managers) |
 | `/providers` | List configured providers with indexed models |
 | `/provider-setup` | Run interactive provider configuration wizard |
 | `/provider-manage [id]` | Manage provider models and settings |
@@ -310,6 +310,7 @@ Notes:
 - `PDF Files` menu in `/catalog` supports per-file quality display, local text extraction, and explicit Mistral OCR execution.
 - `Office Documents` menu in `/catalog` supports per-file conversion to markdown and summary/quality refresh.
 - `Image Files` menu in `/catalog` supports per-file vision description generation, viewing generated descriptions, and switching the runtime vision model.
+- `Audio/Video Files` menu in `/catalog` supports per-file transcription, re-transcription, transcript viewing, and summary/quality refresh.
 - Audio/video files are transcribed using Mistral Transcription API with segment-level timestamps when the `transcription` extra is installed.
 - Office conversion requires installing the `office` extra; legacy/OpenDocument formats also require LibreOffice CLI.
 - Mistral OCR requires installing the `ocr` extra and exporting `MISTRAL_API_KEY`.

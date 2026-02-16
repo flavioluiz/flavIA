@@ -313,6 +313,8 @@ def test_find_binary_documents_includes_office_extensions(tmp_path):
         "open.odt",
         "open.ods",
         "open.odp",
+        "audio.opus",
+        "video.3gp",
     }
 
     for name in expected:
@@ -385,6 +387,27 @@ def test_build_content_catalog_links_existing_image_conversion(tmp_path):
 
     assert catalog is not None
     assert catalog.files["figure.png"].converted_to == ".converted/figure.md"
+
+
+def test_build_content_catalog_links_existing_audio_conversion(tmp_path):
+    target_dir = tmp_path
+    config_dir = tmp_path / ".flavia"
+    config_dir.mkdir()
+
+    (target_dir / "lecture.opus").write_bytes(b"OggS")
+    converted_dir = target_dir / ".converted"
+    converted_dir.mkdir()
+    (converted_dir / "lecture.md").write_text("audio transcription", encoding="utf-8")
+
+    catalog = _build_content_catalog(
+        target_dir,
+        config_dir,
+        convert_docs=False,
+        binary_docs=[],
+    )
+
+    assert catalog is not None
+    assert catalog.files["lecture.opus"].converted_to == ".converted/lecture.md"
 
 
 def test_run_setup_wizard_can_convert_images_to_descriptions(monkeypatch, tmp_path):

@@ -53,6 +53,8 @@ def run_catalog_command(settings: Settings) -> bool:
             _manage_office_files(catalog, config_dir, settings)
         elif choice == "9":
             _manage_image_files(catalog, config_dir, settings)
+        elif choice == "10":
+            _manage_media_files(catalog, config_dir, settings)
         elif choice in ("q", "Q", ""):
             break
         else:
@@ -79,6 +81,7 @@ def _print_catalog_menu() -> str:
             questionary.Choice(title="PDF Files", value="7"),
             questionary.Choice(title="Office Documents", value="8"),
             questionary.Choice(title="Image Files", value="9"),
+            questionary.Choice(title="Audio/Video Files", value="10"),
             questionary.Choice(title="Back to chat", value="q"),
         ]
     except ImportError:
@@ -92,6 +95,7 @@ def _print_catalog_menu() -> str:
             "PDF Files",
             "Office Documents",
             "Image Files",
+            "Audio/Video Files",
             "Back to chat",
         ]
 
@@ -111,6 +115,7 @@ def _print_catalog_menu() -> str:
         "PDF Files": "7",
         "Office Documents": "8",
         "Image Files": "9",
+        "Audio/Video Files": "10",
         "Back to chat": "q",
     }
 
@@ -766,6 +771,161 @@ def _manage_image_files(catalog: ContentCatalog, config_dir: Path, settings: Set
             _select_vision_model(settings)
 
 
+def _manage_media_files(catalog: ContentCatalog, config_dir: Path, settings: Settings) -> None:
+    """Interactive audio/video manager with transcription support."""
+    base_dir = config_dir.parent
+    converted_dir = base_dir / ".converted"
+
+    media_files = [
+        e
+        for e in catalog.files.values()
+        if e.file_type in {"audio", "video"} and e.status != "missing"
+    ]
+
+    if not media_files:
+        console.print("[yellow]No audio/video files in catalog.[/yellow]")
+        return
+
+    while True:
+        console.print(f"\n[bold]Audio/Video Files ({len(media_files)})[/bold]")
+
+        table = Table(show_header=True)
+        table.add_column("Path", style="cyan", max_width=50)
+        table.add_column("Type", style="dim")
+        table.add_column("Format", style="dim")
+        table.add_column("Transcribed", style="dim")
+        table.add_column("Quality")
+        table.add_column("Size", justify="right")
+
+        for entry in sorted(media_files, key=lambda e: e.path):
+            transcribed = "[green]yes[/green]" if entry.converted_to else "[dim]no[/dim]"
+            media_type = entry.file_type
+            fmt = Path(entry.path).suffix.lstrip(".").upper()
+            table.add_row(
+                entry.path,
+                media_type,
+                fmt or (entry.category or "unknown"),
+                transcribed,
+                _quality_badge(entry.extraction_quality),
+                _format_size(entry.size_bytes),
+            )
+
+        console.print(table)
+
+        try:
+            import questionary
+
+            media_choices = [
+                questionary.Choice(title=e.path, value=e.path)
+                for e in sorted(media_files, key=lambda e: e.path)
+            ]
+            media_choices.append(questionary.Choice(title="Back", value="__back__"))
+        except ImportError:
+            media_choices = [e.path for e in sorted(media_files, key=lambda e: e.path)] + ["Back"]
+
+        selected = q_select("Select an audio/video file:", choices=media_choices)
+        if selected in (None, "__back__", "Back"):
+            break
+
+        entry = catalog.files.get(selected)
+        if entry is None:
+            break
+
+        _show_media_entry_details(entry, base_dir, settings)
+
+        try:
+            import questionary as _q
+
+            action_choices = [
+                _q.Choice(title="Transcribe", value="transcribe"),
+                _q.Choice(title="Re-transcribe", value="retranscribe"),
+                _q.Choice(title="View transcript", value="view"),
+                _q.Choice(title="Re-run summary/quality (no extraction)", value="resummarize"),
+                _q.Choice(title="Back", value="back"),
+            ]
+        except ImportError:
+            action_choices = [
+                "Transcribe",
+                "Re-transcribe",
+                "View transcript",
+                "Re-run summary/quality (no extraction)",
+                "Back",
+            ]
+
+        action = q_select("Action:", choices=action_choices)
+        if action in (None, "back", "Back"):
+            continue
+
+        if action in ("view", "View transcript"):
+            _view_transcription(entry, base_dir)
+            continue
+
+        source = (base_dir / entry.path).resolve()
+        try:
+            source.relative_to(base_dir.resolve())
+        except ValueError:
+            console.print(
+                "[red]Blocked unsafe path outside project directory in catalog entry.[/red]"
+            )
+            continue
+
+        if action in ("transcribe", "Transcribe", "retranscribe", "Re-transcribe"):
+            if action in ("retranscribe", "Re-transcribe") and not entry.converted_to:
+                console.print("[yellow]No existing transcript found. Running first transcription.[/yellow]")
+
+            if entry.file_type == "audio":
+                from flavia.content.converters import AudioConverter
+
+                converter = AudioConverter()
+            else:
+                from flavia.content.converters import VideoConverter
+
+                converter = VideoConverter()
+
+            deps_ok, missing = converter.check_dependencies()
+            if not deps_ok:
+                console.print(
+                    f"[red]Missing dependencies: {', '.join(missing)}. "
+                    f"Install with: pip install {' '.join(missing)}[/red]"
+                )
+                continue
+
+            console.print(f"[dim]Transcribing {entry.path}...[/dim]")
+            result_path = converter.convert(source, converted_dir)
+            if result_path:
+                try:
+                    entry.converted_to = str(result_path.relative_to(base_dir))
+                except ValueError:
+                    entry.converted_to = str(result_path)
+                console.print(f"[green]Transcription complete:[/green] {entry.converted_to}")
+
+                if _prompt_yes_no("View transcript now?", "Yes", "No"):
+                    _view_transcription(entry, base_dir)
+
+                _offer_resummarization_with_quality(entry, base_dir, settings)
+                catalog.save(config_dir)
+                console.print("[dim]Catalog saved.[/dim]")
+            else:
+                console.print(
+                    "[red]Transcription failed. Check MISTRAL_API_KEY, mistralai package, "
+                    "and ffmpeg (for video files).[/red]"
+                )
+
+        elif action in ("resummarize", "Re-run summary/quality (no extraction)"):
+            if not entry.converted_to:
+                console.print("[yellow]No transcript found. Run transcription first.[/yellow]")
+                continue
+
+            _offer_resummarization_with_quality(
+                entry,
+                base_dir,
+                settings,
+                ask_confirmation=False,
+            )
+            catalog.save(config_dir)
+            console.print("[dim]Catalog saved.[/dim]")
+
+
 def _show_image_entry_details(entry, base_dir: Path, settings: Settings) -> None:
     """Show selected image file details including description status."""
     from flavia.content.converters.image_converter import DEFAULT_VISION_MODEL
@@ -795,6 +955,74 @@ def _show_image_entry_details(entry, base_dir: Path, settings: Settings) -> None
     )
     details.add_row("Vision model", f"[cyan]{vision_model}[/cyan]")
     console.print(details)
+
+
+def _show_media_entry_details(entry, base_dir: Path, settings: Settings) -> None:
+    """Show selected audio/video details including transcription/summary status."""
+    console.print(
+        f"\n[bold cyan]{entry.path}[/bold cyan]  {_quality_badge(entry.extraction_quality)}"
+    )
+
+    converted_exists = False
+    if entry.converted_to:
+        converted_path = (base_dir / entry.converted_to).resolve()
+        try:
+            converted_path.relative_to(base_dir.resolve())
+            converted_exists = converted_path.exists()
+        except ValueError:
+            converted_exists = False
+
+    try:
+        summary_model_ref = _get_summary_model_ref(settings)
+        provider, model_id = settings.resolve_model_with_provider(summary_model_ref)
+    except Exception:
+        provider, model_id = None, str(_get_summary_model_ref(settings))
+    provider_id = getattr(provider, "id", None) if provider else None
+    active_model_ref = f"{provider_id}:{model_id}" if provider_id else str(model_id)
+
+    details = Table(show_header=False, box=None)
+    details.add_column("Field", style="dim")
+    details.add_column("Value")
+    details.add_row("Media type", entry.file_type)
+    details.add_row("Format", Path(entry.path).suffix.lstrip(".").upper())
+    details.add_row("Size", _format_size(entry.size_bytes))
+    details.add_row("Transcript file", entry.converted_to or "[dim](none)[/dim]")
+    details.add_row(
+        "Transcript exists", "[green]yes[/green]" if converted_exists else "[dim]no[/dim]"
+    )
+    details.add_row("Summary", "[green]yes[/green]" if entry.summary else "[dim]no[/dim]")
+    details.add_row("Extraction quality", _quality_badge(entry.extraction_quality))
+    details.add_row("Summary model", f"[cyan]{active_model_ref}[/cyan]")
+    console.print(details)
+
+    if entry.summary:
+        console.print(Panel(entry.summary, title="Summary", expand=False))
+    else:
+        console.print("[dim]No summary available for this file.[/dim]")
+
+
+def _view_transcription(entry, base_dir: Path) -> None:
+    """View generated transcript content."""
+    if not entry.converted_to:
+        console.print("[yellow]No transcript available.[/yellow]")
+        return
+
+    transcript_path = (base_dir / entry.converted_to).resolve()
+    try:
+        transcript_path.relative_to(base_dir.resolve())
+    except ValueError:
+        console.print("[red]Blocked unsafe path outside project directory.[/red]")
+        return
+
+    if not transcript_path.exists():
+        console.print("[yellow]Transcript file not found.[/yellow]")
+        return
+
+    try:
+        content = transcript_path.read_text(encoding="utf-8")
+        console.print(Panel(content, title=f"Transcript: {entry.path}", expand=False))
+    except Exception as e:
+        console.print(f"[red]Failed to read transcript: {e}[/red]")
 
 
 def _view_image_description(entry, base_dir: Path) -> None:

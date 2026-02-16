@@ -1,6 +1,8 @@
 """Tests for audio/video transcription converters and Mistral key manager."""
 
 import os
+import sys
+from types import ModuleType
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -150,6 +152,8 @@ class TestAudioConverter:
         assert ".wav" in converter.supported_extensions
         assert ".flac" in converter.supported_extensions
         assert ".m4a" in converter.supported_extensions
+        assert ".opus" in converter.supported_extensions
+        assert ".amr" in converter.supported_extensions
 
     def test_can_handle_audio_files(self):
         converter = AudioConverter()
@@ -252,6 +256,56 @@ class TestAudioConverter:
         result = converter._transcribe_audio(Path("test.mp3"))
         assert result is None
 
+    def test_transcribe_audio_http_fallback_when_sdk_has_no_audio(self, monkeypatch, tmp_path):
+        converter = AudioConverter()
+        source = tmp_path / "input.mp3"
+        source.write_bytes(b"\xff\xfb\x90\x00")
+
+        monkeypatch.setattr(
+            "flavia.content.converters.audio_converter.get_mistral_api_key",
+            lambda interactive: "test-key",
+        )
+
+        fake_module = ModuleType("mistralai")
+
+        class FakeMistral:
+            def __init__(self, api_key):
+                self.api_key = api_key
+
+        fake_module.Mistral = FakeMistral
+        monkeypatch.setitem(sys.modules, "mistralai", fake_module)
+
+        called = {}
+
+        def fake_http(api_key, audio_file, audio_path):
+            called["api_key"] = api_key
+            called["audio_path"] = audio_path
+            return {
+                "text": "fallback",
+                "segments": [{"start": 0.0, "end": 1.0, "text": "fallback text"}],
+            }
+
+        monkeypatch.setattr(AudioConverter, "_request_transcription_http", staticmethod(fake_http))
+
+        result = converter._transcribe_audio(source, interactive=False)
+        assert called["api_key"] == "test-key"
+        assert called["audio_path"] == source
+        assert "[00:00 - 00:01] fallback text" in result
+
+    def test_format_transcription_with_chunks(self):
+        converter = AudioConverter()
+        result = converter._format_transcription_response(
+            {
+                "text": "chunked",
+                "chunks": [
+                    {"start": 0.0, "end": 2.0, "text": "first chunk"},
+                    {"start": 2.0, "end": 4.0, "text": "second chunk"},
+                ],
+            }
+        )
+        assert "[00:00 - 00:02] first chunk" in result
+        assert "[00:02 - 00:04] second chunk" in result
+
 
 # ============================================================================
 # VideoConverter tests
@@ -267,6 +321,8 @@ class TestVideoConverter:
         assert ".avi" in converter.supported_extensions
         assert ".mkv" in converter.supported_extensions
         assert ".mov" in converter.supported_extensions
+        assert ".3gp" in converter.supported_extensions
+        assert ".ogv" in converter.supported_extensions
 
     def test_can_handle_video_files(self):
         converter = VideoConverter()

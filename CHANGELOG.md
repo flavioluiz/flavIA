@@ -24,6 +24,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - New optional dependency extra: `transcription` (`mistralai`)
   - System requirement: `ffmpeg` and `ffprobe` (for video processing and duration detection)
   - Integrated with `flavia --init` for automatic transcription during setup
+  - New `/catalog` menu item `Audio/Video Files` with per-file actions:
+    - transcribe and re-transcribe
+    - view transcript
+    - re-run summary/quality from existing transcript
+  - SDK compatibility fallback for transcription: when `mistralai` lacks `client.audio` namespace, transcription now falls back to direct HTTP API call
   - 45 new unit tests covering key manager, audio converter, video converter, and utilities
 - **Image analysis with vision-capable models**:
   - New `ImageConverter` for `.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.webp`, `.ico`, `.tiff`, `.tif`, `.svg`

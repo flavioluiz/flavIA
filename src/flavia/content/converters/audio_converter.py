@@ -6,10 +6,10 @@ files and produce markdown output with segment-level timestamps.
 
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Optional
 
+import httpx
 from rich.console import Console
 
 from flavia.content.scanner import AUDIO_EXTENSIONS
@@ -108,13 +108,11 @@ class AudioConverter(BaseConverter):
             client = Mistral(api_key=api_key)
 
             with open(audio_path, "rb") as f:
-                response = client.audio.transcriptions.complete(
-                    model=TRANSCRIPTION_MODEL,
-                    file={
-                        "content": f,
-                        "file_name": audio_path.name,
-                    },
-                    timestamp_granularities=["segment"],
+                response = self._request_transcription(
+                    client=client,
+                    api_key=api_key,
+                    audio_file=f,
+                    audio_path=audio_path,
                 )
 
             return self._format_transcription_response(response)
@@ -122,6 +120,70 @@ class AudioConverter(BaseConverter):
         except Exception as e:
             logger.error(f"Transcription failed for {audio_path}: {e}")
             return None
+
+    @staticmethod
+    def _request_transcription(
+        client: object,
+        api_key: str,
+        audio_file,
+        audio_path: Path,
+    ) -> object:
+        """Request transcription via SDK when available, with HTTP fallback."""
+        audio_resource = getattr(client, "audio", None)
+        transcriptions_resource = getattr(audio_resource, "transcriptions", None)
+
+        if transcriptions_resource is not None:
+            if hasattr(transcriptions_resource, "complete"):
+                return transcriptions_resource.complete(
+                    model=TRANSCRIPTION_MODEL,
+                    file={"content": audio_file, "file_name": audio_path.name},
+                    timestamp_granularities=["segment"],
+                )
+            if hasattr(transcriptions_resource, "create"):
+                return transcriptions_resource.create(
+                    model=TRANSCRIPTION_MODEL,
+                    file={"content": audio_file, "file_name": audio_path.name},
+                    timestamp_granularities=["segment"],
+                )
+
+        return AudioConverter._request_transcription_http(
+            api_key=api_key,
+            audio_file=audio_file,
+            audio_path=audio_path,
+        )
+
+    @staticmethod
+    def _request_transcription_http(
+        api_key: str,
+        audio_file,
+        audio_path: Path,
+    ) -> dict:
+        """Fallback transcription call using raw HTTP API."""
+        headers = {"Authorization": f"Bearer {api_key}"}
+        data = {
+            "model": TRANSCRIPTION_MODEL,
+            "timestamp_granularities[]": "segment",
+        }
+        files = {
+            "file": (
+                audio_path.name,
+                audio_file,
+                "application/octet-stream",
+            )
+        }
+
+        response = httpx.post(
+            "https://api.mistral.ai/v1/audio/transcriptions",
+            headers=headers,
+            data=data,
+            files=files,
+            timeout=600.0,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("Unexpected transcription API response format")
+        return payload
 
     def _format_transcription_response(self, response: object) -> Optional[str]:
         """Format the Mistral transcription response into text with timestamps.
@@ -132,10 +194,19 @@ class AudioConverter(BaseConverter):
         Returns:
             Formatted text with segment timestamps, or plain text fallback.
         """
-        try:
-            data = json.loads(response.model_dump_json())
-        except (AttributeError, TypeError):
-            # If response doesn't have model_dump_json, try direct attribute access
+        if isinstance(response, dict):
+            data = response
+        else:
+            try:
+                data = json.loads(response.model_dump_json())
+            except (AttributeError, TypeError, json.JSONDecodeError):
+                # If response doesn't have model_dump_json, try direct attribute access
+                text = getattr(response, "text", None)
+                if text:
+                    return text
+                return None
+
+        if not isinstance(data, dict):
             text = getattr(response, "text", None)
             if text:
                 return text
@@ -146,6 +217,8 @@ class AudioConverter(BaseConverter):
 
         # Extract segments with timestamps if available
         segments = data.get("segments", [])
+        if not segments:
+            segments = data.get("chunks", [])
         if segments:
             parts: list[str] = []
             for seg in segments:

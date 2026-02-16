@@ -23,7 +23,7 @@ Implemented audio and video transcription using Mistral Transcription API (`voxt
 - Duration detection via ffprobe for accurate metadata
 - Refactored existing `MistralOcrConverter` and `catalog_command.py` to use centralized key manager
 - Integrated with `flavia --init` for automatic transcription during setup
-- New `/catalog` support for audio/video files (planned for future enhancement)
+- New `/catalog` support for audio/video files with per-file transcription, re-transcription, transcript viewing, and summary/quality refresh
 
 **Implemented files**:
 - `src/flavia/content/converters/mistral_key_manager.py` (new)

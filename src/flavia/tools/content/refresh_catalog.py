@@ -15,7 +15,7 @@ class RefreshCatalogTool(BaseTool):
     name = "refresh_catalog"
     description = (
         "Update the content catalog by scanning for new, modified, or deleted files. "
-        "Optionally convert new binary documents (PDFs/Office) to text and generate summaries. "
+        "Optionally convert new/modified docs, audio, and video to text and generate summaries. "
         "Use this when you suspect the catalog is out of date."
     )
     category = "content"
@@ -28,7 +28,7 @@ class RefreshCatalogTool(BaseTool):
                 ToolParameter(
                     name="convert",
                     type="boolean",
-                    description="Convert new/modified binary documents (PDFs/Office) to text (default: false)",
+                    description="Convert new/modified docs, audio, and video to text (default: false)",
                     required=False,
                 ),
                 ToolParameter(
@@ -73,7 +73,7 @@ class RefreshCatalogTool(BaseTool):
             f"  Unchanged: {counts['unchanged']}",
         ]
 
-        # Convert new/modified binary documents if requested
+        # Convert new/modified supported files if requested
         if convert:
             converted_dir = agent_context.base_dir / ".converted"
             can_write_converted, write_converted_error = check_write_permission(

@@ -32,7 +32,7 @@ This roadmap outlines **45 tasks** across **10 major areas** to extend flavIA fr
 ### [Area 1: Multimodal File Processing](roadmap/area-1-multimodal-file-processing.md) (5 tasks)
 Expand content processing beyond PDF/text to audio, video, images, Office docs, and online sources.
 
-- ~~**1.1** Audio/Video Transcription (Medium)~~ — **DONE** ✓ Mistral voxtral-mini-latest transcription with segment timestamps
+- ~~**1.1** Audio/Video Transcription (Medium)~~ — **DONE** ✓ Mistral voxtral-mini-latest transcription with segment timestamps and `/catalog` media manager
 - ~~**1.2** Image Description (Medium)~~ — **DONE** ✓ Vision-capable image-to-text descriptions via multimodal models
 - ~~**1.3** Word/Office Documents (Easy)~~ — **DONE** ✓ OfficeConverter with python-docx, openpyxl, python-pptx
 - ~~**1.4** OCR + LaTeX Equations (Hard)~~ — **DONE** ✓ Scanned PDF OCR pipeline + quality assessment in `/catalog`
