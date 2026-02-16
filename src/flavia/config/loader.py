@@ -176,6 +176,7 @@ main:
     You are a helpful assistant that can read and analyze files.
     You are working in the directory: {base_dir}
     Always be concise and precise in your responses.
+    Use catalog-first workflow: summarize/query the catalog before reading many files.
 
   # Model to use (index or full ID)
   # model: 0
@@ -199,6 +200,9 @@ main:
     - list_files
     - search_files
     - get_file_info
+    - query_catalog
+    - get_catalog_summary
+    - refresh_catalog
     - spawn_agent
     - spawn_predefined_agent
 
@@ -208,18 +212,22 @@ main:
       context: |
         You are a research specialist.
         Search thoroughly and report findings accurately.
+        Start with catalog queries to shortlist relevant files.
       # Inherits permissions from parent if not specified
       tools:
         - read_file
         - list_files
         - search_files
+        - query_catalog
 
     summarizer:
       context: |
         You are a summarization specialist.
         Create clear, concise summaries.
+        Use the catalog to find the most relevant files before reading.
       tools:
         - read_file
+        - query_catalog
 """
         (config_dir / "agents.yaml").write_text(agents_content)
 

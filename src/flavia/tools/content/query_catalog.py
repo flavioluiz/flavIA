@@ -15,8 +15,9 @@ class QueryCatalogTool(BaseTool):
     name = "query_catalog"
     description = (
         "Search the project content catalog to find files by name, type, category, "
-        "or text search in summaries. Returns file metadata including paths, types, "
-        "sizes, and summaries. Much faster than searching the filesystem directly."
+        "or text search in summaries/transcripts/frame descriptions. Returns file "
+        "metadata including paths, types, sizes, and summaries. Much faster than "
+        "searching the filesystem directly."
     )
     category = "content"
 
@@ -53,13 +54,13 @@ class QueryCatalogTool(BaseTool):
                 ToolParameter(
                     name="text_search",
                     type="string",
-                    description="Free text search in file paths, summaries, tags, AND converted document content (e.g., text extracted from PDFs)",
+                    description="Free text search in file paths, summaries, tags, converted content, and video frame descriptions",
                     required=False,
                 ),
                 ToolParameter(
                     name="search_converted_content",
                     type="boolean",
-                    description="When using text_search, also search inside converted document content (default: true). Disable for faster metadata-only searches.",
+                    description="When using text_search, also search converted content and frame descriptions (default: true). Disable for faster metadata-only searches.",
                     required=False,
                 ),
                 ToolParameter(
@@ -137,11 +138,18 @@ class QueryCatalogTool(BaseTool):
                     details.append(f"{entry.size_bytes / 1024:.1f} KB")
                 if entry.converted_to:
                     details.append(f"converted: {entry.converted_to}")
+                if entry.frame_descriptions:
+                    details.append(f"frames: {len(entry.frame_descriptions)}")
                 if entry.status != "current":
                     details.append(f"status: {entry.status}")
                 line += f"  [{', '.join(details)}]"
                 if entry.summary:
                     line += f"\n    Summary: {entry.summary}"
+                if entry.frame_descriptions:
+                    preview = ", ".join(entry.frame_descriptions[:3])
+                    if len(entry.frame_descriptions) > 3:
+                        preview += f", ... (+{len(entry.frame_descriptions) - 3})"
+                    line += f"\n    Frame descriptions: {preview}"
                 parts.append(line)
 
         return "\n".join(parts)

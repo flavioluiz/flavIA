@@ -565,6 +565,35 @@ class TestContentCatalog:
         results = catalog.query(text_search="anything")
         assert len(results) == 0
 
+    def test_query_text_search_in_frame_descriptions_content(self, tmp_path):
+        """Query text search matches inside generated frame description markdown files."""
+        (tmp_path / "lecture.mp4").write_bytes(b"video")
+
+        frame_dir = tmp_path / ".converted" / "lecture_frames"
+        frame_dir.mkdir(parents=True)
+        frame_md = frame_dir / "frame_00m30s.md"
+        frame_md.write_text(
+            "# Visual Frame at 00:30\n\n"
+            "## Description\n\n"
+            "The professor derives the Laplace transform of a delayed signal."
+        )
+
+        catalog = ContentCatalog(tmp_path)
+        catalog.build()
+        catalog.files["lecture.mp4"].frame_descriptions = [
+            ".converted/lecture_frames/frame_00m30s.md"
+        ]
+
+        results = catalog.query(text_search="delayed signal")
+        assert len(results) == 1
+        assert results[0].name == "lecture.mp4"
+
+        results_no_content = catalog.query(
+            text_search="delayed signal",
+            search_converted_content=False,
+        )
+        assert len(results_no_content) == 0
+
     def test_query_limit(self, tmp_path):
         """Query respects limit parameter."""
         for i in range(10):

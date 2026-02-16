@@ -192,6 +192,47 @@ class ContentCatalog:
         except (OSError, UnicodeDecodeError):
             return ""
 
+    def _read_frame_descriptions_content(self, entry: FileEntry) -> str:
+        """
+        Read generated frame description markdown files for text search.
+
+        Args:
+            entry: FileEntry that may contain frame_descriptions paths.
+
+        Returns:
+            Concatenated frame descriptions (bounded size), or empty string on error.
+        """
+        if not entry.frame_descriptions:
+            return ""
+
+        content_parts: list[str] = []
+        total_chars = 0
+        max_total_chars = 100_000
+        max_per_file_chars = 20_000
+
+        for frame_desc_rel in entry.frame_descriptions:
+            frame_desc_path = self.base_dir / frame_desc_rel
+            if not frame_desc_path.exists():
+                continue
+            try:
+                text = frame_desc_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+
+            if len(text) > max_per_file_chars:
+                text = text[:max_per_file_chars]
+
+            remaining = max_total_chars - total_chars
+            if remaining <= 0:
+                break
+            if len(text) > remaining:
+                text = text[:remaining]
+
+            content_parts.append(text)
+            total_chars += len(text)
+
+        return "\n".join(content_parts)
+
     def query(
         self,
         name: Optional[str] = None,
@@ -262,6 +303,11 @@ class ContentCatalog:
                     converted_content = self._read_converted_content(entry)
                     if converted_content:
                         searchable += " " + converted_content.lower()
+                # Also search in generated video frame descriptions
+                if search_converted_content and entry.frame_descriptions:
+                    frame_content = self._read_frame_descriptions_content(entry)
+                    if frame_content:
+                        searchable += " " + frame_content.lower()
                 if search_lower not in searchable:
                     continue
 

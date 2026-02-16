@@ -96,6 +96,73 @@ def _load_catalog_context(base_dir: Path, max_length: int = 2000) -> str:
     return ""
 
 
+def _build_catalog_first_guidance(context: AgentContext) -> str:
+    """Build workflow guidance that prioritizes catalog usage before file reads."""
+    tools = set(context.available_tools or [])
+    has_query = "query_catalog" in tools
+    has_summary = "get_catalog_summary" in tools
+    has_read = "read_file" in tools
+    has_spawn = "spawn_predefined_agent" in tools or "spawn_agent" in tools
+
+    if not (has_query or has_summary):
+        return ""
+
+    lines = ["\nWorkflow policy for content discovery:"]
+
+    if has_summary:
+        lines.append(
+            "- For broad tasks, start with `get_catalog_summary` to map the project before "
+            "opening files."
+        )
+
+    if has_query:
+        lines.append(
+            "- Use `query_catalog` to shortlist relevant files by `file_type`, `name`, and "
+            "`text_search`."
+        )
+        lines.append(
+            "- For video tasks, query with `file_type='video'` and prioritize entries with "
+            "`converted_to` (transcript) and `frame_descriptions`."
+        )
+
+    if has_read:
+        lines.append(
+            "- Only use `read_file` after shortlisting; avoid scanning many `.md` files blindly."
+        )
+
+    if has_spawn:
+        lines.append(
+            "- For large multi-file tasks, delegate focused searches to subagents instead of one "
+            "agent reading everything."
+        )
+
+    lines.append(
+        "- Use `search_files`/`list_files` as fallback when the catalog is missing or clearly "
+        "insufficient."
+    )
+
+    if has_query and has_read:
+        lines.append("\nVideo workflow playbook:")
+        lines.append(
+            "1. Run `query_catalog(file_type='video', text_search=...)` to find candidate videos."
+        )
+        lines.append(
+            "2. For each candidate, check catalog metadata first: `summary`, `converted_to`, and "
+            "`frame_descriptions`."
+        )
+        lines.append(
+            "3. Read the audio transcript from `converted_to` for narrative/order of content."
+        )
+        lines.append(
+            "4. Read frame description markdown files from `frame_descriptions` for visual details "
+            "(figures, equations, board content)."
+        )
+        lines.append(
+            "5. Only expand to additional files/videos when the shortlist evidence is insufficient."
+        )
+    return "\n".join(lines)
+
+
 def build_system_prompt(
     profile: AgentProfile,
     context: AgentContext,
@@ -125,6 +192,9 @@ def build_system_prompt(
         catalog_context = _load_catalog_context(context.base_dir)
         if catalog_context:
             parts.append(f"\n{catalog_context}")
+    catalog_guidance = _build_catalog_first_guidance(context)
+    if catalog_guidance:
+        parts.append(catalog_guidance)
 
     # Permissions info
     permissions = context.permissions
