@@ -22,6 +22,11 @@ class PdfConverter(BaseConverter):
         output_format: str = "md",
     ) -> Optional[Path]:
         """Convert a PDF file to text or markdown."""
+        if self._is_scanned_pdf(source_path):
+            from .mistral_ocr_converter import MistralOcrConverter
+
+            return MistralOcrConverter().convert(source_path, output_dir, output_format)
+
         text = self.extract_text(source_path)
         if not text or not text.strip():
             return None
@@ -44,6 +49,11 @@ class PdfConverter(BaseConverter):
 
     def extract_text(self, source_path: Path) -> Optional[str]:
         """Extract text from a PDF using pdfplumber (with pypdf fallback)."""
+        if self._is_scanned_pdf(source_path):
+            from .mistral_ocr_converter import MistralOcrConverter
+
+            return MistralOcrConverter().extract_text(source_path)
+
         try:
             return self._extract_with_pdfplumber(source_path)
         except ImportError:
@@ -55,6 +65,29 @@ class PdfConverter(BaseConverter):
             return None
         except Exception:
             return None
+
+    @staticmethod
+    def _is_scanned_pdf(pdf_path: Path) -> bool:
+        """Return True if the PDF appears to be scanned/image-based.
+
+        Uses pdfplumber to sample text; if the average chars per page is below
+        MistralOcrConverter.MIN_CHARS_PER_PAGE the PDF is treated as scanned.
+        """
+        from .mistral_ocr_converter import MistralOcrConverter
+
+        try:
+            import pdfplumber
+
+            with pdfplumber.open(pdf_path) as pdf:
+                if not pdf.pages:
+                    return False
+                total_chars = sum(
+                    len(page.extract_text() or "") for page in pdf.pages
+                )
+                avg = total_chars / len(pdf.pages)
+                return avg < MistralOcrConverter.MIN_CHARS_PER_PAGE
+        except Exception:
+            return False
 
     @staticmethod
     def _extract_with_pdfplumber(pdf_path: Path) -> str:

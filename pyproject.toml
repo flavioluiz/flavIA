@@ -38,9 +38,11 @@ dependencies = [
 
 [project.optional-dependencies]
 telegram = ["python-telegram-bot==22.6"]
+ocr = ["mistralai"]
 dev = ["pytest", "pytest-cov", "black", "ruff"]
 all = [
     "python-telegram-bot==22.6",
+    "mistralai",
 ]
 
 [project.scripts]

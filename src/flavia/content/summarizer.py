@@ -19,6 +19,21 @@ Document content (first {max_chars} characters):
 {content}"""
 
 
+SUMMARIZE_FILE_WITH_QUALITY_PROMPT = """Summarize the following document and assess text extraction quality.
+
+Respond with EXACTLY two lines:
+Line 1: A 1-3 sentence summary of the main topic, key findings, or purpose.
+Line 2: One of these words only: good / partial / poor
+  - good: text is clean, readable, and complete
+  - partial: equations/tables mangled, occasional garbled characters, or truncated content
+  - poor: mostly unreadable, empty, or appears to be a scanned image without proper OCR
+
+Document path: {path}
+Document content (first {max_chars} characters):
+
+{content}"""
+
+
 SUMMARIZE_DIRECTORY_PROMPT = """Based on the following list of files and their summaries, write a 1-2 sentence summary
 describing the purpose/contents of this directory.
 Respond ONLY with the summary text, nothing else.
@@ -91,6 +106,70 @@ def summarize_file(
     )
 
     return _call_llm(prompt, api_key, api_base_url, model, headers, timeout, connect_timeout)
+
+
+def summarize_file_with_quality(
+    entry: FileEntry,
+    base_dir: Path,
+    api_key: str,
+    api_base_url: str,
+    model: str,
+    max_chars: int = 4000,
+    headers: Optional[dict[str, str]] = None,
+    timeout: float = 30.0,
+    connect_timeout: float = 10.0,
+) -> tuple[Optional[str], Optional[str]]:
+    """
+    Generate a summary and extraction quality assessment for a single file.
+
+    Returns:
+        Tuple of (summary, quality) where quality is "good", "partial", "poor", or None.
+    """
+    relative_path = Path(entry.converted_to) if entry.converted_to else Path(entry.path)
+    file_path = (base_dir / relative_path).resolve()
+    base_dir_resolved = base_dir.resolve()
+
+    try:
+        file_path.relative_to(base_dir_resolved)
+    except ValueError:
+        logger.warning(f"Skipping summary for path outside base_dir: {relative_path}")
+        return None, None
+
+    if not file_path.exists():
+        return None, None
+
+    try:
+        content = file_path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        return None, None
+
+    if not content.strip():
+        return None, None
+
+    truncated = content[:max_chars]
+
+    prompt = SUMMARIZE_FILE_WITH_QUALITY_PROMPT.format(
+        path=entry.path,
+        max_chars=max_chars,
+        content=truncated,
+    )
+
+    raw = _call_llm(prompt, api_key, api_base_url, model, headers, timeout, connect_timeout)
+    if not raw:
+        return None, None
+
+    lines = [line.strip() for line in raw.strip().splitlines() if line.strip()]
+    if not lines:
+        return None, None
+
+    summary = lines[0]
+    quality: Optional[str] = None
+    if len(lines) >= 2:
+        q = lines[-1].lower()
+        if q in ("good", "partial", "poor"):
+            quality = q
+
+    return summary, quality
 
 
 def summarize_directory(

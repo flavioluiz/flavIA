@@ -190,6 +190,7 @@ class FileEntry:
     status: str = "current"  # "current", "new", "modified", "missing"
     converted_to: Optional[str] = None  # Path to converted text version
     summary: Optional[str] = None
+    extraction_quality: Optional[str] = None  # "good", "partial", "poor", or None
     tags: list[str] = field(default_factory=list)
 
     # Online source fields
@@ -217,6 +218,8 @@ class FileEntry:
             d["converted_to"] = self.converted_to
         if self.summary:
             d["summary"] = self.summary
+        if self.extraction_quality:
+            d["extraction_quality"] = self.extraction_quality
         if self.tags:
             d["tags"] = self.tags
         # Online source fields (only serialize if not default)
@@ -247,6 +250,7 @@ class FileEntry:
             status=data.get("status", "current"),
             converted_to=data.get("converted_to"),
             summary=data.get("summary"),
+            extraction_quality=data.get("extraction_quality"),
             tags=data.get("tags", []),
             # Online source fields (backwards compatible)
             source_type=data.get("source_type", "local"),

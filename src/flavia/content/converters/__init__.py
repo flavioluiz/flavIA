@@ -1,6 +1,7 @@
 """File converters for the content management system."""
 
 from .base import BaseConverter
+from .mistral_ocr_converter import MistralOcrConverter
 from .pdf_converter import PdfConverter
 from .registry import (
     ConverterRegistry,
@@ -15,6 +16,7 @@ from .online import OnlineSourceConverter, WebPageConverter, YouTubeConverter
 
 __all__ = [
     "BaseConverter",
+    "MistralOcrConverter",
     "PdfConverter",
     "TextReader",
     "ConverterRegistry",

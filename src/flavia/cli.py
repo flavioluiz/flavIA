@@ -538,14 +538,14 @@ def run_catalog_update(
         settings = load_settings()
         provider, model_id = settings.resolve_model_with_provider(settings.default_model)
         if provider and provider.api_key:
-            from flavia.content.summarizer import summarize_file
+            from flavia.content.summarizer import summarize_file_with_quality
 
             needs_summary = catalog.get_files_needing_summary()
             if needs_summary:
                 print(f"\nGenerating summaries for {len(needs_summary)} file(s)...")
                 summarized = 0
                 for entry in needs_summary:
-                    summary = summarize_file(
+                    summary, quality = summarize_file_with_quality(
                         entry,
                         base_dir,
                         api_key=provider.api_key,
@@ -557,6 +557,8 @@ def run_catalog_update(
                         entry.summary = summary
                         summarized += 1
                         print(f"  Summarized: {entry.path}")
+                    if quality:
+                        entry.extraction_quality = quality
                 print(f"  {summarized} file(s) summarized")
             else:
                 print("\nNo files need summaries.")

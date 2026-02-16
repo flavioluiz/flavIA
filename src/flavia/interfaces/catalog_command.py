@@ -49,6 +49,8 @@ def run_catalog_command(settings: Settings) -> bool:
             _show_online_sources(catalog)
         elif choice == "6":
             _add_online_source(catalog, config_dir)
+        elif choice == "7":
+            _manage_pdf_files(catalog, config_dir, settings)
         elif choice in ("q", "Q", ""):
             break
         else:
@@ -72,6 +74,7 @@ def _print_catalog_menu() -> str:
             questionary.Choice(title="View Summaries", value="4"),
             questionary.Choice(title="Online Sources", value="5"),
             questionary.Choice(title="Add Online Source", value="6"),
+            questionary.Choice(title="PDF Files", value="7"),
             questionary.Choice(title="Back to chat", value="q"),
         ]
     except ImportError:
@@ -82,6 +85,7 @@ def _print_catalog_menu() -> str:
             "View Summaries",
             "Online Sources",
             "Add Online Source",
+            "PDF Files",
             "Back to chat",
         ]
 
@@ -98,6 +102,7 @@ def _print_catalog_menu() -> str:
         "View Summaries": "4",
         "Online Sources": "5",
         "Add Online Source": "6",
+        "PDF Files": "7",
         "Back to chat": "q",
     }
 
@@ -245,6 +250,18 @@ def _search_catalog(catalog: ContentCatalog) -> None:
     console.print(table)
 
 
+def _quality_badge(quality: str | None) -> str:
+    """Return a colored quality badge string."""
+    if quality == "good":
+        return "[green]● good[/green]"
+    elif quality == "partial":
+        return "[yellow]● partial[/yellow]"
+    elif quality == "poor":
+        return "[red]● poor[/red]"
+    else:
+        return "[dim]● unknown[/dim]"
+
+
 def _show_summaries(catalog: ContentCatalog) -> None:
     """Display files that have summaries."""
     files_with_summary = [
@@ -259,7 +276,8 @@ def _show_summaries(catalog: ContentCatalog) -> None:
     console.print(f"\n[bold]Files with Summaries ({len(files_with_summary)}):[/bold]")
 
     for entry in sorted(files_with_summary, key=lambda e: e.path)[:30]:
-        console.print(f"\n[cyan]{entry.path}[/cyan]")
+        badge = _quality_badge(entry.extraction_quality)
+        console.print(f"\n[cyan]{entry.path}[/cyan]  {badge}")
         console.print(Panel(entry.summary, expand=False))
 
 
@@ -341,6 +359,148 @@ def _add_online_source(catalog: ContentCatalog, config_dir: Path) -> None:
     # Save catalog
     catalog.save(config_dir)
     console.print("[dim]Catalog saved.[/dim]")
+
+
+def _manage_pdf_files(catalog: ContentCatalog, config_dir: Path, settings: Settings) -> None:
+    """Interactive PDF file manager with OCR support."""
+    import os
+
+    pdf_files = [
+        e for e in catalog.files.values()
+        if e.category == "pdf" and e.status != "missing"
+    ]
+
+    if not pdf_files:
+        console.print("[yellow]No PDF files in catalog.[/yellow]")
+        return
+
+    while True:
+        console.print(f"\n[bold]PDF Files ({len(pdf_files)})[/bold]")
+
+        table = Table(show_header=True)
+        table.add_column("Path", style="cyan", max_width=50)
+        table.add_column("Converted", style="dim")
+        table.add_column("Quality")
+        table.add_column("Size", justify="right")
+
+        for entry in sorted(pdf_files, key=lambda e: e.path):
+            converted = "[green]yes[/green]" if entry.converted_to else "[dim]no[/dim]"
+            badge = _quality_badge(entry.extraction_quality)
+            table.add_row(entry.path, converted, badge, _format_size(entry.size_bytes))
+
+        console.print(table)
+
+        try:
+            import questionary
+            pdf_choices = [
+                questionary.Choice(title=e.path, value=e.path)
+                for e in sorted(pdf_files, key=lambda e: e.path)
+            ]
+            pdf_choices.append(questionary.Choice(title="Back", value="__back__"))
+        except ImportError:
+            pdf_choices = [e.path for e in sorted(pdf_files, key=lambda e: e.path)] + ["Back"]
+
+        selected = q_select("Select a PDF:", choices=pdf_choices)
+        if selected in (None, "__back__", "Back"):
+            break
+
+        entry = catalog.files.get(selected)
+        if entry is None:
+            break
+
+        # Show details
+        console.print(f"\n[bold cyan]{entry.path}[/bold cyan]  {_quality_badge(entry.extraction_quality)}")
+        if entry.summary:
+            console.print(Panel(entry.summary, title="Summary", expand=False))
+        if entry.converted_to:
+            console.print(f"[dim]Converted to: {entry.converted_to}[/dim]")
+
+        # Action menu
+        try:
+            import questionary as _q
+            action_choices = [
+                _q.Choice(title="Run full OCR (Mistral API)", value="ocr"),
+                _q.Choice(title="Extract text (simple)", value="simple"),
+                _q.Choice(title="Back", value="back"),
+            ]
+        except ImportError:
+            action_choices = ["Run full OCR (Mistral API)", "Extract text (simple)", "Back"]
+
+        action = q_select("Action:", choices=action_choices)
+
+        if action in (None, "back", "Back"):
+            continue
+
+        base_dir = config_dir.parent
+        converted_dir = base_dir / ".converted"
+        source = base_dir / entry.path
+
+        if action in ("ocr", "Run full OCR (Mistral API)"):
+            if not os.environ.get("MISTRAL_API_KEY"):
+                console.print(
+                    "[red]MISTRAL_API_KEY environment variable is not set. "
+                    "Export it before running OCR.[/red]"
+                )
+                continue
+
+            console.print(f"[dim]Running Mistral OCR on {entry.path}...[/dim]")
+            from flavia.content.converters.mistral_ocr_converter import MistralOcrConverter
+            result_path = MistralOcrConverter().convert(source, converted_dir)
+            if result_path:
+                try:
+                    entry.converted_to = str(result_path.relative_to(base_dir))
+                except ValueError:
+                    entry.converted_to = str(result_path)
+                console.print(f"[green]OCR complete:[/green] {entry.converted_to}")
+
+                # Offer re-summarization
+                provider, model_id = settings.resolve_model_with_provider(settings.default_model)
+                if provider and provider.api_key:
+                    try:
+                        import questionary as _q2
+                        resummarize_choices = [
+                            _q2.Choice(title="Yes, re-summarize with quality assessment", value="yes"),
+                            _q2.Choice(title="No", value="no"),
+                        ]
+                    except ImportError:
+                        resummarize_choices = ["Yes, re-summarize with quality assessment", "No"]
+
+                    do_resummary = q_select("Re-summarize now?", choices=resummarize_choices)
+                    if do_resummary in ("yes", "Yes, re-summarize with quality assessment"):
+                        from flavia.content.summarizer import summarize_file_with_quality
+                        summary, quality = summarize_file_with_quality(
+                            entry,
+                            base_dir,
+                            api_key=provider.api_key,
+                            api_base_url=provider.api_base_url,
+                            model=model_id,
+                            headers=provider.headers if provider.headers else None,
+                        )
+                        if summary:
+                            entry.summary = summary
+                        if quality:
+                            entry.extraction_quality = quality
+                        console.print(f"[green]Re-summarized.[/green] Quality: {_quality_badge(entry.extraction_quality)}")
+
+                catalog.save(config_dir)
+                console.print("[dim]Catalog saved.[/dim]")
+            else:
+                console.print("[red]OCR failed. Check MISTRAL_API_KEY and mistralai package.[/red]")
+
+        elif action in ("simple", "Extract text (simple)"):
+            console.print(f"[dim]Extracting text from {entry.path}...[/dim]")
+            from flavia.content.converters import PdfConverter
+            result_path = PdfConverter().convert(source, converted_dir)
+            if result_path:
+                try:
+                    entry.converted_to = str(result_path.relative_to(base_dir))
+                except ValueError:
+                    entry.converted_to = str(result_path)
+                console.print(f"[green]Extraction complete:[/green] {entry.converted_to}")
+                catalog.save(config_dir)
+                console.print("[dim]Catalog saved.[/dim]")
+            else:
+                console.print("[red]Extraction failed.[/red]")
 
 
 def _format_size(size_bytes: int) -> str:
