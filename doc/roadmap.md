@@ -12,9 +12,9 @@ This roadmap outlines **45 tasks** across **10 major areas** to extend flavIA fr
 
 ### Quick Stats
 - **10 Easy tasks** (< 1 day each) — Quick wins for immediate value — **7 completed** ✓
-- **26 Medium tasks** (1-2 days each) — Core feature development — **7 completed** ✓
+- **26 Medium tasks** (1-2 days each) — Core feature development — **8 completed** ✓
 - **9 Hard tasks** (3+ days each) — Complex integrations requiring careful design — **1 completed** ✓
-- **Total completed so far**: **15 / 45 tasks** ✓
+- **Total completed so far**: **16 / 45 tasks** ✓
 
 ### Strategic Priorities
 1. **Immediate value** (Tasks 4.1-4.8, 8.1): Improve CLI UX and add token tracking
@@ -33,7 +33,7 @@ This roadmap outlines **45 tasks** across **10 major areas** to extend flavIA fr
 Expand content processing beyond PDF/text to audio, video, images, Office docs, and online sources.
 
 - **1.1** Audio/Video Transcription (Medium) — Whisper API transcription
-- **1.2** Image Description (Medium) — GPT-4o vision for images
+- ~~**1.2** Image Description (Medium)~~ — **DONE** ✓ Vision-capable image-to-text descriptions via multimodal models
 - ~~**1.3** Word/Office Documents (Easy)~~ — **DONE** ✓ OfficeConverter with python-docx, openpyxl, python-pptx
 - ~~**1.4** OCR + LaTeX Equations (Hard)~~ — **DONE** ✓ Scanned PDF OCR pipeline + quality assessment in `/catalog`
 - **1.5** YouTube/Web Converters (Medium) — yt-dlp, trafilatura
@@ -139,14 +139,14 @@ Enable safe file modification and LaTeX compilation for productive academic work
 - ~~Agent shows write operation previews and supports `--dry-run` for non-destructive execution~~ ✓
 - ~~Compile LaTeX documents directly from chat~~ ✓
 
-### Phase 3: Multimodal Expansion (Tasks 1.1-1.2, 1.5)
-**Timeline**: 2 weeks | **Effort**: 3 Medium = ~4-6 days
+### Phase 3: Multimodal Expansion (Tasks 1.1, 1.5; 1.2 completed)
+**Timeline**: 2 weeks | **Effort**: 2 Medium = ~3-5 days (pending)
 
 Add audio/video transcription, image understanding, and online source processing.
 
 **Deliverables**:
 - Transcribe audio/video files via Whisper
-- Describe images via GPT-4o vision
+- ~~Describe images via vision-capable multimodal models~~ ✓
 - Process YouTube videos and web pages
 
 ### Phase 4: Production Messaging (Tasks 3.1-3.3, 8.2-8.3)
@@ -219,7 +219,7 @@ Build the article download pipeline, CAPES publisher access, and research sessio
 ```
 Area 1 -- Multimodal File Processing:
 Task 1.1 (Audio/Video) ──────────────────────┐
-Task 1.2 (Image Description) ─────┐          │
+~~Task 1.2 (Image Description)~~ ✓ ─────┐          │
 ~~Task 1.3 (Word/Office)~~ ✓ ─────┤          │
                                     ├── ~~Task 1.4 (OCR + LaTeX)~~ ✓
                                     │          │
@@ -306,7 +306,7 @@ Tasks ordered by a pragmatic implementation sequence that balances dependency re
 | 10 | ~~**5.1** Write/Edit file tools~~ | ~~Medium~~ | ~~File Modification~~ |
 | 11 | ~~**5.2** Write operation preview + dry-run mode~~ | ~~Medium~~ | ~~File Modification~~ |
 | 12 | **1.1** Audio/Video transcription converter | Medium | File Processing |
-| 13 | **1.2** Image description converter | Medium | File Processing |
+| 13 | ~~**1.2** Image description converter~~ ✓ | ~~Medium~~ | ~~File Processing~~ |
 | 14 | ~~**4.4** In-session provider & model management~~ | ~~Medium~~ | ~~CLI~~ |
 | 15 | **4.5** Standard default agent | Medium | CLI |
 | 16 | ~~**4.8** Expand questionary adoption for prompts~~ | ~~Medium~~ | ~~CLI~~ |
