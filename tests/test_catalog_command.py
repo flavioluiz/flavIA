@@ -376,6 +376,7 @@ def test_offer_resummarization_retries_after_model_switch(monkeypatch, tmp_path)
 
     settings = MagicMock()
     settings.default_model = "provider:model-a"
+    settings.summary_model = None
 
     provider = SimpleNamespace(
         id="provider",
@@ -393,12 +394,16 @@ def test_offer_resummarization_retries_after_model_switch(monkeypatch, tmp_path)
         lambda *args, **kwargs: next(summarize_results),
     )
     monkeypatch.setattr(
+        "flavia.content.summarizer.get_last_llm_call_info",
+        lambda: {},
+    )
+    monkeypatch.setattr(
         "flavia.interfaces.catalog_command._prompt_yes_no",
         lambda *args, **kwargs: True,
     )
 
     def _switch_model(_settings):
-        _settings.default_model = "provider:model-b"
+        _settings.summary_model = "provider:model-b"
         return True
 
     monkeypatch.setattr(
@@ -413,3 +418,82 @@ def test_offer_resummarization_retries_after_model_switch(monkeypatch, tmp_path)
     assert entry.extraction_quality == "partial"
     printed = " ".join(" ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list)
     assert "Re-summarized." in printed
+
+
+def test_offer_resummarization_auto_fallbacks_to_instruct(monkeypatch, tmp_path):
+    (tmp_path / ".converted").mkdir()
+    (tmp_path / ".converted" / "paper.md").write_text("converted", encoding="utf-8")
+    entry = FileEntry(
+        path="paper.pdf",
+        name="paper.pdf",
+        extension=".pdf",
+        file_type="binary_document",
+        category="pdf",
+        size_bytes=10,
+        created_at="2026-01-01T00:00:00+00:00",
+        modified_at="2026-01-01T00:00:00+00:00",
+        indexed_at="2026-01-01T00:00:00+00:00",
+        checksum_sha256="abc",
+        converted_to=".converted/paper.md",
+    )
+
+    provider = SimpleNamespace(
+        id="synthetic",
+        api_key="key",
+        api_base_url="https://api.example.com/v1",
+        headers={},
+        models=[
+            SimpleNamespace(
+                id="hf:zai-org/GLM-4.7",
+                name="GLM-4.7",
+                description="With reasoning capability",
+            ),
+            SimpleNamespace(
+                id="hf:moonshotai/Kimi-K2-Instruct-0905",
+                name="Kimi-K2-Instruct-0905",
+                description="Instruction model",
+            ),
+        ],
+    )
+
+    settings = MagicMock()
+    settings.default_model = "synthetic:hf:zai-org/GLM-4.7"
+    settings.summary_model = None
+    settings.providers = SimpleNamespace(providers={"synthetic": provider})
+    settings.resolve_model_with_provider.side_effect = (
+        lambda model_ref: (provider, str(model_ref).split(":", 1)[-1])
+    )
+
+    called_models = []
+
+    def _fake_summarize(*args, **kwargs):
+        called_models.append(kwargs["model"])
+        if kwargs["model"] == "hf:zai-org/GLM-4.7":
+            return None, None
+        return "Resumo final", "good"
+
+    monkeypatch.setattr(
+        "flavia.content.summarizer.summarize_file_with_quality",
+        _fake_summarize,
+    )
+    monkeypatch.setattr(
+        "flavia.content.summarizer.get_last_llm_call_info",
+        lambda: {
+            "status": "empty_after_retry",
+            "first_finish_reason": "length",
+            "retry_finish_reason": "length",
+        },
+    )
+
+    with patch("flavia.interfaces.catalog_command.console") as mock_console:
+        _offer_resummarization_with_quality(entry, tmp_path, settings, ask_confirmation=False)
+
+    assert called_models == [
+        "hf:zai-org/GLM-4.7",
+        "hf:moonshotai/Kimi-K2-Instruct-0905",
+    ]
+    assert settings.summary_model == "synthetic:hf:moonshotai/Kimi-K2-Instruct-0905"
+    assert entry.summary == "Resumo final"
+    assert entry.extraction_quality == "good"
+    printed = " ".join(" ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list)
+    assert "Retrying automatically with instruct model" in printed

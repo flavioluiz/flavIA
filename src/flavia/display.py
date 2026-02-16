@@ -255,6 +255,7 @@ def display_config(
     _print("-" * 60)
     _print(f"  API Base URL:      {settings.api_base_url}")
     _print(f"  Default Model:     {settings.default_model}")
+    _print(f"  Summary Model:     {settings.summary_model or '(uses Default Model)'}")
     _print(f"  Base Directory:    {settings.base_dir}")
     _print(f"  Max Depth:         {settings.max_depth}")
     _print(f"  Parallel Workers:  {settings.parallel_workers}")

@@ -126,6 +126,7 @@ def init_local_config(target_dir: Optional[Path] = None) -> bool:
 
 # Agent defaults
 # DEFAULT_MODEL=hf:moonshotai/Kimi-K2.5
+# SUMMARY_MODEL=hf:moonshotai/Kimi-K2-Instruct-0905
 # AGENT_MAX_DEPTH=3
 # AGENT_PARALLEL_WORKERS=4
 

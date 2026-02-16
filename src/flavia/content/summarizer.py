@@ -8,6 +8,18 @@ from typing import Any, Optional
 from .scanner import FileEntry
 
 logger = logging.getLogger(__name__)
+_LAST_LLM_CALL_INFO: dict[str, Any] = {}
+
+
+def get_last_llm_call_info() -> dict[str, Any]:
+    """Return metadata from the most recent LLM summarization call."""
+    return dict(_LAST_LLM_CALL_INFO)
+
+
+def _set_last_llm_call_info(**kwargs: Any) -> None:
+    """Store metadata for the most recent LLM summarization call."""
+    _LAST_LLM_CALL_INFO.clear()
+    _LAST_LLM_CALL_INFO.update(kwargs)
 
 
 SUMMARIZE_FILE_PROMPT = """Summarize the following document in 1-3 concise sentences.
@@ -248,6 +260,43 @@ def _call_llm(
     Returns:
         Response text, or None on failure.
     """
+    def _extract_response_text(response: Any) -> Optional[str]:
+        """Extract text from chat completion response across provider variants."""
+        choices = getattr(response, "choices", None)
+        if not choices:
+            return None
+
+        message = getattr(choices[0], "message", None)
+        if message is None:
+            return None
+
+        content = getattr(message, "content", None)
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if isinstance(item, dict):
+                    text = item.get("text") or item.get("content")
+                    if isinstance(text, str) and text.strip():
+                        parts.append(text.strip())
+                else:
+                    text = getattr(item, "text", None) or getattr(item, "content", None)
+                    if isinstance(text, str) and text.strip():
+                        parts.append(text.strip())
+            if parts:
+                return "\n".join(parts).strip()
+
+        # Some providers expose auxiliary text fields.
+        for attr in ("output_text", "text"):
+            value = getattr(message, attr, None)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
+    _set_last_llm_call_info(status="started", model=model)
+
     try:
         import httpx
         import openai as openai_module
@@ -288,38 +337,114 @@ def _call_llm(
             else:
                 raise
 
-        try:
-            response = client.chat.completions.create(
+        def _create_completion(request_prompt: str, max_tokens: int, temperature: float) -> Any:
+            try:
+                return client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": request_prompt}],
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+            except Exception as e:
+                if timeout_error_types and isinstance(e, timeout_error_types):
+                    logger.warning(f"LLM OpenAI timeout/connection error for model {model}: {e}")
+                    _set_last_llm_call_info(
+                        status="timeout_or_connection_error",
+                        model=model,
+                        error=str(e),
+                    )
+                    return None
+                if isinstance(api_status_error, type) and isinstance(e, api_status_error):
+                    status_code = getattr(e, "status_code", "unknown")
+                    logger.warning(f"LLM OpenAI API error for model {model}: status={status_code}")
+                    _set_last_llm_call_info(
+                        status="api_status_error",
+                        model=model,
+                        api_status=status_code,
+                    )
+                    return None
+                raise
+
+        response = _create_completion(prompt, max_tokens=200, temperature=0.3)
+        if response is None:
+            return None
+
+        text = _extract_response_text(response)
+        if text:
+            _set_last_llm_call_info(status="ok", model=model, retried=False)
+            return text
+
+        finish_reason = None
+        usage = getattr(response, "usage", None)
+        completion_tokens = getattr(usage, "completion_tokens", None) if usage else None
+        choices = getattr(response, "choices", None)
+        if choices:
+            finish_reason = getattr(choices[0], "finish_reason", None)
+
+        logger.warning(
+            f"LLM returned empty response for model {model} "
+            f"(finish_reason={finish_reason}, completion_tokens={completion_tokens}). "
+            "Retrying once with stricter no-reasoning instruction."
+        )
+
+        retry_prompt = (
+            prompt
+            + "\n\nIMPORTANT: Return ONLY the final answer text. "
+            "Do not include reasoning/thinking."
+        )
+        retry_response = _create_completion(retry_prompt, max_tokens=800, temperature=0.0)
+        if retry_response is None:
+            return None
+
+        retry_text = _extract_response_text(retry_response)
+        if retry_text:
+            _set_last_llm_call_info(
+                status="ok",
                 model=model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=200,
-                temperature=0.3,
+                retried=True,
+                first_finish_reason=finish_reason,
+                first_completion_tokens=completion_tokens,
             )
-        except Exception as e:
-            if timeout_error_types and isinstance(e, timeout_error_types):
-                logger.warning(f"LLM OpenAI timeout/connection error for model {model}: {e}")
-                return None
-            if isinstance(api_status_error, type) and isinstance(e, api_status_error):
-                status_code = getattr(e, "status_code", "unknown")
-                logger.warning(f"LLM OpenAI API error for model {model}: status={status_code}")
-                return None
-            raise
+            return retry_text
 
-        if response.choices and response.choices[0].message and response.choices[0].message.content:
-            return response.choices[0].message.content.strip()
+        retry_finish = None
+        retry_usage = getattr(retry_response, "usage", None)
+        retry_tokens = getattr(retry_usage, "completion_tokens", None) if retry_usage else None
+        retry_choices = getattr(retry_response, "choices", None)
+        if retry_choices:
+            retry_finish = getattr(retry_choices[0], "finish_reason", None)
 
-        logger.warning(f"LLM returned empty response for model {model}")
+        logger.warning(
+            f"LLM returned empty response for model {model} after retry "
+            f"(finish_reason={retry_finish}, completion_tokens={retry_tokens})"
+        )
+        _set_last_llm_call_info(
+            status="empty_after_retry",
+            model=model,
+            first_finish_reason=finish_reason,
+            first_completion_tokens=completion_tokens,
+            retry_finish_reason=retry_finish,
+            retry_completion_tokens=retry_tokens,
+        )
         return None
 
     except ImportError as e:
         logger.error(f"Required library not available: {e}")
+        _set_last_llm_call_info(status="import_error", model=model, error=str(e))
         return None
     except (httpx.TimeoutException, httpx.ConnectTimeout) as e:
         logger.warning(f"LLM request timeout for model {model}: {e}")
+        _set_last_llm_call_info(status="httpx_timeout", model=model, error=str(e))
         return None
     except httpx.HTTPStatusError as e:
         logger.warning(f"LLM HTTP error for model {model}: {e.response.status_code}")
+        _set_last_llm_call_info(
+            status="httpx_status_error",
+            model=model,
+            api_status=getattr(e.response, "status_code", "unknown"),
+        )
         return None
     except Exception as e:
         logger.error(f"Unexpected error calling LLM model {model}: {e}", exc_info=True)
+        _set_last_llm_call_info(status="unexpected_error", model=model, error=str(e))
         return None

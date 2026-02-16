@@ -97,6 +97,15 @@ def test_load_settings_reads_status_task_limits_from_env(tmp_path, monkeypatch):
     assert settings.status_max_tasks_subagent == 2
 
 
+def test_load_settings_reads_summary_model_from_env(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("SUMMARY_MODEL", "synthetic:hf:moonshotai/Kimi-K2-Instruct-0905")
+
+    settings = load_settings()
+    assert settings.summary_model == "synthetic:hf:moonshotai/Kimi-K2-Instruct-0905"
+
+
 def test_python_m_flavia_propagates_exit_code(tmp_path):
     """python -m flavia should return the CLI exit code."""
     repo_root = Path(__file__).resolve().parents[1]

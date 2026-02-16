@@ -536,7 +536,12 @@ def run_catalog_update(
     # Generate summaries if requested
     if summarize:
         settings = load_settings()
-        provider, model_id = settings.resolve_model_with_provider(settings.default_model)
+        summary_model_ref = (
+            settings.summary_model.strip()
+            if isinstance(settings.summary_model, str) and settings.summary_model.strip()
+            else settings.default_model
+        )
+        provider, model_id = settings.resolve_model_with_provider(summary_model_ref)
         if provider and provider.api_key:
             from flavia.content.summarizer import summarize_file_with_quality
 

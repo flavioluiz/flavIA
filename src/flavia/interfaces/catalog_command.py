@@ -515,9 +515,10 @@ def _show_pdf_entry_details(entry, base_dir: Path, settings: Settings) -> None:
             converted_exists = False
 
     try:
-        provider, model_id = settings.resolve_model_with_provider(settings.default_model)
+        summary_model_ref = _get_summary_model_ref(settings)
+        provider, model_id = settings.resolve_model_with_provider(summary_model_ref)
     except Exception:
-        provider, model_id = None, str(settings.default_model)
+        provider, model_id = None, str(_get_summary_model_ref(settings))
     provider_id = getattr(provider, "id", None) if provider else None
     active_model_ref = f"{provider_id}:{model_id}" if provider_id else str(model_id)
 
@@ -555,22 +556,25 @@ def _prompt_yes_no(prompt: str, yes_title: str = "Yes", no_title: str = "No") ->
 def _select_model_for_summary(settings: Settings) -> bool:
     """Allow selecting another model for summary generation in current session."""
     choices = []
-    default_choice = settings.default_model
+    current_summary_ref = _get_summary_model_ref(settings)
+    default_choice = current_summary_ref
+    provider_map = getattr(getattr(settings, "providers", None), "providers", {})
+    has_provider_map = isinstance(provider_map, dict) and bool(provider_map)
 
-    if settings.providers.providers:
-        for provider in settings.providers.providers.values():
+    if has_provider_map:
+        for provider in provider_map.values():
             for model in provider.models:
                 ref = f"{provider.id}:{model.id}"
                 label = f"{provider.name} ({provider.id}) - {model.name} ({model.id})"
                 choices.append((label, ref))
 
-        provider, model_id = settings.resolve_model_with_provider(settings.default_model)
+        provider, model_id = settings.resolve_model_with_provider(current_summary_ref)
         if provider:
             default_choice = f"{provider.id}:{model_id}"
     else:
         for model in settings.models:
             choices.append((f"{model.name} ({model.id})", model.id))
-        default_choice = str(settings.resolve_model(settings.default_model))
+        default_choice = str(settings.resolve_model(current_summary_ref))
 
     if not choices:
         console.print("[yellow]No models available to select.[/yellow]")
@@ -595,16 +599,18 @@ def _select_model_for_summary(settings: Settings) -> bool:
         reverse = {label: ref for label, ref in choices}
         selection = reverse.get(selection, selection)
 
-    settings.default_model = str(selection)
-    console.print(f"[green]Summary model switched to:[/green] [cyan]{settings.default_model}[/cyan]")
+    settings.summary_model = str(selection)
+    console.print(f"[green]Summary model switched to:[/green] [cyan]{settings.summary_model}[/cyan]")
     return True
 
 
 def _resolve_summary_runtime(
     settings: Settings,
+    model_ref_override: Optional[str] = None,
 ) -> tuple[str, str, str, str, Optional[dict[str, str]]]:
     """Resolve active summary model and runtime credentials."""
-    provider, model_id = settings.resolve_model_with_provider(settings.default_model)
+    summary_model_ref = model_ref_override or _get_summary_model_ref(settings)
+    provider, model_id = settings.resolve_model_with_provider(summary_model_ref)
     if provider:
         provider_id = getattr(provider, "id", None)
         model_ref = f"{provider_id}:{model_id}" if provider_id else str(model_id)
@@ -612,12 +618,77 @@ def _resolve_summary_runtime(
         return model_ref, model_id, provider.api_key, provider.api_base_url, headers
 
     return (
-        str(model_id),
+        str(summary_model_ref),
         model_id,
         settings.api_key,
         settings.api_base_url,
         None,
     )
+
+
+def _get_summary_model_ref(settings: Settings) -> str:
+    """Return summary model override when configured, else default model."""
+    summary_ref = getattr(settings, "summary_model", None)
+    if isinstance(summary_ref, str) and summary_ref.strip():
+        return summary_ref.strip()
+    return str(settings.default_model)
+
+
+def _should_auto_fallback_to_instruct(call_info: dict) -> bool:
+    """Return True when empty response appears caused by token-length truncation."""
+    if call_info.get("status") != "empty_after_retry":
+        return False
+    return (
+        call_info.get("first_finish_reason") == "length"
+        and call_info.get("retry_finish_reason") == "length"
+    )
+
+
+def _find_instruct_fallback_model(settings: Settings, current_model_ref: str) -> Optional[str]:
+    """Find a likely non-reasoning/instruct model candidate for summary fallback."""
+    provider_map = getattr(getattr(settings, "providers", None), "providers", {})
+    if not isinstance(provider_map, dict) or not provider_map:
+        return None
+
+    # Prefer switching within the same provider first.
+    current_provider = None
+    if ":" in current_model_ref:
+        maybe_provider = current_model_ref.split(":", 1)[0]
+        if maybe_provider in provider_map:
+            current_provider = maybe_provider
+
+    provider_order = []
+    if current_provider:
+        provider_order.append(current_provider)
+    provider_order.extend(pid for pid in provider_map.keys() if pid != current_provider)
+
+    def _score_model(model_id: str, model_name: str, model_desc: str) -> int:
+        haystack = f"{model_id} {model_name} {model_desc}".lower()
+        score = 0
+        if "instruct" in haystack:
+            score += 100
+        if "reason" in haystack or "think" in haystack:
+            score -= 50
+        if "chat" in haystack:
+            score += 10
+        return score
+
+    best_ref: Optional[str] = None
+    best_score: int = -10_000
+    for provider_id in provider_order:
+        provider = provider_map[provider_id]
+        for model in provider.models:
+            ref = f"{provider.id}:{model.id}"
+            if ref == current_model_ref:
+                continue
+            score = _score_model(model.id, model.name, model.description)
+            if score > best_score:
+                best_score = score
+                best_ref = ref
+
+    if best_score <= 0:
+        return None
+    return best_ref
 
 
 def _offer_resummarization_with_quality(
@@ -630,8 +701,9 @@ def _offer_resummarization_with_quality(
     if ask_confirmation and not _prompt_yes_no("Re-summarize now?", "Yes", "No"):
         return
 
-    from flavia.content.summarizer import summarize_file_with_quality
+    from flavia.content.summarizer import get_last_llm_call_info, summarize_file_with_quality
 
+    auto_fallback_used = False
     while True:
         model_ref, model_id, api_key, api_base_url, headers = _resolve_summary_runtime(settings)
         console.print(f"[dim]Summary model: {model_ref}[/dim]")
@@ -666,6 +738,18 @@ def _offer_resummarization_with_quality(
                 f"[green]Re-summarized.[/green] Quality: {_quality_badge(entry.extraction_quality)}"
             )
             return
+
+        call_info = get_last_llm_call_info()
+        if not auto_fallback_used and _should_auto_fallback_to_instruct(call_info):
+            fallback_model = _find_instruct_fallback_model(settings, model_ref)
+            if fallback_model:
+                console.print(
+                    "[yellow]Detected length-capped empty output. "
+                    f"Retrying automatically with instruct model [cyan]{fallback_model}[/cyan].[/yellow]"
+                )
+                settings.summary_model = fallback_model
+                auto_fallback_used = True
+                continue
 
         console.print(
             "[yellow]Re-summarization failed: no summary/quality returned by the LLM.[/yellow]"

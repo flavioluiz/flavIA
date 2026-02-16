@@ -311,6 +311,7 @@ Notes:
 - Mistral OCR requires installing the `ocr` extra and exporting `MISTRAL_API_KEY`.
 - In `PDF Files`, you can run `Re-run summary/quality (no extraction)` to regenerate metadata from the existing converted markdown only.
 - If summary/quality generation fails, the CLI can prompt you to switch the active model and retry.
+- You can set `SUMMARY_MODEL` in `.flavia/.env` to use a dedicated model for catalog summary/quality (separate from the main chat model).
 
 ## Startup connection check
 

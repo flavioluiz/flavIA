@@ -61,3 +61,40 @@ def test_main_passes_path_to_run_catalog_update(monkeypatch, tmp_path):
 
     assert main() == 0
     assert called["base_dir"] == tmp_path.resolve()
+
+
+def test_run_catalog_update_uses_summary_model_override(monkeypatch, tmp_path):
+    doc_path = tmp_path / "doc.md"
+    doc_path.write_text("Some text content", encoding="utf-8")
+
+    config_dir = tmp_path / ".flavia"
+    config_dir.mkdir()
+    catalog = ContentCatalog(tmp_path)
+    catalog.build()
+    catalog.save(config_dir)
+
+    calls = []
+    provider = SimpleNamespace(
+        id="synthetic",
+        api_key="test-key",
+        api_base_url="https://api.example.com/v1",
+        headers={},
+    )
+
+    class _FakeSettings:
+        default_model = "synthetic:hf:zai-org/GLM-4.7"
+        summary_model = "synthetic:hf:moonshotai/Kimi-K2-Instruct-0905"
+
+        @staticmethod
+        def resolve_model_with_provider(model_ref):
+            calls.append(model_ref)
+            return provider, str(model_ref).split(":", 1)[-1]
+
+    monkeypatch.setattr("flavia.cli.load_settings", lambda: _FakeSettings())
+    monkeypatch.setattr(
+        "flavia.content.summarizer.summarize_file_with_quality",
+        lambda *args, **kwargs: ("Resumo", "good"),
+    )
+
+    assert run_catalog_update(summarize=True, base_dir=tmp_path) == 0
+    assert calls == ["synthetic:hf:moonshotai/Kimi-K2-Instruct-0905"]

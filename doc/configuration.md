@@ -289,6 +289,7 @@ SYNTHETIC_API_KEY=your_key_here
 OPENAI_API_KEY=your_openai_key
 OPENROUTER_API_KEY=your_openrouter_key
 MISTRAL_API_KEY=your_mistral_key   # optional, for PDF OCR in /catalog
+SUMMARY_MODEL=synthetic:hf:moonshotai/Kimi-K2-Instruct-0905  # optional, overrides only catalog summary/quality model
 
 # Legacy single-provider config (still works)
 API_BASE_URL=https://api.synthetic.new/openai/v1

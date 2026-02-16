@@ -109,6 +109,134 @@ def test_summarize_file_handles_empty_response(monkeypatch, tmp_path):
     assert result is None
 
 
+def test_summarize_file_retries_when_first_response_is_empty(monkeypatch, tmp_path):
+    """If the first response is empty, summarizer should retry once."""
+    md_file = tmp_path / "doc.md"
+    md_file.write_text("This is a document.", encoding="utf-8")
+    entry = _build_entry("doc.md")
+
+    class _FakeOpenAI:
+        def __init__(self, **kwargs):
+            calls = {"count": 0}
+
+            def _create(**_kwargs):
+                calls["count"] += 1
+                if calls["count"] == 1:
+                    return SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                message=SimpleNamespace(content=None),
+                                finish_reason="length",
+                            )
+                        ],
+                        usage=SimpleNamespace(completion_tokens=200),
+                    )
+                return SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            message=SimpleNamespace(content="Generated summary"),
+                            finish_reason="stop",
+                        )
+                    ],
+                    usage=SimpleNamespace(completion_tokens=32),
+                )
+
+            self.chat = SimpleNamespace(
+                completions=SimpleNamespace(create=_create)
+            )
+
+    monkeypatch.setitem(sys.modules, "httpx", SimpleNamespace(Timeout=lambda *a, **kw: None))
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=_FakeOpenAI))
+
+    result = summarize_file(
+        entry=entry,
+        base_dir=tmp_path,
+        api_key="test-key",
+        api_base_url="https://api.example.com/v1",
+        model="test-model",
+    )
+
+    assert result == "Generated summary"
+
+
+def test_summarize_file_handles_structured_content_parts(monkeypatch, tmp_path):
+    """Providers returning message.content as a list of parts should be supported."""
+    md_file = tmp_path / "doc.md"
+    md_file.write_text("This is a document.", encoding="utf-8")
+    entry = _build_entry("doc.md")
+
+    class _FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.chat = SimpleNamespace(
+                completions=SimpleNamespace(
+                    create=lambda **_kwargs: SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                message=SimpleNamespace(
+                                    content=[
+                                        {"type": "text", "text": "Part A"},
+                                        {"type": "text", "text": "Part B"},
+                                    ]
+                                )
+                            )
+                        ]
+                    )
+                )
+            )
+
+    monkeypatch.setitem(sys.modules, "httpx", SimpleNamespace(Timeout=lambda *a, **kw: None))
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=_FakeOpenAI))
+
+    result = summarize_file(
+        entry=entry,
+        base_dir=tmp_path,
+        api_key="test-key",
+        api_base_url="https://api.example.com/v1",
+        model="test-model",
+    )
+
+    assert result == "Part A\nPart B"
+
+
+def test_summarize_file_records_empty_after_retry_metadata(monkeypatch, tmp_path):
+    md_file = tmp_path / "doc.md"
+    md_file.write_text("This is a document.", encoding="utf-8")
+    entry = _build_entry("doc.md")
+
+    class _FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.chat = SimpleNamespace(
+                completions=SimpleNamespace(
+                    create=lambda **_kwargs: SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                message=SimpleNamespace(content=None),
+                                finish_reason="length",
+                            )
+                        ],
+                        usage=SimpleNamespace(completion_tokens=200),
+                    )
+                )
+            )
+
+    monkeypatch.setitem(sys.modules, "httpx", SimpleNamespace(Timeout=lambda *a, **kw: None))
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=_FakeOpenAI))
+
+    result = summarize_file(
+        entry=entry,
+        base_dir=tmp_path,
+        api_key="test-key",
+        api_base_url="https://api.example.com/v1",
+        model="test-model",
+    )
+
+    assert result is None
+    info = summarizer_module.get_last_llm_call_info()
+    assert info.get("status") == "empty_after_retry"
+    assert info.get("first_finish_reason") == "length"
+    assert info.get("retry_finish_reason") == "length"
+
+
 def test_summarize_file_handles_empty_choices(monkeypatch, tmp_path):
     """Test handling when LLM returns empty choices list."""
     md_file = tmp_path / "doc.md"
