@@ -130,6 +130,9 @@ def init_local_config(target_dir: Optional[Path] = None) -> bool:
 # AGENT_MAX_DEPTH=3
 # AGENT_PARALLEL_WORKERS=4
 
+# Image analysis model (vision-capable)
+# IMAGE_VISION_MODEL=synthetic:moonshotai/Kimi-K2.5
+
 # Telegram (only needed for flavia --telegram)
 # TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
 # Restrict bot access to specific Telegram user IDs (comma-separated)

@@ -53,6 +53,8 @@ def run_catalog_command(settings: Settings) -> bool:
             _manage_pdf_files(catalog, config_dir, settings)
         elif choice == "8":
             _manage_office_files(catalog, config_dir, settings)
+        elif choice == "9":
+            _manage_image_files(catalog, config_dir, settings)
         elif choice in ("q", "Q", ""):
             break
         else:
@@ -78,6 +80,7 @@ def _print_catalog_menu() -> str:
             questionary.Choice(title="Add Online Source", value="6"),
             questionary.Choice(title="PDF Files", value="7"),
             questionary.Choice(title="Office Documents", value="8"),
+            questionary.Choice(title="Image Files", value="9"),
             questionary.Choice(title="Back to chat", value="q"),
         ]
     except ImportError:
@@ -90,6 +93,7 @@ def _print_catalog_menu() -> str:
             "Add Online Source",
             "PDF Files",
             "Office Documents",
+            "Image Files",
             "Back to chat",
         ]
 
@@ -108,6 +112,7 @@ def _print_catalog_menu() -> str:
         "Add Online Source": "6",
         "PDF Files": "7",
         "Office Documents": "8",
+        "Image Files": "9",
         "Back to chat": "q",
     }
 
@@ -633,6 +638,207 @@ def _manage_office_files(catalog: ContentCatalog, config_dir: Path, settings: Se
             )
             catalog.save(config_dir)
             console.print("[dim]Catalog saved.[/dim]")
+
+
+def _manage_image_files(catalog: ContentCatalog, config_dir: Path, settings: Settings) -> None:
+    """Interactive image file manager with vision-based description generation."""
+    base_dir = config_dir.parent
+    converted_dir = base_dir / ".converted"
+
+    image_files = [
+        e for e in catalog.files.values()
+        if e.file_type == "image" and e.status != "missing"
+    ]
+
+    if not image_files:
+        console.print("[yellow]No image files in catalog.[/yellow]")
+        return
+
+    while True:
+        console.print(f"\n[bold]Image Files ({len(image_files)})[/bold]")
+
+        table = Table(show_header=True)
+        table.add_column("Path", style="cyan", max_width=50)
+        table.add_column("Format", style="dim")
+        table.add_column("Described", style="dim")
+        table.add_column("Size", justify="right")
+
+        for entry in sorted(image_files, key=lambda e: e.path):
+            described = "[green]yes[/green]" if entry.converted_to else "[dim]no[/dim]"
+            ext = Path(entry.path).suffix.lstrip(".").upper()
+            table.add_row(entry.path, ext, described, _format_size(entry.size_bytes))
+
+        console.print(table)
+
+        try:
+            import questionary
+            image_choices = [
+                questionary.Choice(title=e.path, value=e.path)
+                for e in sorted(image_files, key=lambda e: e.path)
+            ]
+            image_choices.append(questionary.Choice(title="Back", value="__back__"))
+        except ImportError:
+            image_choices = [e.path for e in sorted(image_files, key=lambda e: e.path)] + ["Back"]
+
+        selected = q_select("Select an image:", choices=image_choices)
+        if selected in (None, "__back__", "Back"):
+            break
+
+        entry = catalog.files.get(selected)
+        if entry is None:
+            break
+
+        _show_image_entry_details(entry, base_dir, settings)
+
+        # Action menu
+        try:
+            import questionary as _q
+            action_choices = [
+                _q.Choice(title="Generate description (vision LLM)", value="generate"),
+                _q.Choice(title="Re-generate description", value="regenerate"),
+                _q.Choice(title="View description", value="view"),
+                _q.Choice(title="Change vision model", value="change_model"),
+                _q.Choice(title="Back", value="back"),
+            ]
+        except ImportError:
+            action_choices = [
+                "Generate description (vision LLM)",
+                "Re-generate description",
+                "View description",
+                "Change vision model",
+                "Back",
+            ]
+
+        action = q_select("Action:", choices=action_choices)
+
+        if action in (None, "back", "Back"):
+            continue
+
+        source = (base_dir / entry.path).resolve()
+        try:
+            source.relative_to(base_dir.resolve())
+        except ValueError:
+            console.print(
+                "[red]Blocked unsafe path outside project directory in catalog entry.[/red]"
+            )
+            continue
+
+        if action in ("generate", "Generate description (vision LLM)", "regenerate", "Re-generate description"):
+            if action in ("regenerate", "Re-generate description") and not entry.converted_to:
+                console.print("[yellow]No existing description to regenerate. Generating new one.[/yellow]")
+
+            console.print(f"[dim]Analyzing image {entry.path} with vision model...[/dim]")
+            from flavia.content.converters import ImageConverter
+
+            converter = ImageConverter(settings)
+            result_path = converter.convert(source, converted_dir)
+
+            if result_path:
+                try:
+                    entry.converted_to = str(result_path.relative_to(base_dir))
+                except ValueError:
+                    entry.converted_to = str(result_path)
+                console.print(f"[green]Description generated:[/green] {entry.converted_to}")
+
+                # Offer to view the description
+                if _prompt_yes_no("View the generated description?", "Yes", "No"):
+                    _view_image_description(entry, base_dir)
+
+                catalog.save(config_dir)
+                console.print("[dim]Catalog saved.[/dim]")
+            else:
+                console.print("[red]Description generation failed. Check vision model configuration.[/red]")
+                _suggest_vision_model_change(settings)
+
+        elif action in ("view", "View description"):
+            if not entry.converted_to:
+                console.print("[yellow]No description available. Generate one first.[/yellow]")
+                continue
+            _view_image_description(entry, base_dir)
+
+        elif action in ("change_model", "Change vision model"):
+            _select_vision_model(settings)
+
+
+def _show_image_entry_details(entry, base_dir: Path, settings: Settings) -> None:
+    """Show selected image file details including description status."""
+    console.print(f"\n[bold cyan]{entry.path}[/bold cyan]")
+
+    converted_exists = False
+    if entry.converted_to:
+        converted_path = (base_dir / entry.converted_to).resolve()
+        try:
+            converted_path.relative_to(base_dir.resolve())
+            converted_exists = converted_path.exists()
+        except ValueError:
+            converted_exists = False
+
+    # Get current vision model
+    vision_model = getattr(settings, "image_vision_model", None) or "synthetic:moonshotai/Kimi-K2.5"
+
+    details = Table(show_header=False, box=None)
+    details.add_column("Field", style="dim")
+    details.add_column("Value")
+    details.add_row("Format", Path(entry.path).suffix.lstrip(".").upper())
+    details.add_row("Size", _format_size(entry.size_bytes))
+    details.add_row("Description file", entry.converted_to or "[dim](none)[/dim]")
+    details.add_row("Description exists", "[green]yes[/green]" if converted_exists else "[dim]no[/dim]")
+    details.add_row("Vision model", f"[cyan]{vision_model}[/cyan]")
+    console.print(details)
+
+
+def _view_image_description(entry, base_dir: Path) -> None:
+    """View the generated image description."""
+    if not entry.converted_to:
+        console.print("[yellow]No description available.[/yellow]")
+        return
+
+    desc_path = (base_dir / entry.converted_to).resolve()
+    try:
+        desc_path.relative_to(base_dir.resolve())
+    except ValueError:
+        console.print("[red]Blocked unsafe path outside project directory.[/red]")
+        return
+
+    if not desc_path.exists():
+        console.print("[yellow]Description file not found.[/yellow]")
+        return
+
+    try:
+        content = desc_path.read_text(encoding="utf-8")
+        console.print(Panel(content, title=f"Description: {entry.path}", expand=False))
+    except Exception as e:
+        console.print(f"[red]Failed to read description: {e}[/red]")
+
+
+def _select_vision_model(settings: Settings) -> bool:
+    """Allow selecting another vision model for image analysis."""
+    from flavia.content.converters.image_converter import (
+        DEFAULT_VISION_MODEL,
+        prompt_vision_model_selection,
+    )
+
+    selection = prompt_vision_model_selection(settings)
+    if selection is None:
+        return False
+
+    settings.image_vision_model = selection
+    console.print(f"[green]Vision model switched to:[/green] [cyan]{settings.image_vision_model}[/cyan]")
+    console.print("[dim]Note: This change applies to the current session only.[/dim]")
+    console.print(f"[dim]To persist, set IMAGE_VISION_MODEL={selection} in your .env file.[/dim]")
+    return True
+
+
+def _suggest_vision_model_change(settings: Settings) -> None:
+    """Suggest changing the vision model after a failure."""
+    from flavia.content.converters.image_converter import DEFAULT_VISION_MODEL
+
+    current_model = getattr(settings, "image_vision_model", None) or DEFAULT_VISION_MODEL
+    console.print(f"\n[yellow]Current vision model: {current_model}[/yellow]")
+    console.print("[dim]The model may not support vision or may be unavailable.[/dim]")
+
+    if _prompt_yes_no("Would you like to select a different vision model?", "Yes", "No"):
+        _select_vision_model(settings)
 
 
 def _show_office_entry_details(entry, base_dir: Path, settings: Settings) -> None:

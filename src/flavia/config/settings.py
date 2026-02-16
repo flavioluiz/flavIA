@@ -43,6 +43,7 @@ class Settings:
     # Agent defaults
     default_model: str = "hf:moonshotai/Kimi-K2.5"
     summary_model: Optional[str] = None  # Optional override used for catalog summaries
+    image_vision_model: Optional[str] = None  # Vision-capable model for image analysis
     max_depth: int = 3
     compact_threshold: float = 0.9
     compact_threshold_configured: bool = False
@@ -241,6 +242,7 @@ def load_settings() -> Settings:
     api_base_url = os.getenv("API_BASE_URL", "https://api.synthetic.new/openai/v1")
     default_model = os.getenv("DEFAULT_MODEL", "hf:moonshotai/Kimi-K2.5")
     summary_model = os.getenv("SUMMARY_MODEL", "").strip() or None
+    image_vision_model = os.getenv("IMAGE_VISION_MODEL", "").strip() or None
     compact_threshold, compact_threshold_configured = _load_compact_threshold_from_env()
 
     # If no providers loaded but we have env vars, create fallback provider
@@ -265,6 +267,7 @@ def load_settings() -> Settings:
         config_paths=paths,
         default_model=default_model,
         summary_model=summary_model,
+        image_vision_model=image_vision_model,
         max_depth=int(os.getenv("AGENT_MAX_DEPTH", "3")),
         compact_threshold=compact_threshold,
         compact_threshold_configured=compact_threshold_configured,

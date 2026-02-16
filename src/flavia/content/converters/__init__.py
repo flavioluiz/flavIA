@@ -1,6 +1,7 @@
 """File converters for the content management system."""
 
 from .base import BaseConverter
+from .image_converter import ImageConverter
 from .mistral_ocr_converter import MistralOcrConverter
 from .office_converter import OfficeConverter
 from .pdf_converter import PdfConverter
@@ -17,6 +18,7 @@ from .online import OnlineSourceConverter, WebPageConverter, YouTubeConverter
 
 __all__ = [
     "BaseConverter",
+    "ImageConverter",
     "MistralOcrConverter",
     "OfficeConverter",
     "PdfConverter",
@@ -36,6 +38,7 @@ def _register_default_converters() -> None:
     # File extension converters
     register_converter(PdfConverter())
     register_converter(OfficeConverter())
+    register_converter(ImageConverter())
     register_converter(TextReader())
 
     # Online source converters
