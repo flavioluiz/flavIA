@@ -261,6 +261,25 @@ class TestXlsxExtraction:
         assert result.exists()
         assert result.suffix == ".md"
 
+    def test_xlsx_escapes_pipe_character_in_header(self, tmp_path):
+        """Header cells with pipes are escaped to keep markdown table structure valid."""
+        pytest.importorskip("openpyxl")
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        ws = wb.active
+        ws["A1"] = "Name|Alias"
+        ws["B1"] = "Value"
+        ws["A2"] = "Item 1"
+        ws["B2"] = 10
+
+        xlsx_path = tmp_path / "pipes.xlsx"
+        wb.save(xlsx_path)
+
+        text = OfficeConverter().extract_text(xlsx_path)
+        assert text is not None
+        assert "| Name\\|Alias | Value |" in text
+
 
 class TestPptxExtraction:
     """Tests for PowerPoint presentation extraction."""
@@ -364,6 +383,33 @@ class TestLegacyFormatFallback:
         assert ".ppt" in converter._legacy_extensions
         # Modern extensions are not legacy
         assert ".docx" not in converter._legacy_extensions
+
+    def test_extract_from_legacy_removes_temp_file_and_directory(self, tmp_path, monkeypatch):
+        """Legacy extraction cleans temporary LibreOffice artifacts after parsing."""
+        converter = OfficeConverter()
+        legacy_path = tmp_path / "legacy.doc"
+        legacy_path.write_bytes(b"legacy-binary")
+
+        temp_dir = tmp_path / "flavia_office_test"
+        temp_dir.mkdir()
+        converted_path = temp_dir / "legacy.docx"
+        converted_path.write_bytes(b"converted")
+
+        monkeypatch.setattr(
+            converter,
+            "_convert_with_libreoffice",
+            lambda _path, _target_ext: converted_path,
+        )
+        monkeypatch.setattr(
+            converter,
+            "_extract_from_docx",
+            lambda _path, is_odt=False: "converted text",
+        )
+
+        text = converter.extract_text(legacy_path)
+        assert text == "converted text"
+        assert not converted_path.exists()
+        assert not temp_dir.exists()
 
 
 class TestMarkdownFormatting:

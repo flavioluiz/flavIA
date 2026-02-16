@@ -25,15 +25,26 @@ def test_run_catalog_update_reconverts_modified_pdf(monkeypatch, tmp_path):
 
     converted_calls: list[Path] = []
 
-    def _fake_convert(self, source_path: Path, output_dir: Path, output_format: str = "md"):
+    def _fake_convert(source_path: Path, output_dir: Path, output_format: str = "md"):
         converted_calls.append(source_path)
         output_file = output_dir / source_path.with_suffix(f".{output_format}").name
         output_file.parent.mkdir(parents=True, exist_ok=True)
         output_file.write_text("converted", encoding="utf-8")
         return output_file
 
-    monkeypatch.setattr("flavia.content.converters.PdfConverter.can_handle", lambda self, _p: True)
-    monkeypatch.setattr("flavia.content.converters.PdfConverter.convert", _fake_convert)
+    class _FakeConverter:
+        @staticmethod
+        def check_dependencies():
+            return True, []
+
+        @staticmethod
+        def convert(source_path: Path, output_dir: Path, output_format: str = "md"):
+            return _fake_convert(source_path, output_dir, output_format)
+
+    monkeypatch.setattr(
+        "flavia.content.converters.converter_registry.get_for_file",
+        lambda _path: _FakeConverter(),
+    )
     monkeypatch.chdir(tmp_path)
 
     assert run_catalog_update(convert=True) == 0

@@ -129,7 +129,6 @@ class OfficeConverter(BaseConverter):
         """
         try:
             from docx import Document
-            from docx.oxml.ns import qn
         except ImportError:
             return None
 
@@ -141,10 +140,7 @@ class OfficeConverter(BaseConverter):
                     return None
                 doc = Document(converted)
                 # Clean up temp file after loading
-                try:
-                    converted.unlink()
-                except Exception:
-                    pass
+                self._cleanup_temp_file(converted)
             else:
                 doc = Document(path)
         except Exception:
@@ -209,10 +205,7 @@ class OfficeConverter(BaseConverter):
                     return None
                 wb = load_workbook(converted, data_only=True)
                 # Clean up temp file after loading
-                try:
-                    converted.unlink()
-                except Exception:
-                    pass
+                self._cleanup_temp_file(converted)
             else:
                 wb = load_workbook(path, data_only=True)
         except Exception:
@@ -259,6 +252,7 @@ class OfficeConverter(BaseConverter):
             # Header row
             header = rows[0][:max_cols]
             header_cells = [str(cell) if cell is not None else "" for cell in header]
+            header_cells = [c.replace("|", "\\|") for c in header_cells]
             lines.append("| " + " | ".join(header_cells) + " |")
             lines.append("| " + " | ".join(["---"] * max_cols) + " |")
 
@@ -297,10 +291,7 @@ class OfficeConverter(BaseConverter):
                     return None
                 prs = Presentation(converted)
                 # Clean up temp file after loading
-                try:
-                    converted.unlink()
-                except Exception:
-                    pass
+                self._cleanup_temp_file(converted)
             else:
                 prs = Presentation(path)
         except Exception:
@@ -388,10 +379,7 @@ class OfficeConverter(BaseConverter):
                 return self._extract_from_pptx(converted)
         finally:
             # Clean up temp file
-            try:
-                converted.unlink()
-            except Exception:
-                pass
+            self._cleanup_temp_file(converted)
 
         return None
 
@@ -541,3 +529,18 @@ class OfficeConverter(BaseConverter):
         text = re.sub(r"\|", " ", text)
         text = re.sub(r"-{3,}", "", text)
         return text
+
+    @staticmethod
+    def _cleanup_temp_file(path: Path) -> None:
+        """Remove temporary converted file and best-effort cleanup of converter temp dir."""
+        try:
+            path.unlink()
+        except Exception:
+            pass
+
+        try:
+            parent = path.parent
+            if parent.name.startswith("flavia_office_"):
+                parent.rmdir()
+        except Exception:
+            pass

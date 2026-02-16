@@ -71,6 +71,18 @@ Then set the API key in your environment or `.flavia/.env`:
 MISTRAL_API_KEY=your_mistral_key
 ```
 
+## Office document conversion (optional)
+
+To enable Office conversion used by setup and `/catalog` (`.docx`, `.xlsx`, `.pptx`, plus legacy/OpenDocument variants):
+
+```bash
+.venv/bin/pip install -e ".[office]"
+```
+
+Notes:
+- Legacy formats (`.doc`, `.xls`, `.ppt`) and OpenDocument files (`.odt`, `.ods`, `.odp`) use a LibreOffice CLI conversion step.
+- Ensure `libreoffice`/`soffice` is available in your PATH when working with these formats.
+
 ## Development dependencies
 
 ```bash
@@ -92,7 +104,7 @@ flavia --init
 The interactive wizard will:
 
 1. Ask which model/provider to use (and test the connection)
-2. Find binary documents (currently PDFs) and offer conversion to text
+2. Find binary documents (PDFs and Office files) and offer conversion to text
 3. Build the project content catalog in `.flavia/content_catalog.json`
 4. Optionally generate LLM summaries for files that need them
 5. Let you choose simple configuration or AI-assisted configuration

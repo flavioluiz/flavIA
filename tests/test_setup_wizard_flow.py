@@ -9,6 +9,7 @@ from flavia.setup_wizard import (
     create_setup_agent,
     _approve_subagents,
     _build_content_catalog,
+    find_binary_documents,
     _run_full_reconfiguration,
     _run_ai_setup,
     _run_basic_setup,
@@ -297,6 +298,49 @@ def test_build_content_catalog_continues_on_conversion_error(monkeypatch, tmp_pa
     assert catalog is not None
     assert "broken.pdf" in catalog.files
     assert (config_dir / "content_catalog.json").exists()
+
+
+def test_find_binary_documents_includes_office_extensions(tmp_path):
+    expected = {
+        "paper.pdf",
+        "report.docx",
+        "slides.pptx",
+        "sheet.xlsx",
+        "legacy.doc",
+        "legacy.xls",
+        "legacy.ppt",
+        "open.odt",
+        "open.ods",
+        "open.odp",
+    }
+
+    for name in expected:
+        (tmp_path / name).write_bytes(b"x")
+    (tmp_path / "notes.txt").write_text("ignore", encoding="utf-8")
+
+    found = find_binary_documents(tmp_path)
+    assert {path.name for path in found} == expected
+
+
+def test_build_content_catalog_links_existing_office_conversion(tmp_path):
+    target_dir = tmp_path
+    config_dir = tmp_path / ".flavia"
+    config_dir.mkdir()
+
+    (target_dir / "report.docx").write_bytes(b"PK\x03\x04")
+    converted_dir = target_dir / ".converted"
+    converted_dir.mkdir()
+    (converted_dir / "report.md").write_text("converted", encoding="utf-8")
+
+    catalog = _build_content_catalog(
+        target_dir,
+        config_dir,
+        convert_docs=False,
+        binary_docs=[],
+    )
+
+    assert catalog is not None
+    assert catalog.files["report.docx"].converted_to == ".converted/report.md"
 
 
 def test_run_basic_setup_preserves_existing_providers_when_requested(tmp_path):

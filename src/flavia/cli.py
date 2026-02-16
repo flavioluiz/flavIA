@@ -463,7 +463,7 @@ def run_catalog_update(
 ) -> int:
     """Update the content catalog."""
     from flavia.content.catalog import ContentCatalog
-    from flavia.content.converters import PdfConverter
+    from flavia.content.converters import converter_registry
 
     base_dir = base_dir.resolve() if base_dir else Path.cwd()
     config_dir = base_dir / ".flavia"
@@ -514,14 +514,32 @@ def run_catalog_update(
         needs_conversion = catalog.get_files_needing_conversion()
         if needs_conversion:
             print(f"\nConverting {len(needs_conversion)} binary document(s)...")
-            converter = PdfConverter()
             converted_dir = base_dir / ".converted"
             converted_count = 0
+            failed_count = 0
+            skipped_count = 0
             for entry in needs_conversion:
                 source = base_dir / entry.path
-                if not converter.can_handle(source):
+                converter = converter_registry.get_for_file(source)
+                if not converter:
+                    skipped_count += 1
                     continue
-                result_path = converter.convert(source, converted_dir)
+
+                deps_ok, missing = converter.check_dependencies()
+                if not deps_ok:
+                    skipped_count += 1
+                    print(
+                        f"  Skipping {entry.path}: missing dependencies ({', '.join(missing)})"
+                    )
+                    continue
+
+                try:
+                    result_path = converter.convert(source, converted_dir)
+                except Exception as exc:
+                    failed_count += 1
+                    print(f"  Failed: {entry.path} ({exc})")
+                    continue
+
                 if result_path:
                     try:
                         entry.converted_to = str(result_path.relative_to(base_dir))
@@ -529,7 +547,13 @@ def run_catalog_update(
                         entry.converted_to = str(result_path)
                     converted_count += 1
                     print(f"  Converted: {entry.path}")
+                else:
+                    failed_count += 1
             print(f"  {converted_count} file(s) converted")
+            if failed_count:
+                print(f"  {failed_count} file(s) failed conversion")
+            if skipped_count:
+                print(f"  {skipped_count} file(s) skipped")
         else:
             print("\nNo binary documents need conversion.")
 

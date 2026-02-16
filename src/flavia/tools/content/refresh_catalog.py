@@ -15,7 +15,7 @@ class RefreshCatalogTool(BaseTool):
     name = "refresh_catalog"
     description = (
         "Update the content catalog by scanning for new, modified, or deleted files. "
-        "Optionally convert new binary documents (PDFs) to text and generate summaries. "
+        "Optionally convert new binary documents (PDFs/Office) to text and generate summaries. "
         "Use this when you suspect the catalog is out of date."
     )
     category = "content"
@@ -28,7 +28,7 @@ class RefreshCatalogTool(BaseTool):
                 ToolParameter(
                     name="convert",
                     type="boolean",
-                    description="Convert new/modified binary documents (PDFs) to text (default: false)",
+                    description="Convert new/modified binary documents (PDFs/Office) to text (default: false)",
                     required=False,
                 ),
                 ToolParameter(
@@ -42,7 +42,7 @@ class RefreshCatalogTool(BaseTool):
 
     def execute(self, args: dict[str, Any], agent_context: "AgentContext") -> str:
         from flavia.content.catalog import ContentCatalog
-        from flavia.content.converters import PdfConverter
+        from flavia.content.converters import converter_registry
 
         convert = args.get("convert", False)
         remove_missing = args.get("remove_missing", True)
@@ -85,21 +85,41 @@ class RefreshCatalogTool(BaseTool):
 
             needs_conversion = catalog.get_files_needing_conversion()
             if needs_conversion:
-                converter = PdfConverter()
                 converted_count = 0
+                skipped_count = 0
+                failed_count = 0
                 for entry in needs_conversion:
                     source = agent_context.base_dir / entry.path
-                    if not converter.can_handle(source):
+                    converter = converter_registry.get_for_file(source)
+                    if not converter:
+                        skipped_count += 1
                         continue
-                    result = converter.convert(source, converted_dir)
+
+                    deps_ok, _missing = converter.check_dependencies()
+                    if not deps_ok:
+                        skipped_count += 1
+                        continue
+
+                    try:
+                        result = converter.convert(source, converted_dir)
+                    except Exception:
+                        failed_count += 1
+                        continue
+
                     if result:
                         try:
                             entry.converted_to = str(result.relative_to(agent_context.base_dir))
                         except ValueError:
                             entry.converted_to = str(result)
                         converted_count += 1
+                    else:
+                        failed_count += 1
 
                 parts.append(f"\n  Converted {converted_count} file(s) to text")
+                if failed_count:
+                    parts.append(f"  Failed conversions: {failed_count}")
+                if skipped_count:
+                    parts.append(f"  Skipped conversions: {skipped_count}")
 
         # Remove missing entries
         if remove_missing and counts["missing"] > 0:

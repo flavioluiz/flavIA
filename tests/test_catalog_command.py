@@ -11,6 +11,7 @@ from flavia.interfaces.catalog_command import (
     _format_size,
     _show_overview,
     _browse_files,
+    _manage_office_files,
     _manage_pdf_files,
     _offer_resummarization_with_quality,
     _show_online_sources,
@@ -210,6 +211,47 @@ def test_manage_pdf_files_blocks_path_traversal(monkeypatch, tmp_path):
         side_effect=["../secret.pdf", "simple", "__back__"],
     ), patch("flavia.content.converters.PdfConverter.convert", _fake_convert):
         _manage_pdf_files(catalog, config_dir, settings)
+
+    assert convert_calls == []
+    printed = " ".join(" ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list)
+    assert "Blocked unsafe path outside project directory" in printed
+
+
+def test_manage_office_files_blocks_path_traversal(monkeypatch, tmp_path):
+    config_dir = tmp_path / ".flavia"
+    config_dir.mkdir()
+
+    catalog = ContentCatalog(tmp_path)
+    catalog.files["../secret.docx"] = FileEntry(
+        path="../secret.docx",
+        name="secret.docx",
+        extension=".docx",
+        file_type="binary_document",
+        category="word",
+        size_bytes=10,
+        created_at="2026-01-01T00:00:00+00:00",
+        modified_at="2026-01-01T00:00:00+00:00",
+        indexed_at="2026-01-01T00:00:00+00:00",
+        checksum_sha256="abc",
+    )
+
+    settings = MagicMock()
+    settings.default_model = "openai:test"
+
+    convert_calls = []
+
+    def _fake_convert(self, source_path, output_dir, output_format="md"):
+        convert_calls.append((source_path, output_dir, output_format))
+        return None
+
+    with patch("flavia.interfaces.catalog_command.console") as mock_console, patch(
+        "flavia.interfaces.catalog_command.q_select",
+        side_effect=["../secret.docx", "convert", "__back__"],
+    ), patch("flavia.content.converters.OfficeConverter.convert", _fake_convert), patch(
+        "flavia.content.converters.OfficeConverter.check_dependencies",
+        return_value=(True, []),
+    ):
+        _manage_office_files(catalog, config_dir, settings)
 
     assert convert_calls == []
     printed = " ".join(" ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list)

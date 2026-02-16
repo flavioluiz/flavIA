@@ -114,7 +114,7 @@ In interactive CLI mode, press `Tab` to autocomplete:
 |------|-------------|
 | `--init` | Initialize local configuration with interactive wizard |
 | `--update` | Refresh content catalog (new/modified/deleted files) |
-| `--update-convert` | Refresh catalog and convert pending/modified binary documents (PDFs) |
+| `--update-convert` | Refresh catalog and convert pending/modified binary documents (PDFs and Office files) |
 | `--update-summarize` | Refresh catalog and generate summaries for pending files |
 | `--update-full` | Rebuild catalog from scratch |
 | `--telegram` | Start in Telegram bot mode |
@@ -308,6 +308,8 @@ Notes:
 - Online source converters are currently placeholders (URLs are cataloged, but content fetching/conversion is not implemented yet).
 - Online sources are persisted in `.flavia/content_catalog.json`.
 - `PDF Files` menu in `/catalog` supports per-file quality display, local text extraction, and explicit Mistral OCR execution.
+- `Office Documents` menu in `/catalog` supports per-file conversion to markdown and summary/quality refresh.
+- Office conversion requires installing the `office` extra; legacy/OpenDocument formats also require LibreOffice CLI.
 - Mistral OCR requires installing the `ocr` extra and exporting `MISTRAL_API_KEY`.
 - In `PDF Files`, you can run `Re-run summary/quality (no extraction)` to regenerate metadata from the existing converted markdown only.
 - If summary/quality generation fails, the CLI can prompt you to switch the active model and retry.
