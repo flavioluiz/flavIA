@@ -8,12 +8,15 @@ from flavia.config.settings import Settings
 from flavia.setup_wizard import (
     create_setup_agent,
     _approve_subagents,
+    _build_revision_task,
+    _build_setup_task,
     _build_content_catalog,
     find_binary_documents,
     find_image_files,
     _run_full_reconfiguration,
     _run_ai_setup,
     _run_basic_setup,
+    WRITE_CAPABLE_RUNTIME_TOOLS,
     run_agent_setup_command,
     run_setup_wizard,
 )
@@ -229,6 +232,84 @@ def test_run_basic_setup_writes_selected_model_to_env_and_agents(tmp_path):
     assert providers_data["default_provider"] == "openai"
     assert "openai" in providers_data["providers"]
     assert providers_data["providers"]["openai"]["models"][0]["id"] == "gpt-4o"
+
+
+def test_run_basic_setup_keeps_main_tools_read_only_when_write_not_authorized(tmp_path):
+    config_dir = tmp_path / ".flavia"
+
+    success = _run_basic_setup(
+        tmp_path,
+        config_dir,
+        selected_model="openai:gpt-4o",
+        main_agent_can_write=False,
+    )
+
+    assert success is True
+    tools = yaml.safe_load((config_dir / "agents.yaml").read_text(encoding="utf-8"))["main"]["tools"]
+    expected_read_only = {
+        "read_file",
+        "list_files",
+        "search_files",
+        "get_file_info",
+        "query_catalog",
+        "get_catalog_summary",
+        "analyze_image",
+        "compact_context",
+        "spawn_agent",
+        "spawn_predefined_agent",
+    }
+
+    assert expected_read_only.issubset(set(tools))
+    assert set(WRITE_CAPABLE_RUNTIME_TOOLS).isdisjoint(set(tools))
+
+
+def test_run_basic_setup_includes_compile_latex_when_write_is_authorized(tmp_path):
+    config_dir = tmp_path / ".flavia"
+
+    success = _run_basic_setup(
+        tmp_path,
+        config_dir,
+        selected_model="openai:gpt-4o",
+        main_agent_can_write=True,
+    )
+
+    assert success is True
+    tools = yaml.safe_load((config_dir / "agents.yaml").read_text(encoding="utf-8"))["main"]["tools"]
+
+    for tool_name in WRITE_CAPABLE_RUNTIME_TOOLS:
+        assert tool_name in tools
+
+
+def test_setup_and_revision_tasks_enforce_compile_latex_only_with_write_authorization():
+    setup_write_task = _build_setup_task(
+        convert_pdfs=False,
+        selected_model="openai:gpt-4o",
+        user_guidance="",
+        main_agent_can_write=True,
+        revision_notes=[],
+    )
+    assert "compile_latex" in setup_write_task
+    assert "full default runtime toolset with write access" in setup_write_task
+
+    setup_read_only_task = _build_setup_task(
+        convert_pdfs=False,
+        selected_model="openai:gpt-4o",
+        user_guidance="",
+        main_agent_can_write=False,
+        revision_notes=[],
+    )
+    assert "read-only default runtime toolset" in setup_read_only_task
+    assert "Do NOT include write-capable tools" in setup_read_only_task
+    assert "compile_latex" in setup_read_only_task
+
+    revision_task = _build_revision_task(
+        current_config="main:\n  tools:\n    - read_file\n",
+        selected_model="openai:gpt-4o",
+        main_agent_can_write=False,
+        feedback="leave it read-only",
+    )
+    assert "does NOT include write-capable tools" in revision_task
+    assert "compile_latex" in revision_task
 
 
 def test_run_setup_wizard_passes_selected_model_to_basic_setup(monkeypatch, tmp_path):

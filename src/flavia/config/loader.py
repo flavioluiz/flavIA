@@ -195,6 +195,8 @@ main:
   #     - "./output"       # Write access (also grants read)
 
   # Tools available to this agent
+  # Keep write-capable tools (write_* and compile_latex) disabled unless
+  # permissions.write is explicitly configured for this agent.
   tools:
     - read_file
     - list_files
@@ -202,7 +204,8 @@ main:
     - get_file_info
     - query_catalog
     - get_catalog_summary
-    - refresh_catalog
+    - analyze_image
+    - compact_context
     - spawn_agent
     - spawn_predefined_agent
 

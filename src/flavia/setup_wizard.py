@@ -34,6 +34,27 @@ WRITE_TOOLS = [
     "create_directory",
     "remove_directory",
 ]
+RUNTIME_CORE_TOOLS = [
+    "read_file",
+    "list_files",
+    "search_files",
+    "get_file_info",
+    "query_catalog",
+    "get_catalog_summary",
+    "analyze_image",
+    "compact_context",
+]
+SPAWN_TOOLS = ["spawn_agent", "spawn_predefined_agent"]
+WRITE_CAPABLE_RUNTIME_TOOLS = WRITE_TOOLS + ["compile_latex", "refresh_catalog"]
+
+
+def _default_main_tools(main_agent_can_write: bool) -> list[str]:
+    """Return default runtime tools for the main agent."""
+    tools = list(RUNTIME_CORE_TOOLS)
+    if main_agent_can_write:
+        tools.extend(WRITE_CAPABLE_RUNTIME_TOOLS)
+    tools.extend(SPAWN_TOOLS)
+    return tools
 
 
 # System prompt for the setup agent
@@ -77,12 +98,20 @@ Available tools:
 - get_file_info: Get file metadata
 - query_catalog: Search the content catalog for files by name, type, or content
 - get_catalog_summary: Get a high-level overview of the project content
+- analyze_image: Describe images with a vision-capable model
+- compact_context: Compact long conversations and keep key context
+- compile_latex: Compile .tex files into PDF (only when write access is allowed)
+- refresh_catalog: Rebuild the project catalog (writes catalog data; only with write access)
 - spawn_agent: Create dynamic sub-agents
 - spawn_predefined_agent: Use predefined subagents
 
-When generating agents.yaml, valid runtime write tools are:
-- write_file, edit_file, insert_text, append_file, delete_file, create_directory, remove_directory
-- Only include these when the task explicitly asks for file-modification capability.
+When generating agents.yaml:
+- Default `main.tools` should include all read/runtime tools:
+  read_file, list_files, search_files, get_file_info, query_catalog, get_catalog_summary,
+  analyze_image, compact_context, spawn_agent, spawn_predefined_agent
+- Only include write-capable tools when write access is explicitly requested:
+  write_file, edit_file, insert_text, append_file, delete_file, create_directory,
+  remove_directory, compile_latex, refresh_catalog
 
 ## Final Step:
 
@@ -142,8 +171,11 @@ Use `create_agents_config` to create the configuration with:
 - Helpful specialist subagents
 
 When generating agents.yaml, valid runtime write tools are:
-- write_file, edit_file, insert_text, append_file, delete_file, create_directory, remove_directory
-- Only include these when the task explicitly asks for file-modification capability.
+- write_file, edit_file, insert_text, append_file, delete_file, create_directory,
+  remove_directory, compile_latex, refresh_catalog
+- Also include these read/runtime tools by default:
+  read_file, list_files, search_files, get_file_info, query_catalog, get_catalog_summary,
+  analyze_image, compact_context, spawn_agent, spawn_predefined_agent
 
 Include a project_description that captures the academic subject.
 """
@@ -1210,17 +1242,9 @@ def _run_basic_setup(
             _write_providers_file(config_dir, effective_model)
 
         # Create academic-focused default agents.yaml
-        write_tools_block = ""
-        if main_agent_can_write:
-            write_tools_block = (
-                "    - write_file\n"
-                "    - edit_file\n"
-                "    - insert_text\n"
-                "    - append_file\n"
-                "    - delete_file\n"
-                "    - create_directory\n"
-                "    - remove_directory\n"
-            )
+        main_tools_block = "".join(
+            f"    - {tool}\n" for tool in _default_main_tools(main_agent_can_write)
+        )
 
         agents_content = f"""\
 # flavIA Agent Configuration
@@ -1240,16 +1264,7 @@ main:
     - Prefer catalog-first workflow: get_catalog_summary/query_catalog before reading many files
 
   tools:
-    - read_file
-    - list_files
-    - search_files
-    - get_file_info
-    - query_catalog
-    - get_catalog_summary
-    - refresh_catalog
-{write_tools_block}\
-    - spawn_agent
-    - spawn_predefined_agent
+{main_tools_block}\
 
   subagents:
     summarizer:
@@ -1536,18 +1551,22 @@ def _build_setup_task(
         ),
     ]
 
-    write_tools_str = ", ".join(WRITE_TOOLS)
+    read_only_tools_str = ", ".join(_default_main_tools(False))
+    write_enabled_tools_str = ", ".join(_default_main_tools(True))
+    write_capable_tools_str = ", ".join(WRITE_CAPABLE_RUNTIME_TOOLS)
     if main_agent_can_write:
         parts.append(
             "The user explicitly wants the main agent to be able to modify files. "
-            "When generating `main.tools`, include ALL write tools: "
-            f"{write_tools_str}. "
+            "Set `main.tools` to the full default runtime toolset with write access: "
+            f"{write_enabled_tools_str}. "
             "Also include `permissions.write` with appropriate writable directories."
         )
     else:
         parts.append(
             "The user wants a read-only main agent. "
-            f"Do NOT include write tools in `main.tools` ({write_tools_str})."
+            "Set `main.tools` to the read-only default runtime toolset: "
+            f"{read_only_tools_str}. "
+            f"Do NOT include write-capable tools ({write_capable_tools_str})."
         )
 
     # Subagent instructions
@@ -2320,17 +2339,22 @@ def _build_revision_task(
     catalog: Optional[Any] = None,
 ) -> str:
     """Build a revision task that includes the current config and user feedback."""
-    write_tools_str = ", ".join(WRITE_TOOLS)
+    read_only_tools_str = ", ".join(_default_main_tools(False))
+    write_enabled_tools_str = ", ".join(_default_main_tools(True))
+    write_capable_tools_str = ", ".join(WRITE_CAPABLE_RUNTIME_TOOLS)
     if main_agent_can_write:
         write_instruction = (
             "Keep or enable write capability for the main agent. "
-            f"Ensure `main.tools` includes all write tools ({write_tools_str}) "
+            "Set `main.tools` to the full default runtime toolset with write access: "
+            f"{write_enabled_tools_str}. "
             "and `permissions.write` includes allowed writable paths."
         )
     else:
         write_instruction = (
             "Enforce read-only behavior for the main agent. "
-            f"Ensure `main.tools` does NOT include write tools ({write_tools_str})."
+            "Set `main.tools` to the read-only default runtime toolset: "
+            f"{read_only_tools_str}. "
+            f"Ensure `main.tools` does NOT include write-capable tools ({write_capable_tools_str})."
         )
 
     parts = [

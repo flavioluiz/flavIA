@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from flavia.config.loader import get_config_paths
+from flavia.config.loader import get_config_paths, init_local_config
 from flavia.config.settings import load_settings
 
 
@@ -126,3 +126,14 @@ def test_python_m_flavia_propagates_exit_code(tmp_path):
 
     assert result.returncode == 1
     assert "API key not configured" in result.stdout
+
+
+def test_init_local_config_uses_broad_read_only_toolset(tmp_path):
+    ok = init_local_config(tmp_path)
+    assert ok is True
+
+    agents_data = (tmp_path / ".flavia" / "agents.yaml").read_text(encoding="utf-8")
+    assert "- analyze_image" in agents_data
+    assert "- compact_context" in agents_data
+    assert "- refresh_catalog" not in agents_data
+    assert "- compile_latex" not in agents_data

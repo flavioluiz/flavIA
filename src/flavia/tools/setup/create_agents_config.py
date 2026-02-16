@@ -37,7 +37,8 @@ class CreateAgentsConfigTool(BaseTool):
                     description=(
                         "List of tools for the main agent. Available: "
                         "read_file, list_files, search_files, get_file_info, "
-                        "query_catalog, get_catalog_summary, refresh_catalog, "
+                        "query_catalog, get_catalog_summary, refresh_catalog, analyze_image, "
+                        "compact_context, compile_latex, "
                         "write_file, edit_file, insert_text, append_file, delete_file, "
                         "create_directory, remove_directory, "
                         "spawn_agent, spawn_predefined_agent"
