@@ -1,6 +1,7 @@
 """LLM-based summarization for files and directories."""
 
 import logging
+import re
 from pathlib import Path
 from typing import Any, Optional
 
@@ -162,13 +163,25 @@ def summarize_file_with_quality(
     if not lines:
         return None, None
 
-    summary = lines[0]
     quality: Optional[str] = None
-    if len(lines) >= 2:
-        q = lines[-1].lower()
-        if q in ("good", "partial", "poor"):
-            quality = q
+    quality_index: Optional[int] = None
+    for i in range(len(lines) - 1, -1, -1):
+        m = re.fullmatch(
+            r"(?:quality\s*[:=-]\s*)?(good|partial|poor)\.?",
+            lines[i],
+            flags=re.IGNORECASE,
+        )
+        if m:
+            quality = m.group(1).lower()
+            quality_index = i
+            break
 
+    summary_lines = (
+        [line for idx, line in enumerate(lines) if idx != quality_index]
+        if quality_index is not None
+        else lines
+    )
+    summary = " ".join(summary_lines).strip() or None
     return summary, quality
 
 

@@ -309,6 +309,8 @@ Notes:
 - Online sources are persisted in `.flavia/content_catalog.json`.
 - `PDF Files` menu in `/catalog` supports per-file quality display, local text extraction, and explicit Mistral OCR execution.
 - Mistral OCR requires installing the `ocr` extra and exporting `MISTRAL_API_KEY`.
+- In `PDF Files`, you can run `Re-run summary/quality (no extraction)` to regenerate metadata from the existing converted markdown only.
+- If summary/quality generation fails, the CLI can prompt you to switch the active model and retry.
 
 ## Startup connection check
 

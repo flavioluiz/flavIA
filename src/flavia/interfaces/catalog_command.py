@@ -365,6 +365,9 @@ def _manage_pdf_files(catalog: ContentCatalog, config_dir: Path, settings: Setti
     """Interactive PDF file manager with OCR support."""
     import os
 
+    base_dir = config_dir.parent
+    converted_dir = base_dir / ".converted"
+
     pdf_files = [
         e for e in catalog.files.values()
         if e.category == "pdf" and e.status != "missing"
@@ -408,12 +411,7 @@ def _manage_pdf_files(catalog: ContentCatalog, config_dir: Path, settings: Setti
         if entry is None:
             break
 
-        # Show details
-        console.print(f"\n[bold cyan]{entry.path}[/bold cyan]  {_quality_badge(entry.extraction_quality)}")
-        if entry.summary:
-            console.print(Panel(entry.summary, title="Summary", expand=False))
-        if entry.converted_to:
-            console.print(f"[dim]Converted to: {entry.converted_to}[/dim]")
+        _show_pdf_entry_details(entry, base_dir, settings)
 
         # Action menu
         try:
@@ -421,18 +419,22 @@ def _manage_pdf_files(catalog: ContentCatalog, config_dir: Path, settings: Setti
             action_choices = [
                 _q.Choice(title="Run full OCR (Mistral API)", value="ocr"),
                 _q.Choice(title="Extract text (simple)", value="simple"),
+                _q.Choice(title="Re-run summary/quality (no extraction)", value="resummarize"),
                 _q.Choice(title="Back", value="back"),
             ]
         except ImportError:
-            action_choices = ["Run full OCR (Mistral API)", "Extract text (simple)", "Back"]
+            action_choices = [
+                "Run full OCR (Mistral API)",
+                "Extract text (simple)",
+                "Re-run summary/quality (no extraction)",
+                "Back",
+            ]
 
         action = q_select("Action:", choices=action_choices)
 
         if action in (None, "back", "Back"):
             continue
 
-        base_dir = config_dir.parent
-        converted_dir = base_dir / ".converted"
         source = (base_dir / entry.path).resolve()
         try:
             source.relative_to(base_dir.resolve())
@@ -459,35 +461,7 @@ def _manage_pdf_files(catalog: ContentCatalog, config_dir: Path, settings: Setti
                 except ValueError:
                     entry.converted_to = str(result_path)
                 console.print(f"[green]OCR complete:[/green] {entry.converted_to}")
-
-                # Offer re-summarization
-                provider, model_id = settings.resolve_model_with_provider(settings.default_model)
-                if provider and provider.api_key:
-                    try:
-                        import questionary as _q2
-                        resummarize_choices = [
-                            _q2.Choice(title="Yes, re-summarize with quality assessment", value="yes"),
-                            _q2.Choice(title="No", value="no"),
-                        ]
-                    except ImportError:
-                        resummarize_choices = ["Yes, re-summarize with quality assessment", "No"]
-
-                    do_resummary = q_select("Re-summarize now?", choices=resummarize_choices)
-                    if do_resummary in ("yes", "Yes, re-summarize with quality assessment"):
-                        from flavia.content.summarizer import summarize_file_with_quality
-                        summary, quality = summarize_file_with_quality(
-                            entry,
-                            base_dir,
-                            api_key=provider.api_key,
-                            api_base_url=provider.api_base_url,
-                            model=model_id,
-                            headers=provider.headers if provider.headers else None,
-                        )
-                        if summary:
-                            entry.summary = summary
-                        if quality:
-                            entry.extraction_quality = quality
-                        console.print(f"[green]Re-summarized.[/green] Quality: {_quality_badge(entry.extraction_quality)}")
+                _offer_resummarization_with_quality(entry, base_dir, settings)
 
                 catalog.save(config_dir)
                 console.print("[dim]Catalog saved.[/dim]")
@@ -504,10 +478,205 @@ def _manage_pdf_files(catalog: ContentCatalog, config_dir: Path, settings: Setti
                 except ValueError:
                     entry.converted_to = str(result_path)
                 console.print(f"[green]Extraction complete:[/green] {entry.converted_to}")
+                _offer_resummarization_with_quality(entry, base_dir, settings)
                 catalog.save(config_dir)
                 console.print("[dim]Catalog saved.[/dim]")
             else:
                 console.print("[red]Extraction failed.[/red]")
+
+        elif action in ("resummarize", "Re-run summary/quality (no extraction)"):
+            if not entry.converted_to:
+                console.print(
+                    "[yellow]No converted text found. Run OCR or text extraction first.[/yellow]"
+                )
+                continue
+
+            _offer_resummarization_with_quality(
+                entry,
+                base_dir,
+                settings,
+                ask_confirmation=False,
+            )
+            catalog.save(config_dir)
+            console.print("[dim]Catalog saved.[/dim]")
+
+
+def _show_pdf_entry_details(entry, base_dir: Path, settings: Settings) -> None:
+    """Show selected PDF details including conversion and summary metadata."""
+    console.print(f"\n[bold cyan]{entry.path}[/bold cyan]  {_quality_badge(entry.extraction_quality)}")
+
+    converted_exists = False
+    if entry.converted_to:
+        converted_path = (base_dir / entry.converted_to).resolve()
+        try:
+            converted_path.relative_to(base_dir.resolve())
+            converted_exists = converted_path.exists()
+        except ValueError:
+            converted_exists = False
+
+    try:
+        provider, model_id = settings.resolve_model_with_provider(settings.default_model)
+    except Exception:
+        provider, model_id = None, str(settings.default_model)
+    provider_id = getattr(provider, "id", None) if provider else None
+    active_model_ref = f"{provider_id}:{model_id}" if provider_id else str(model_id)
+
+    details = Table(show_header=False, box=None)
+    details.add_column("Field", style="dim")
+    details.add_column("Value")
+    details.add_row("Converted file", entry.converted_to or "[dim](none)[/dim]")
+    details.add_row("Converted exists", "[green]yes[/green]" if converted_exists else "[dim]no[/dim]")
+    details.add_row("Summary", "[green]yes[/green]" if entry.summary else "[dim]no[/dim]")
+    details.add_row("Extraction quality", _quality_badge(entry.extraction_quality))
+    details.add_row("Summary model", f"[cyan]{active_model_ref}[/cyan]")
+    console.print(details)
+
+    if entry.summary:
+        console.print(Panel(entry.summary, title="Summary", expand=False))
+    else:
+        console.print("[dim]No summary available for this file.[/dim]")
+
+
+def _prompt_yes_no(prompt: str, yes_title: str = "Yes", no_title: str = "No") -> bool:
+    """Prompt for a yes/no choice and return True only on yes."""
+    try:
+        import questionary as _q
+        choices = [
+            _q.Choice(title=yes_title, value=True),
+            _q.Choice(title=no_title, value=False),
+        ]
+    except ImportError:
+        choices = [yes_title, no_title]
+
+    choice = q_select(prompt, choices=choices)
+    return choice in (True, yes_title, "yes", "y", "Y")
+
+
+def _select_model_for_summary(settings: Settings) -> bool:
+    """Allow selecting another model for summary generation in current session."""
+    choices = []
+    default_choice = settings.default_model
+
+    if settings.providers.providers:
+        for provider in settings.providers.providers.values():
+            for model in provider.models:
+                ref = f"{provider.id}:{model.id}"
+                label = f"{provider.name} ({provider.id}) - {model.name} ({model.id})"
+                choices.append((label, ref))
+
+        provider, model_id = settings.resolve_model_with_provider(settings.default_model)
+        if provider:
+            default_choice = f"{provider.id}:{model_id}"
+    else:
+        for model in settings.models:
+            choices.append((f"{model.name} ({model.id})", model.id))
+        default_choice = str(settings.resolve_model(settings.default_model))
+
+    if not choices:
+        console.print("[yellow]No models available to select.[/yellow]")
+        return False
+
+    try:
+        import questionary as _q
+        model_choices = [_q.Choice(title=label, value=ref) for label, ref in choices]
+        model_choices.append(_q.Choice(title="Cancel", value="__cancel__"))
+    except ImportError:
+        model_choices = [label for label, _ in choices] + ["Cancel"]
+
+    selection = q_select(
+        "Select a model for summary/quality:",
+        choices=model_choices,
+        default=default_choice,
+    )
+    if selection in (None, "__cancel__", "Cancel"):
+        return False
+
+    if selection not in {ref for _, ref in choices}:
+        reverse = {label: ref for label, ref in choices}
+        selection = reverse.get(selection, selection)
+
+    settings.default_model = str(selection)
+    console.print(f"[green]Summary model switched to:[/green] [cyan]{settings.default_model}[/cyan]")
+    return True
+
+
+def _resolve_summary_runtime(
+    settings: Settings,
+) -> tuple[str, str, str, str, Optional[dict[str, str]]]:
+    """Resolve active summary model and runtime credentials."""
+    provider, model_id = settings.resolve_model_with_provider(settings.default_model)
+    if provider:
+        provider_id = getattr(provider, "id", None)
+        model_ref = f"{provider_id}:{model_id}" if provider_id else str(model_id)
+        headers = provider.headers if provider.headers else None
+        return model_ref, model_id, provider.api_key, provider.api_base_url, headers
+
+    return (
+        str(model_id),
+        model_id,
+        settings.api_key,
+        settings.api_base_url,
+        None,
+    )
+
+
+def _offer_resummarization_with_quality(
+    entry,
+    base_dir: Path,
+    settings: Settings,
+    ask_confirmation: bool = True,
+) -> None:
+    """Optionally re-summarize a converted file and store extraction quality."""
+    if ask_confirmation and not _prompt_yes_no("Re-summarize now?", "Yes", "No"):
+        return
+
+    from flavia.content.summarizer import summarize_file_with_quality
+
+    while True:
+        model_ref, model_id, api_key, api_base_url, headers = _resolve_summary_runtime(settings)
+        console.print(f"[dim]Summary model: {model_ref}[/dim]")
+
+        if not api_key:
+            console.print(
+                "[yellow]Summary/quality skipped: no API key configured for the active model provider.[/yellow]"
+            )
+            if _prompt_yes_no(
+                "Select another model now?",
+                "Yes, choose another model",
+                "No",
+            ) and _select_model_for_summary(settings):
+                continue
+            return
+
+        summary, quality = summarize_file_with_quality(
+            entry,
+            base_dir,
+            api_key=api_key,
+            api_base_url=api_base_url,
+            model=model_id,
+            headers=headers,
+        )
+        if summary:
+            entry.summary = summary
+        if quality:
+            entry.extraction_quality = quality
+
+        if summary or quality:
+            console.print(
+                f"[green]Re-summarized.[/green] Quality: {_quality_badge(entry.extraction_quality)}"
+            )
+            return
+
+        console.print(
+            "[yellow]Re-summarization failed: no summary/quality returned by the LLM.[/yellow]"
+        )
+        if _prompt_yes_no(
+            "Try another model?",
+            "Yes, choose model and retry",
+            "No",
+        ) and _select_model_for_summary(settings):
+            continue
+        return
 
 
 def _format_size(size_bytes: int) -> str:

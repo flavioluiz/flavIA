@@ -181,6 +181,29 @@ def test_summarize_file_with_quality_allows_missing_quality(monkeypatch, tmp_pat
     assert quality is None
 
 
+def test_summarize_file_with_quality_parses_quality_with_prefix(monkeypatch, tmp_path):
+    md_file = tmp_path / "doc.md"
+    md_file.write_text("This is a document.", encoding="utf-8")
+    entry = _build_entry("doc.md")
+
+    monkeypatch.setattr(
+        summarizer_module,
+        "_call_llm",
+        lambda *args, **kwargs: "Line one summary.\nLine two summary.\nQuality: partial",
+    )
+
+    summary, quality = summarize_file_with_quality(
+        entry=entry,
+        base_dir=tmp_path,
+        api_key="test-key",
+        api_base_url="https://api.example.com/v1",
+        model="test-model",
+    )
+
+    assert summary == "Line one summary. Line two summary."
+    assert quality == "partial"
+
+
 def test_summarize_file_uses_custom_timeouts(monkeypatch, tmp_path):
     """Test that custom timeout values are passed correctly."""
     md_file = tmp_path / "doc.md"
