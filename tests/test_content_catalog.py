@@ -131,6 +131,7 @@ class TestFileScanner:
         assert classify(".pdf") == ("binary_document", "pdf")
         assert classify(".docx") == ("binary_document", "word")
         assert classify(".png") == ("image", "png")
+        assert classify(".svg") == ("image", "svg")
         assert classify(".mp3") == ("audio", "mp3")
         assert classify(".mp4") == ("video", "mp4")
         assert classify(".zip") == ("archive", "zip")

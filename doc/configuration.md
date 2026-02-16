@@ -167,6 +167,10 @@ The `{base_dir}` placeholder in the context is replaced with the base directory 
 | `list_files` | read | List directory contents |
 | `search_files` | read | Search for patterns in files |
 | `get_file_info` | read | Get file metadata |
+| `query_catalog` | content | Query indexed files by filters (name, type, extension, summary text) |
+| `get_summary` | content | Retrieve stored summaries from the content catalog |
+| `refresh_catalog` | content | Rescan project files and update the content catalog |
+| `analyze_image` | content | Analyze an image with a vision-capable model and return a detailed description |
 | `compile_latex` | academic | Compile `.tex` into PDF with log parsing and configurable passes |
 | `write_file` | write | Create or overwrite a file |
 | `edit_file` | write | Replace exact text in a file (single match required) |
@@ -290,6 +294,7 @@ OPENAI_API_KEY=your_openai_key
 OPENROUTER_API_KEY=your_openrouter_key
 MISTRAL_API_KEY=your_mistral_key   # optional, for PDF OCR in /catalog
 SUMMARY_MODEL=synthetic:hf:moonshotai/Kimi-K2-Instruct-0905  # optional, overrides only catalog summary/quality model
+IMAGE_VISION_MODEL=synthetic:hf:moonshotai/Kimi-K2.5  # optional, overrides model used for image analysis
 
 # Legacy single-provider config (still works)
 API_BASE_URL=https://api.synthetic.new/openai/v1

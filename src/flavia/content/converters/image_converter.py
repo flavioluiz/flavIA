@@ -18,8 +18,9 @@ from .base import BaseConverter
 logger = logging.getLogger(__name__)
 console = Console()
 
-# Default vision-capable model for image analysis
-DEFAULT_VISION_MODEL = "synthetic:moonshotai/Kimi-K2.5"
+# Default vision-capable model for image analysis.
+# Format is provider:model_id to integrate with ProviderRegistry resolution.
+DEFAULT_VISION_MODEL = "synthetic:hf:moonshotai/Kimi-K2.5"
 
 
 class ImageConverter(BaseConverter):

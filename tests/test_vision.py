@@ -71,6 +71,14 @@ class TestEncodeImageBase64:
         with pytest.raises(ValueError, match="Cannot determine MIME type"):
             encode_image_base64(image_file)
 
+    def test_encode_empty_file_raises_error(self, tmp_path: Path):
+        """encode_image_base64 raises ValueError for empty image files."""
+        image_file = tmp_path / "empty.jpg"
+        image_file.write_bytes(b"")
+
+        with pytest.raises(ValueError, match="Image file is empty"):
+            encode_image_base64(image_file)
+
 
 class TestConvertSvgToPng:
     """Tests for SVG to PNG conversion."""
@@ -248,8 +256,8 @@ class TestVisionIncompatibilityError:
             "vision capability missing",
             "image analysis not available",
             "multimodal not supported",
-            "unsupported content type",
-            "invalid content type",
+            "unsupported content type: image_url",
+            "invalid content type for image input",
             "does not support image",
             "not support images",
         ],
@@ -270,6 +278,8 @@ class TestVisionIncompatibilityError:
             "network timeout",
             "invalid API key",
             "some other error",
+            "Unsupported parameter: 'temperature'",
+            "invalid content type for text input",
         ],
     )
     def test_non_vision_errors(self, error_string: str):
@@ -291,6 +301,43 @@ class TestVisionIncompatibilityError:
 
 class TestAnalyzeImage:
     """Tests for the main analyze_image function."""
+
+    @patch("flavia.content.vision._prepare_image_content")
+    def test_analyze_image_rejects_oversized_image(self, mock_prepare, tmp_path: Path):
+        """analyze_image rejects images larger than the configured limit."""
+        image_file = tmp_path / "large.png"
+        image_file.write_bytes(b"12345")
+
+        description, error = analyze_image(
+            image_path=image_file,
+            api_key="test-key",
+            api_base_url="https://api.example.com",
+            model="test-model",
+            max_image_bytes=4,
+        )
+
+        assert description is None
+        assert error is not None
+        assert "too large" in error.lower()
+        mock_prepare.assert_not_called()
+
+    @patch("flavia.content.vision._prepare_image_content")
+    def test_analyze_image_rejects_empty_file(self, mock_prepare, tmp_path: Path):
+        """analyze_image rejects empty image files before API call."""
+        image_file = tmp_path / "empty.png"
+        image_file.write_bytes(b"")
+
+        description, error = analyze_image(
+            image_path=image_file,
+            api_key="test-key",
+            api_base_url="https://api.example.com",
+            model="test-model",
+        )
+
+        assert description is None
+        assert error is not None
+        assert "empty" in error.lower()
+        mock_prepare.assert_not_called()
 
     @patch("flavia.content.vision._prepare_image_content")
     @patch("flavia.content.vision._call_vision_llm")

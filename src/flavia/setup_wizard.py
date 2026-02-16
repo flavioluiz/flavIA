@@ -184,6 +184,20 @@ def find_binary_documents(directory: Path) -> List[Path]:
     )
 
 
+def find_image_files(directory: Path) -> List[Path]:
+    """Find image files that can be converted to text descriptions."""
+    from flavia.content.scanner import IMAGE_EXTENSIONS
+
+    return sorted(
+        (
+            path
+            for path in directory.rglob("*")
+            if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
+        ),
+        key=lambda path: str(path),
+    )
+
+
 def _pdf_paths_for_tools(base_dir: Path, pdf_files: List[Path]) -> List[str]:
     """Build path references for tool calls, preserving subdirectory structure."""
     refs: list[str] = []
@@ -698,9 +712,11 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
             break
         selected_model = _select_model_for_setup(settings)
 
-    # Check for binary documents (PDFs, and future: DOCX, XLSX, etc.)
+    # Check for convertible files
     binary_docs = find_binary_documents(target_dir)
+    image_files = find_image_files(target_dir)
     convert_docs = False
+    files_to_convert: list[Path] = []
 
     if binary_docs:
         # Group by extension for display
@@ -724,11 +740,41 @@ def run_setup_wizard(target_dir: Optional[Path] = None) -> bool:
 
         console.print("\n[bold]Convert documents to text for analysis?[/bold]")
         console.print("  (This allows the AI to read and search the documents)")
-        convert_docs = safe_confirm("Convert documents?", default=True)
+        if safe_confirm("Convert documents?", default=True):
+            files_to_convert.extend(binary_docs)
+
+    if image_files:
+        ext_counts: dict[str, int] = {}
+        for image in image_files:
+            ext = image.suffix.lower()
+            ext_counts[ext] = ext_counts.get(ext, 0) + 1
+
+        ext_summary = ", ".join(f"{count} {ext.upper()}" for ext, count in ext_counts.items())
+        console.print(f"\n[bold]Found {len(image_files)} image file(s) ({ext_summary}):[/bold]")
+
+        table = Table(show_header=False, box=None, padding=(0, 2))
+        for image in image_files[:10]:  # Show first 10
+            size_kb = image.stat().st_size / 1024
+            table.add_row(f"  [cyan]{image.name}[/cyan]", f"[dim]{size_kb:.1f} KB[/dim]")
+        if len(image_files) > 10:
+            table.add_row(f"  [dim]... and {len(image_files) - 10} more[/dim]", "")
+        console.print(table)
+
+        console.print("\n[bold]Generate text descriptions for images?[/bold]")
+        console.print("  (Uses vision-capable LLM calls and can consume tokens)")
+        if safe_confirm("Convert images to descriptions?", default=False):
+            files_to_convert.extend(image_files)
+
+    convert_docs = bool(files_to_convert)
 
     # Build content catalog BEFORE AI analysis (so summaries can be used as context)
     config_dir.mkdir(parents=True, exist_ok=True)
-    catalog = _build_content_catalog(target_dir, config_dir, convert_docs, binary_docs)
+    catalog = _build_content_catalog(
+        target_dir,
+        config_dir,
+        convert_docs=convert_docs,
+        binary_docs=files_to_convert if convert_docs else None,
+    )
 
     # Ask about LLM summaries
     generate_summaries = False
@@ -875,8 +921,8 @@ def _build_content_catalog(
     Args:
         target_dir: Project root directory.
         config_dir: The .flavia/ directory.
-        convert_docs: Whether to convert binary documents first.
-        binary_docs: List of binary document paths to convert.
+        convert_docs: Whether to convert files first.
+        binary_docs: List of file paths to convert (binary docs and/or images).
 
     Returns:
         The ContentCatalog instance, or None on failure.
@@ -884,9 +930,9 @@ def _build_content_catalog(
     from flavia.content.catalog import ContentCatalog
     from flavia.content.converters import converter_registry
 
-    # Convert binary documents first if requested
+    # Convert files first if requested
     if convert_docs and binary_docs:
-        console.print("\n[dim]Converting binary documents...[/dim]")
+        console.print("\n[dim]Converting files...[/dim]")
         converted_dir = target_dir / CONVERTED_DIR_NAME
         converted_count = 0
         failed_count = 0
@@ -919,11 +965,11 @@ def _build_content_catalog(
                 console.print(f"  [dim]Converted: {doc.name}[/dim]")
 
         if converted_count > 0:
-            console.print(f"[dim]  {converted_count} document(s) converted[/dim]")
+            console.print(f"[dim]  {converted_count} file(s) converted[/dim]")
         if failed_count > 0:
-            console.print(f"[yellow]  {failed_count} document(s) failed conversion[/yellow]")
+            console.print(f"[yellow]  {failed_count} file(s) failed conversion[/yellow]")
         if skipped_count > 0:
-            console.print(f"[dim]  {skipped_count} document(s) skipped (no converter)[/dim]")
+            console.print(f"[dim]  {skipped_count} file(s) skipped (no converter)[/dim]")
 
     console.print("\n[dim]Building content catalog...[/dim]")
     try:
@@ -942,7 +988,12 @@ def _build_content_catalog(
                 "document",
             }
             for entry in catalog.files.values():
-                if entry.file_type == "binary_document" and entry.category in convertible_categories:
+                is_convertible_binary_doc = (
+                    entry.file_type == "binary_document" and entry.category in convertible_categories
+                )
+                is_convertible_image = entry.file_type == "image"
+
+                if is_convertible_binary_doc or is_convertible_image:
                     # Check both preserved relative structure and flat output naming.
                     relative_md = Path(entry.path).with_suffix(".md")
                     candidates = [
@@ -1268,13 +1319,13 @@ def _run_ai_setup(
 
             if not interactive_review:
                 _ensure_catalog_built()
-                _print_success(config_dir, has_pdfs=convert_pdfs)
+                _print_success(config_dir, has_converted_files=convert_pdfs)
                 return True
 
             _show_agents_preview(agents_file)
             if safe_confirm("Accept this agent configuration?", default=True):
                 _ensure_catalog_built()
-                _print_success(config_dir, has_pdfs=convert_pdfs)
+                _print_success(config_dir, has_converted_files=convert_pdfs)
                 return True
 
             if safe_confirm("Use default configuration instead?", default=False):
@@ -1437,11 +1488,11 @@ def _show_agents_preview(agents_file: Path, max_lines: int = 80) -> None:
     console.print(Markdown(f"```yaml\n{preview}\n```"))
 
 
-def _print_success(config_dir: Path, has_pdfs: bool = False):
+def _print_success(config_dir: Path, has_converted_files: bool = False):
     """Print success message."""
     extra_info = ""
-    if has_pdfs:
-        extra_info = f"\n[dim]Converted documents are in: {CONVERTED_DIR_NAME}/[/dim]\n"
+    if has_converted_files:
+        extra_info = f"\n[dim]Converted files are in: {CONVERTED_DIR_NAME}/[/dim]\n"
 
     console.print(
         Panel.fit(

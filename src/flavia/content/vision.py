@@ -35,7 +35,7 @@ def encode_image_base64(image_path: Path) -> tuple[str, str]:
 
     Raises:
         FileNotFoundError: If the image file doesn't exist.
-        ValueError: If the MIME type cannot be determined.
+        ValueError: If the file is empty or MIME type cannot be determined.
     """
     if not image_path.exists():
         raise FileNotFoundError(f"Image file not found: {image_path}")
@@ -64,6 +64,9 @@ def encode_image_base64(image_path: Path) -> tuple[str, str]:
     # Read and encode
     with open(image_path, "rb") as f:
         image_data = f.read()
+
+    if not image_data:
+        raise ValueError(f"Image file is empty: {image_path}")
 
     encoded = base64.b64encode(image_data).decode("utf-8")
     return encoded, mime_type
@@ -143,6 +146,7 @@ def analyze_image(
     timeout: float = 60.0,
     connect_timeout: float = 10.0,
     max_tokens: int = 1000,
+    max_image_bytes: int = 20 * 1024 * 1024,
 ) -> tuple[Optional[str], Optional[str]]:
     """
     Analyze an image using a vision-capable LLM model.
@@ -157,12 +161,29 @@ def analyze_image(
         timeout: Request timeout in seconds.
         connect_timeout: Connection timeout in seconds.
         max_tokens: Maximum tokens in the response.
+        max_image_bytes: Maximum allowed image file size in bytes.
 
     Returns:
         Tuple of (description, error).
         On success: (description_text, None)
         On failure: (None, error_message)
     """
+    # Guardrail: prevent very large image payloads/cost spikes.
+    try:
+        file_size = image_path.stat().st_size
+    except OSError as e:
+        return None, f"Failed to read image metadata: {e}"
+
+    if file_size == 0:
+        return None, f"Image file is empty: {image_path}"
+
+    if max_image_bytes > 0 and file_size > max_image_bytes:
+        return (
+            None,
+            f"Image file too large ({file_size} bytes). "
+            f"Maximum supported size is {max_image_bytes} bytes.",
+        )
+
     # Prepare image content
     base64_data, mime_type, prep_error = _prepare_image_content(image_path)
     if prep_error:
@@ -234,17 +255,33 @@ def _extract_response_text(response: Any) -> Optional[str]:
 def _is_vision_incompatible_error(error: Exception) -> bool:
     """Check if the error indicates the model doesn't support vision."""
     error_str = str(error).lower()
-    vision_error_indicators = [
-        "vision",
-        "image",
-        "multimodal",
-        "unsupported",
-        "does not support",
-        "not support",
-        "invalid content",
-        "content type",
+
+    # Strong signals that explicitly refer to image/vision capability.
+    explicit_indicators = [
+        "does not support vision",
+        "vision not supported",
+        "vision capability missing",
+        "image analysis not available",
+        "does not support image",
+        "not support images",
+        "multimodal not supported",
+        "image input is not supported",
+        "image_url is not supported",
     ]
-    return any(indicator in error_str for indicator in vision_error_indicators)
+    if any(indicator in error_str for indicator in explicit_indicators):
+        return True
+
+    # Mixed signals: only treat content-type/support errors as vision incompatibility
+    # when the message also mentions image/vision specific fields.
+    has_image_context = any(
+        marker in error_str
+        for marker in ("image_url", "image input", "vision", "multimodal")
+    )
+    has_support_error = any(
+        marker in error_str
+        for marker in ("unsupported", "does not support", "not support", "content type")
+    )
+    return has_image_context and has_support_error
 
 
 def _call_vision_llm(
@@ -314,14 +351,14 @@ def _call_vision_llm(
                 model=model,
                 messages=messages,
                 max_tokens=max_tokens,
-                temperature=0.3,
             )
         except Exception as e:
             # Check for vision-incompatible model error
             if _is_vision_incompatible_error(e):
                 return None, (
                     f"Model '{model}' does not appear to support vision/image analysis. "
-                    "Please use a vision-capable model like 'synthetic:moonshotai/Kimi-K2.5'."
+                    "Please use a vision-capable model like 'synthetic:hf:moonshotai/Kimi-K2.5'. "
+                    f"Provider error: {e}"
                 )
 
             # Handle timeout/connection errors
@@ -337,10 +374,12 @@ def _call_vision_llm(
             if isinstance(api_status_error, type) and isinstance(e, api_status_error):
                 status_code = getattr(e, "status_code", "unknown")
                 error_body = getattr(e, "body", str(e))
-                if _is_vision_incompatible_error(e):
+                if _is_vision_incompatible_error(e) or _is_vision_incompatible_error(
+                    Exception(str(error_body))
+                ):
                     return None, (
                         f"Model '{model}' does not appear to support vision/image analysis. "
-                        "Please use a vision-capable model."
+                        f"Please use a vision-capable model. Provider error: {error_body}"
                     )
                 return None, f"API error (status {status_code}): {error_body}"
 

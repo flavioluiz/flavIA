@@ -195,7 +195,7 @@ Inside a chat session, the following commands are available:
 | `/model` | Show the current active model |
 | `/model <ref>` | Switch model by index, model ID, or `provider:model_id` (resets conversation) |
 | `/model list` | Quick alias for `/providers` |
-| `/catalog` | Browse content catalog (overview, search, summaries, online sources, PDF manager) |
+| `/catalog` | Browse content catalog (overview, search, summaries, online sources, PDF/Office/Image managers) |
 | `/providers` | List configured providers with indexed models |
 | `/provider-setup` | Run interactive provider configuration wizard |
 | `/provider-manage [id]` | Manage provider models and settings |
@@ -309,11 +309,13 @@ Notes:
 - Online sources are persisted in `.flavia/content_catalog.json`.
 - `PDF Files` menu in `/catalog` supports per-file quality display, local text extraction, and explicit Mistral OCR execution.
 - `Office Documents` menu in `/catalog` supports per-file conversion to markdown and summary/quality refresh.
+- `Image Files` menu in `/catalog` supports per-file vision description generation, viewing generated descriptions, and switching the runtime vision model.
 - Office conversion requires installing the `office` extra; legacy/OpenDocument formats also require LibreOffice CLI.
 - Mistral OCR requires installing the `ocr` extra and exporting `MISTRAL_API_KEY`.
 - In `PDF Files`, you can run `Re-run summary/quality (no extraction)` to regenerate metadata from the existing converted markdown only.
 - If summary/quality generation fails, the CLI can prompt you to switch the active model and retry.
 - You can set `SUMMARY_MODEL` in `.flavia/.env` to use a dedicated model for catalog summary/quality (separate from the main chat model).
+- You can set `IMAGE_VISION_MODEL` in `.flavia/.env` to define a dedicated model for image analysis.
 
 ## Startup connection check
 

@@ -245,6 +245,8 @@ class TestResolveVisionModel:
 
     def test_resolve_uses_default_when_not_configured(self):
         """_resolve_vision_model uses default model when image_vision_model is None."""
+        from flavia.content.converters.image_converter import DEFAULT_VISION_MODEL
+
         mock_settings = MagicMock()
         mock_settings.api_key = "test-key"
         mock_settings.api_base_url = "https://api.example.com"
@@ -257,6 +259,7 @@ class TestResolveVisionModel:
 
         assert model_id is not None
         assert api_key == "test-key"
+        mock_settings.resolve_model.assert_called_once_with(DEFAULT_VISION_MODEL)
 
     def test_resolve_uses_configured_model(self):
         """_resolve_vision_model uses configured image_vision_model when available."""
@@ -335,7 +338,9 @@ class TestFormatResponse:
         image_file = tmp_path / "test.jpg"
         image_file.write_bytes(b"\x00" * 100)
 
-        # Remove file after creating it to trigger error
+        # Remove file after creating it to trigger stat() error path.
+        image_file.unlink()
+
         result = AnalyzeImageTool._format_response(
             file_path="test.jpg",
             full_path=image_file,
@@ -343,8 +348,7 @@ class TestFormatResponse:
             model="test-model",
         )
 
-        # Should contain "unknown" for size if stat fails
-        assert "unknown" in result.lower() or "Size:" in result
+        assert "unknown" in result.lower()
 
 
 class TestToolAvailability:
@@ -378,8 +382,8 @@ class TestSecurity:
         args = {"file_path": "../test.png"}
         result = tool.execute(args, sample_context)
 
-        # Should either succeed with proper resolution or block
-        # The important thing is it doesn't allow arbitrary file access
+        assert "Error" in result
+        assert "outside allowed directory" in result
 
     def test_absolute_path_outside_base_dir(self, sample_context: AgentContext, tmp_path: Path):
         """execute blocks absolute paths outside base directory."""

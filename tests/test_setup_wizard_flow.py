@@ -10,6 +10,7 @@ from flavia.setup_wizard import (
     _approve_subagents,
     _build_content_catalog,
     find_binary_documents,
+    find_image_files,
     _run_full_reconfiguration,
     _run_ai_setup,
     _run_basic_setup,
@@ -322,6 +323,28 @@ def test_find_binary_documents_includes_office_extensions(tmp_path):
     assert {path.name for path in found} == expected
 
 
+def test_find_image_files_includes_supported_extensions(tmp_path):
+    expected = {
+        "photo.png",
+        "photo.jpg",
+        "photo.jpeg",
+        "photo.gif",
+        "photo.bmp",
+        "photo.webp",
+        "photo.ico",
+        "photo.tif",
+        "photo.tiff",
+        "photo.svg",
+    }
+
+    for name in expected:
+        (tmp_path / name).write_bytes(b"x")
+    (tmp_path / "notes.txt").write_text("ignore", encoding="utf-8")
+
+    found = find_image_files(tmp_path)
+    assert {path.name for path in found} == expected
+
+
 def test_build_content_catalog_links_existing_office_conversion(tmp_path):
     target_dir = tmp_path
     config_dir = tmp_path / ".flavia"
@@ -341,6 +364,75 @@ def test_build_content_catalog_links_existing_office_conversion(tmp_path):
 
     assert catalog is not None
     assert catalog.files["report.docx"].converted_to == ".converted/report.md"
+
+
+def test_build_content_catalog_links_existing_image_conversion(tmp_path):
+    target_dir = tmp_path
+    config_dir = tmp_path / ".flavia"
+    config_dir.mkdir()
+
+    (target_dir / "figure.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    converted_dir = target_dir / ".converted"
+    converted_dir.mkdir()
+    (converted_dir / "figure.md").write_text("image description", encoding="utf-8")
+
+    catalog = _build_content_catalog(
+        target_dir,
+        config_dir,
+        convert_docs=False,
+        binary_docs=[],
+    )
+
+    assert catalog is not None
+    assert catalog.files["figure.png"].converted_to == ".converted/figure.md"
+
+
+def test_run_setup_wizard_can_convert_images_to_descriptions(monkeypatch, tmp_path):
+    captured: dict[str, object] = {}
+    image_path = tmp_path / "images" / "figure.png"
+    image_path.parent.mkdir(parents=True)
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "flavia.config.load_settings", lambda: Settings(default_model="openai:gpt-4o")
+    )
+    monkeypatch.setattr(
+        "flavia.setup_wizard._select_model_for_setup", lambda _settings: "openai:gpt-4o"
+    )
+    monkeypatch.setattr(
+        "flavia.setup_wizard._test_selected_model_connection",
+        lambda _settings, _model: (False, False),
+    )
+    monkeypatch.setattr("flavia.setup_wizard.find_binary_documents", lambda _directory: [])
+    monkeypatch.setattr("flavia.setup_wizard.find_image_files", lambda _directory: [image_path])
+
+    def _fake_confirm(prompt, *args, **kwargs):
+        prompt_str = str(prompt).lower()
+        if "convert images to descriptions" in prompt_str:
+            return True
+        if "enable file-writing tools for main agent" in prompt_str:
+            return False
+        return False
+
+    monkeypatch.setattr("flavia.setup_wizard.safe_confirm", _fake_confirm)
+    monkeypatch.setattr("flavia.setup_wizard.q_select", lambda *args, **kwargs: "1")
+
+    class FakeCatalog:
+        def get_files_needing_summary(self):
+            return []
+
+    def _fake_build_content_catalog(_target_dir, _config_dir, convert_docs=False, binary_docs=None):
+        captured["convert_docs"] = convert_docs
+        captured["binary_docs"] = binary_docs
+        return FakeCatalog()
+
+    monkeypatch.setattr("flavia.setup_wizard._build_content_catalog", _fake_build_content_catalog)
+    monkeypatch.setattr("flavia.setup_wizard._run_basic_setup", lambda *args, **kwargs: True)
+
+    assert run_setup_wizard(tmp_path) is True
+    assert captured["convert_docs"] is True
+    assert captured["binary_docs"] == [image_path]
 
 
 def test_run_basic_setup_preserves_existing_providers_when_requested(tmp_path):

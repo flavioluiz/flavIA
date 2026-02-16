@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Image analysis with vision-capable models**:
+  - New `ImageConverter` for `.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.webp`, `.ico`, `.tiff`, `.tif`, `.svg`
+  - New `flavia.content.vision` module for image encoding, optional SVG->PNG conversion, and multimodal chat completion calls
+  - New `analyze_image` content tool for direct image inspection by agents
+  - New `/catalog` menu section `Image Files` with actions to generate/view descriptions and switch the active vision model in-session
+  - `flavia --init` now detects image files and explicitly offers optional conversion to text descriptions in `.converted/`
+  - New `IMAGE_VISION_MODEL` environment variable for selecting a dedicated model for image analysis
+  - New test suites: `tests/test_vision.py`, `tests/test_image_converter.py`, `tests/test_analyze_image_tool.py`
 - **Office Document Converter (Task 1.3)**: New `OfficeConverter` in `content/converters/` supporting Microsoft Office and OpenDocument formats:
   - Modern Office: `.docx`, `.xlsx`, `.pptx` (via python-docx, openpyxl, python-pptx)
   - Legacy Office: `.doc`, `.xls`, `.ppt` (via LibreOffice CLI fallback)
@@ -150,6 +158,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **Vision image payload guardrail**:
+  - `analyze_image()` now rejects files above a safety size limit before base64/API upload
+  - Prevents accidental oversized multimodal payloads and unnecessary API cost spikes
 - **PDF OCR safety/behavior regressions**:
   - `/catalog` PDF manager now blocks unsafe catalog paths that resolve outside project `base_dir`
   - "Extract text (simple)" no longer triggers remote OCR implicitly

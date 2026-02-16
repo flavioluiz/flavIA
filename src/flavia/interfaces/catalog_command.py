@@ -762,6 +762,8 @@ def _manage_image_files(catalog: ContentCatalog, config_dir: Path, settings: Set
 
 def _show_image_entry_details(entry, base_dir: Path, settings: Settings) -> None:
     """Show selected image file details including description status."""
+    from flavia.content.converters.image_converter import DEFAULT_VISION_MODEL
+
     console.print(f"\n[bold cyan]{entry.path}[/bold cyan]")
 
     converted_exists = False
@@ -774,7 +776,7 @@ def _show_image_entry_details(entry, base_dir: Path, settings: Settings) -> None
             converted_exists = False
 
     # Get current vision model
-    vision_model = getattr(settings, "image_vision_model", None) or "synthetic:moonshotai/Kimi-K2.5"
+    vision_model = getattr(settings, "image_vision_model", None) or DEFAULT_VISION_MODEL
 
     details = Table(show_header=False, box=None)
     details.add_column("Field", style="dim")

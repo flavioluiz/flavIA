@@ -64,10 +64,11 @@ src/flavia/
 │   ├── spawn/                # Agent creation tools
 │   │   ├── spawn_agent.py
 │   │   └── spawn_predefined_agent.py
-│   ├── content/              # Catalog query/update tools
+│   ├── content/              # Catalog and content-analysis tools
 │   │   ├── query_catalog.py
 │   │   ├── get_summary.py
-│   │   └── refresh_catalog.py
+│   │   ├── refresh_catalog.py
+│   │   └── analyze_image.py
 │   ├── academic/             # Academic workflow tools
 │   │   └── compile_latex.py
 │   ├── compact/              # Context management tools

@@ -296,6 +296,12 @@ class TestMarkdownFormatting:
 class TestVisionModelResolution:
     """Tests for vision model resolution."""
 
+    def test_default_vision_model_format(self):
+        """Default vision model uses provider:model_id format with explicit model ID."""
+        from flavia.content.converters.image_converter import DEFAULT_VISION_MODEL
+
+        assert DEFAULT_VISION_MODEL == "synthetic:hf:moonshotai/Kimi-K2.5"
+
     def test_resolve_vision_model_returns_tuple(self, monkeypatch: pytest.MonkeyPatch):
         """_resolve_vision_model returns a tuple with 4 elements."""
         from flavia.config import Settings

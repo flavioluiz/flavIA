@@ -408,6 +408,10 @@ class FileScanner:
     @staticmethod
     def _classify_file(ext: str) -> tuple[str, str]:
         """Classify a file by its extension. Returns (file_type, category)."""
+        # SVG is text-based, but should be treated as an image for catalog/UI flows.
+        if ext == ".svg":
+            return "image", "svg"
+
         if ext in TEXT_EXTENSIONS:
             # Determine specific category
             category_map = {
