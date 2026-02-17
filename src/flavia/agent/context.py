@@ -118,8 +118,8 @@ def _build_catalog_first_guidance(context: AgentContext) -> str:
 
     if has_query and has_search_chunks:
         lines.append(
-            "Use `search_chunks` when answering questions about document content (what, how, why). "
-            "Use `query_catalog` to discover which files exist or filter by type/name."
+            "Use search_chunks when answering questions about document content (what, how, why). "
+            "Use query_catalog to discover which files exist or filter by type/name."
         )
 
     if has_query:

@@ -11,10 +11,10 @@ Planned features and improvements for flavIA, organized by area. Each task inclu
 This roadmap outlines **53 tasks** across **11 major areas** to extend flavIA from a read-only research assistant into a comprehensive, production-ready AI agent system with multimodal processing, write capabilities, external service integration, web & academic research tools, multi-platform deployment, file delivery through messaging interfaces, and semantic RAG retrieval.
 
 ### Quick Stats
-- **13 Easy tasks** (< 1 day each) — Quick wins for immediate value — **8 completed** ✓
+- **13 Easy tasks** (< 1 day each) — Quick wins for immediate value — **9 completed** ✓
 - **30 Medium tasks** (1-2 days each) — Core feature development — **13 completed** ✓
 - **10 Hard tasks** (3+ days each) — Complex integrations requiring careful design — **1 completed** ✓
-- **Total completed so far**: **22 / 53 tasks** ✓
+- **Total completed so far**: **23 / 53 tasks** ✓
 
 ### Strategic Priorities
 1. **Immediate value** (Tasks 4.1-4.8, 8.1): Improve CLI UX and add token tracking
@@ -126,7 +126,7 @@ Transform keyword-based catalog search into a full RAG pipeline: chunk converted
   - ~~**11.5** Video Temporal Expansion (Medium)~~ — **DONE** ✓ Expand anchor timecode ±15s (transcript) / ±10s (frames); return chronological evidence bundle across modalities
   - ~~**11.6** `search_chunks` Tool (Easy)~~ — **DONE** ✓ Agent tool calling `retrieve()`, formatting annotated context blocks with citations
   - **11.7** Index CLI Commands `/index` (Easy) — `/index build`, `/index update`, `/index stats`
-  - **11.8** Agent Guidance Update (Easy) — Add `search_chunks` routing rule to `_build_catalog_first_guidance()`
+  - ~~**11.8** Agent Guidance Update (Easy)~~ — **DONE** ✓ Added `search_chunks` vs `query_catalog` routing guidance in `_build_catalog_first_guidance()`
 
 ---
 

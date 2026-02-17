@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Agent Guidance Update (Task 11.8)**: Updated `_build_catalog_first_guidance()` in `src/flavia/agent/context.py` to clarify tool usage:
+  - Use `search_chunks` for document content and semantic questions (what/how/why)
+  - Keep `query_catalog` for metadata and file discovery/filtering by type or name
 - **Index CLI Commands (Task 11.7)**: New index lifecycle commands for retrieval data maintenance:
   - `/index build` (and legacy alias `/index-build`) for full rebuild (clear + rechunk + re-embed)
   - `/index update` (and legacy alias `/index-update`) for incremental updates of new/modified docs

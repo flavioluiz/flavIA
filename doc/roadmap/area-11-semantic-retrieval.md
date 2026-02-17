@@ -2,7 +2,7 @@
 
 Transform flavIA's current keyword-based catalog search into a full RAG pipeline that embeds converted documents, stores vectors in SQLite, and provides hybrid retrieval (vector + full-text) to the agent.
 
-**Status**: 5 / 8 tasks complete
+**Status**: 6 / 8 tasks complete
 **Dependencies**: Area 1 complete (all converters done ✓)
 
 ---
@@ -212,7 +212,7 @@ Three sub-commands registered in `src/flavia/interfaces/commands.py`:
 
 ---
 
-### 11.8 Agent Guidance Update
+### 11.8 Agent Guidance Update ~~DONE~~ ✓
 **Difficulty**: Easy
 **Dependencies**: 11.6
 
@@ -221,7 +221,7 @@ Update `_build_catalog_first_guidance()` in `src/flavia/agent/context.py`:
 - Add rule: use `search_chunks` for **content/semantic** questions.
 - Keep `query_catalog` for **metadata/file-discovery** questions.
 - Guidance text:
-  > "Use `search_chunks` when answering questions about document content (what, how, why). Use `query_catalog` to discover which files exist or filter by type/name."
+  > "Use search_chunks when answering questions about document content (what, how, why). Use query_catalog to discover which files exist or filter by type/name."
 
 ---
 
