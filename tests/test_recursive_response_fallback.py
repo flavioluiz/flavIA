@@ -569,3 +569,71 @@ def test_recursive_agent_enforces_cited_two_stage_output_for_comparative_prompts
         for msg in agent.messages
         if msg.get("role") == "user"
     )
+
+
+def test_recursive_agent_canonicalizes_mistyped_extension_in_search_chunks_query(tmp_path: Path):
+    agent = RecursiveAgent.__new__(RecursiveAgent)
+    agent.messages = []
+    index_dir = tmp_path / ".index"
+    index_dir.mkdir()
+    (index_dir / "index.db").write_text("", encoding="utf-8")
+    agent.context = AgentContext(
+        agent_id="main",
+        current_depth=0,
+        max_depth=3,
+        base_dir=tmp_path,
+        available_tools=["search_chunks"],
+    )
+    agent.status_callback = None
+    agent.compaction_warning_pending = False
+    agent.compaction_warning_prompt_tokens = 0
+    agent.last_prompt_tokens = 0
+    agent.max_context_tokens = 128_000
+    agent.profile = SimpleNamespace(compact_threshold=0.9)
+    agent.log = lambda _msg: None
+
+    tool_call = SimpleNamespace(
+        id="call-1",
+        function=SimpleNamespace(
+            name="search_chunks",
+            arguments='{"query":"@relatorio_dados_enviados_coleta_full.php pontos fracos"}',
+        ),
+    )
+    responses = [
+        _FakeResponse(content="", tool_calls=[tool_call]),
+        _FakeResponse(content="ok", tool_calls=None),
+    ]
+    captured_args = {}
+
+    def fake_call_llm(_messages):
+        return responses.pop(0)
+
+    def fake_assistant_to_dict(message):
+        serialized_calls = []
+        for tc in (message.tool_calls or []):
+            serialized_calls.append(
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                }
+            )
+        msg = {"role": "assistant", "content": message.content or ""}
+        if serialized_calls:
+            msg["tool_calls"] = serialized_calls
+        return msg
+
+    def fake_execute_tool(name, args):
+        captured_args["name"] = name
+        captured_args["args"] = dict(args)
+        return "resultado grounded"
+
+    agent._call_llm = fake_call_llm
+    agent._assistant_message_to_dict = fake_assistant_to_dict
+    agent._execute_tool = fake_execute_tool
+
+    result = RecursiveAgent.run(agent, "@relatorio_dados_enviados_coleta_full.pdf pontos fracos")
+    assert result == "ok"
+    assert captured_args["name"] == "search_chunks"
+    assert "@relatorio_dados_enviados_coleta_full.pdf" in captured_args["args"]["query"]
+    assert ".php" not in captured_args["args"]["query"]

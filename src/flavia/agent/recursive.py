@@ -278,6 +278,7 @@ class RecursiveAgent(BaseAgent):
             tool_results, spawns = self._process_tool_calls_with_spawns(
                 response.tool_calls,
                 force_search_mode="exhaustive" if force_exhaustive_retrieval else None,
+                required_mentions=required_mentions,
             )
 
             # Inject context-window warning for the LLM to see on next iteration.
@@ -498,6 +499,7 @@ class RecursiveAgent(BaseAgent):
         tool_calls: list[Any],
         *,
         force_search_mode: Optional[str] = None,
+        required_mentions: Optional[set[str]] = None,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """Process tool calls and identify spawn requests."""
         results = []
@@ -518,6 +520,13 @@ class RecursiveAgent(BaseAgent):
                 and "retrieval_mode" not in args
             ):
                 args["retrieval_mode"] = force_search_mode
+            if name == "search_chunks" and isinstance(args, dict):
+                query_value = args.get("query")
+                if isinstance(query_value, str) and query_value.strip() and required_mentions:
+                    args["query"] = self._canonicalize_query_mentions(
+                        query_value,
+                        required_mentions=required_mentions,
+                    )
 
             self.log(f"Tool: {name}({args})")
 
@@ -585,6 +594,58 @@ class RecursiveAgent(BaseAgent):
             )
 
         return results, spawns
+
+    @classmethod
+    def _canonicalize_query_mentions(cls, query: str, *, required_mentions: set[str]) -> str:
+        """Rewrite query mentions to canonical user-specified mentions when equivalent."""
+        if not isinstance(query, str) or not query.strip() or not required_mentions:
+            return query
+
+        required_sorted = sorted(required_mentions)
+
+        def _replacement(match: re.Match[str]) -> str:
+            raw = (match.group(0) or "").strip()
+            if not raw.startswith("@"):
+                return raw
+            body = raw[1:]
+            stripped_body = body.rstrip(cls.MENTION_TRAILING_PUNCT)
+            suffix = body[len(stripped_body):]
+            token = stripped_body.strip()
+            if token.startswith(("'", '"')) and token.endswith(("'", '"')) and len(token) >= 2:
+                token = token[1:-1].strip()
+
+            candidate_norm = cls._normalize_mention_token(token)
+            if not candidate_norm:
+                return raw
+
+            canonical: Optional[str] = None
+            for required in required_sorted:
+                if cls._normalize_mention_token(required) == candidate_norm:
+                    canonical = required
+                    break
+            if canonical is None:
+                for required in required_sorted:
+                    if cls._mentions_equivalent(required, candidate_norm):
+                        canonical = required
+                        break
+            if canonical is None:
+                return raw
+            if cls._mentions_equivalent(canonical, candidate_norm):
+                if canonical == candidate_norm:
+                    return raw
+            rendered = cls._render_mention_token(canonical)
+            return f"@{rendered}{suffix}"
+
+        return cls.DOC_MENTION_RE.sub(_replacement, query)
+
+    @staticmethod
+    def _render_mention_token(token: str) -> str:
+        """Render mention token preserving readability for paths with spaces."""
+        value = token.strip()
+        if any(ch.isspace() for ch in value):
+            escaped = value.replace('"', '\\"')
+            return f'"{escaped}"'
+        return value
 
     def _parse_spawn_agent(self, result: str, args: dict) -> dict[str, Any]:
         """Parse spawn_agent result into spawn request."""

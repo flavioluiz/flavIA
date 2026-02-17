@@ -1033,9 +1033,14 @@ def cmd_rag_debug(ctx: CommandContext, args: str) -> bool:
             ctx.console.print(
                 f"[yellow]No RAG diagnostics traces found for current turn ({turn_id}).[/yellow]"
             )
-            ctx.console.print(
-                "[dim]If the turn did not call search_chunks, no retrieval trace is generated.[/dim]"
-            )
+            if not bool(getattr(ctx.settings, "rag_debug", False)):
+                ctx.console.print(
+                    "[dim]RAG debug mode is currently OFF. Use /rag-debug on, run the prompt again, then /rag-debug turn.[/dim]"
+                )
+            else:
+                ctx.console.print(
+                    "[dim]If the turn did not call search_chunks, no retrieval trace is generated.[/dim]"
+                )
             return True
 
         for idx, entry in enumerate(entries, start=1):

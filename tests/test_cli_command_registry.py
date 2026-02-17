@@ -655,6 +655,20 @@ def test_dispatch_rag_debug_turn_without_active_turn():
     assert any("No active turn id found" in line for line in console.printed)
 
 
+def test_dispatch_rag_debug_turn_without_traces_and_debug_off_shows_hint(tmp_path):
+    """`/rag-debug turn` should explain debug-off state when no traces exist."""
+    console = _DummyConsole()
+    settings = Settings(base_dir=tmp_path, rag_debug=False)
+    agent = _DummyAgent()
+    agent.context = MagicMock()
+    agent.context.rag_turn_id = "turn-000123-aaaaaa"
+    ctx = _make_test_context(console=console, settings=settings, agent=agent)
+
+    assert dispatch_command(ctx, "/rag-debug turn") is True
+    assert any("No RAG diagnostics traces found for current turn" in line for line in console.printed)
+    assert any("RAG debug mode is currently OFF" in line for line in console.printed)
+
+
 def test_get_help_listing_shows_short_descriptions():
     """Test /help listing shows command descriptions."""
     help_text = get_help_listing()

@@ -376,6 +376,8 @@ vault/
 | H-11-12 | comparative synthesis could be produced semantically but without explicit grounding citations | hard to audit objective support for each conclusion | recursive loop now enforces two-stage comparative output (evidence matrix -> conclusions) with citation markers before finalizing | Fixed |
 | H-11-13 | diagnostics review after `/reset` could be misleading (showing old traces) | tuning loop could inspect stale retrieval evidence | added current-turn diagnostics command (`/rag-debug turn`) with `turn_id`-scoped filtering persisted from `search_chunks` | Fixed |
 | H-11-14 | Stage-A router could over-narrow explicit multi-file scope (`@mentions`) | comparative retrieval sometimes ignored part of user-declared document set | added `preserve_doc_scope` path: mention-scoped retrieval keeps caller scope intact while still collecting router diagnostics | Fixed |
+| H-11-15 | LLM occasionally mutated explicit file mentions in tool calls (e.g., `.pdf` -> `.php`) | retrieval failed with false unknown-file errors even when user mention was valid | recursive loop now canonicalizes equivalent `search_chunks` mentions back to user-provided targets before tool execution | Fixed |
+| H-11-16 | `/rag-debug turn` empty output could be misread as retrieval failure when debug was simply off | confusing troubleshooting feedback | command now explicitly reports debug-off state and next steps (`/rag-debug on` + rerun prompt) | Fixed |
 
 ### Current behavior for explicit file targeting (`@arquivo`)
 

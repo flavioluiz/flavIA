@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **RAG diagnostics mode and tuning controls**:
   - Runtime command `/rag-debug [on|off|status|last [N]]` to toggle diagnostics capture and inspect recent traces
   - Added turn-scoped diagnostics command `/rag-debug turn [N]` to inspect only traces from the current user turn
+  - `/rag-debug turn` now explicitly warns when debug is off and no traces were captured for the turn
   - New persistent diagnostics log: `.flavia/rag_debug.jsonl` (JSONL, one retrieval trace per entry)
   - New `/index diagnose` command (alias `/index-diagnose`) with deeper index health insights:
     - runtime RAG configuration
@@ -172,6 +173,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Comparative prompts with multiple `@mentions` now require cross-document mention coverage before final answer
   - Comparative answers now enforce two-stage structure (evidence matrix then conclusions) with inline citations (`[1]`, `[2]`) before finalization
   - New explicit-scope preservation in retrieval: when scope comes from `@mentions`, Stage-A router no longer narrows that caller-defined multi-document scope
+  - `RecursiveAgent` now canonicalizes equivalent `@mention` tokens in `search_chunks` calls (e.g., mistyped extension with same stem) back to user-scoped references before execution
   - Mention-target errors from `search_chunks` (unresolved/unindexed `@file`) are now propagated directly instead of being masked by fallback responses
   - Turn-level exhaustive propagation: checklist intent in the original user prompt now auto-applies `retrieval_mode=exhaustive` to all `search_chunks` calls in that turn (unless explicitly overridden)
   - RAG debug hint quality improved: router-candidate hint is suppressed when retrieval is already explicitly scoped by caller filters

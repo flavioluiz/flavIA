@@ -244,6 +244,7 @@ Notes:
   - `/rag-debug on`: captures retrieval traces to `.flavia/rag_debug.jsonl` (no verbose trace injection into model context).
   - `/rag-debug last` (or `/rag-debug last N`): inspect the most recent persisted diagnostics traces.
   - `/rag-debug turn` (or `/rag-debug turn N`): inspect only traces captured in the current user turn.
+  - If `/rag-debug turn` returns empty and debug is off, enable it first with `/rag-debug on`, rerun the prompt, then inspect again.
   - `/index diagnose`: reports index health, modality distribution, top docs by chunk count, and current RAG tuning parameters.
  - Comparative analysis workflow (generic):
   - For multi-file comparison prompts, the agent now enforces a two-stage flow: source-specific evidence extraction first, then synthesis.
