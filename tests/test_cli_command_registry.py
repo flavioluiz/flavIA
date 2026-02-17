@@ -98,10 +98,12 @@ def test_command_registry_contains_expected_commands():
         "/provider-manage",
         "/provider-test",
         "/compact",
+        "/rag-debug",
         "/index",
         "/index-build",
         "/index-update",
         "/index-stats",
+        "/index-diagnose",
     }
     registered = set(COMMAND_REGISTRY.keys())
     assert expected.issubset(registered), f"Missing: {expected - registered}"
@@ -484,7 +486,7 @@ def test_get_help_listing_includes_commands():
     assert "/provider-setup" in help_text
     assert "/provider-manage" in help_text
     assert "/provider-test" in help_text
-    assert "/index <build|update|stats>" in help_text
+    assert "/index <build|update|stats|diagnose>" in help_text
     assert "/tools" in help_text
     assert "/config" in help_text
 
@@ -507,11 +509,16 @@ def test_dispatch_index_subcommands(monkeypatch):
         "flavia.interfaces.commands.cmd_index_stats",
         lambda _ctx, _args: calls.append("stats") or True,
     )
+    monkeypatch.setattr(
+        "flavia.interfaces.commands.cmd_index_diagnose",
+        lambda _ctx, _args: calls.append("diagnose") or True,
+    )
 
     assert dispatch_command(ctx, "/index build") is True
     assert dispatch_command(ctx, "/index update") is True
     assert dispatch_command(ctx, "/index stats") is True
-    assert calls == ["build", "update", "stats"]
+    assert dispatch_command(ctx, "/index diagnose") is True
+    assert calls == ["build", "update", "stats", "diagnose"]
 
 
 def test_dispatch_index_invalid_subcommand_shows_usage():
@@ -520,7 +527,25 @@ def test_dispatch_index_invalid_subcommand_shows_usage():
     ctx = _make_test_context(console=console)
 
     assert dispatch_command(ctx, "/index nope") is True
-    assert any("Usage: /index <build|update|stats>" in line for line in console.printed)
+    assert any("Usage: /index <build|update|stats|diagnose>" in line for line in console.printed)
+
+
+def test_dispatch_rag_debug_toggles_runtime_flag():
+    """RAG debug command should toggle settings and agent context flag."""
+    console = _DummyConsole()
+    settings = Settings()
+    agent = _DummyAgent()
+    agent.context = MagicMock()
+    agent.context.rag_debug = False
+    ctx = _make_test_context(console=console, settings=settings, agent=agent)
+
+    assert dispatch_command(ctx, "/rag-debug on") is True
+    assert settings.rag_debug is True
+    assert agent.context.rag_debug is True
+
+    assert dispatch_command(ctx, "/rag-debug off") is True
+    assert settings.rag_debug is False
+    assert agent.context.rag_debug is False
 
 
 def test_get_help_listing_shows_short_descriptions():

@@ -97,6 +97,42 @@ def test_load_settings_reads_status_task_limits_from_env(tmp_path, monkeypatch):
     assert settings.status_max_tasks_subagent == 2
 
 
+def test_load_settings_reads_rag_debug_and_tuning_env(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("RAG_DEBUG", "true")
+    monkeypatch.setenv("RAG_VECTOR_K", "24")
+    monkeypatch.setenv("RAG_FTS_K", "31")
+    monkeypatch.setenv("RAG_CHUNK_MIN_TOKENS", "220")
+    monkeypatch.setenv("RAG_CHUNK_MAX_TOKENS", "900")
+    monkeypatch.setenv("RAG_VIDEO_WINDOW_SECONDS", "75")
+
+    settings = load_settings()
+
+    assert settings.rag_debug is True
+    assert settings.rag_vector_k == 24
+    assert settings.rag_fts_k == 31
+    assert settings.rag_chunk_min_tokens == 220
+    assert settings.rag_chunk_max_tokens == 900
+    assert settings.rag_video_window_seconds == 75
+
+
+def test_load_settings_ignores_invalid_rag_tuning_env(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("RAG_VECTOR_K", "-1")
+    monkeypatch.setenv("RAG_FTS_K", "abc")
+    monkeypatch.setenv("RAG_CHUNK_MIN_TOKENS", "5000")
+    monkeypatch.setenv("RAG_CHUNK_MAX_TOKENS", "20")
+
+    settings = load_settings()
+
+    assert settings.rag_vector_k == 15
+    assert settings.rag_fts_k == 15
+    assert settings.rag_chunk_min_tokens == 300
+    assert settings.rag_chunk_max_tokens == 800
+
+
 def test_load_settings_reads_summary_model_from_env(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))

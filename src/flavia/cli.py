@@ -86,6 +86,12 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--rag-debug",
+        action="store_true",
+        help="Enable detailed RAG diagnostics (search_chunks trace + index debug output)",
+    )
+
+    parser.add_argument(
         "-d",
         "--depth",
         type=int,
@@ -187,6 +193,8 @@ def apply_args_to_settings(args: argparse.Namespace, settings: Settings) -> Sett
     """Apply command line arguments to settings."""
     if getattr(args, "verbose", False):
         settings.verbose = True
+    if getattr(args, "rag_debug", False):
+        settings.rag_debug = True
 
     model_arg = getattr(args, "model", None)
     if model_arg is not None:

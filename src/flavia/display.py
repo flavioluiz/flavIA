@@ -261,6 +261,22 @@ def display_config(
     _print(f"  Parallel Workers:  {settings.parallel_workers}")
     _print(f"  Subagents Enabled: {settings.subagents_enabled}")
     _print(f"  Active Agent:      {settings.active_agent or 'main'}")
+    _print(f"  RAG Debug Mode:    {settings.rag_debug}")
+    _print(
+        "  RAG Retrieval:     "
+        f"router_k={settings.rag_catalog_router_k}, "
+        f"vector_k={settings.rag_vector_k}, "
+        f"fts_k={settings.rag_fts_k}, "
+        f"rrf_k={settings.rag_rrf_k}, "
+        f"max_chunks/doc={settings.rag_max_chunks_per_doc}"
+    )
+    _print(
+        "  RAG Chunking:      "
+        f"min_tokens={settings.rag_chunk_min_tokens}, "
+        f"max_tokens={settings.rag_chunk_max_tokens}, "
+        f"video_window_s={settings.rag_video_window_seconds}, "
+        f"expand_temporal={settings.rag_expand_video_temporal}"
+    )
 
     # Count models
     model_count = 0

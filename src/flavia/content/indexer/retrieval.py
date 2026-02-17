@@ -7,6 +7,7 @@ semantic (vector) search and full-text search into a unified ranking.
 import hashlib
 import re
 import sqlite3
+import time
 from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Optional
@@ -273,6 +274,7 @@ def retrieve(
     rrf_k: int = 60,
     max_chunks_per_doc: int = 3,
     expand_video_temporal: bool = True,
+    debug_info: Optional[dict[str, Any]] = None,
 ) -> list[dict[str, Any]]:
     """Hybrid retrieval combining vector and FTS search with RRF fusion.
 
@@ -320,28 +322,65 @@ def retrieve(
         RuntimeError: If query embedding fails.
         ValueError: If embedding client cannot be initialized.
     """
+    started_at = time.perf_counter()
+    trace: dict[str, Any] = {
+        "question": question,
+        "params": {
+            "top_k": top_k,
+            "catalog_router_k": catalog_router_k,
+            "vector_k": vector_k,
+            "fts_k": fts_k,
+            "rrf_k": rrf_k,
+            "max_chunks_per_doc": max_chunks_per_doc,
+            "expand_video_temporal": expand_video_temporal,
+        },
+        "filters": {
+            "input_doc_ids_filter_count": len(doc_ids_filter) if doc_ids_filter is not None else None
+        },
+        "counts": {},
+        "timings_ms": {},
+    }
+
     # Handle invalid/empty inputs early
     if top_k <= 0:
+        trace["early_exit"] = "top_k<=0"
+        trace["timings_ms"]["total"] = round((time.perf_counter() - started_at) * 1000, 2)
+        if debug_info is not None:
+            debug_info.update(trace)
         return []
     if not question or not question.strip():
+        trace["early_exit"] = "empty_question"
+        trace["timings_ms"]["total"] = round((time.perf_counter() - started_at) * 1000, 2)
+        if debug_info is not None:
+            debug_info.update(trace)
         return []
 
     # Handle empty filter case
     if doc_ids_filter is not None and len(doc_ids_filter) == 0:
+        trace["early_exit"] = "empty_doc_filter"
+        trace["timings_ms"]["total"] = round((time.perf_counter() - started_at) * 1000, 2)
+        if debug_info is not None:
+            debug_info.update(trace)
         return []
 
     # Stage A — Catalog router (best-effort):
     # use catalog metadata/summaries to shortlist candidate docs.
     # If it yields no candidates, keep the original filter to preserve recall.
     effective_doc_ids_filter = doc_ids_filter
+    router_started = time.perf_counter()
     routed_doc_ids = _route_doc_ids_from_catalog(
         question=question,
         base_dir=base_dir,
         shortlist_k=catalog_router_k,
         scope_doc_ids=doc_ids_filter,
     )
+    trace["timings_ms"]["router"] = round((time.perf_counter() - router_started) * 1000, 2)
+    trace["counts"]["routed_doc_ids"] = len(routed_doc_ids) if routed_doc_ids is not None else None
     if routed_doc_ids:
         effective_doc_ids_filter = routed_doc_ids
+    trace["filters"]["effective_doc_ids_filter_count"] = (
+        len(effective_doc_ids_filter) if effective_doc_ids_filter is not None else None
+    )
 
     vector_results: list[dict[str, Any]] = []
     fts_results: list[dict[str, Any]] = []
@@ -352,22 +391,32 @@ def retrieve(
 
         # Run vector search only when requested
         if vector_k > 0 and vs is not None:
+            vector_started = time.perf_counter()
             client, model = get_embedding_client(settings)
+            trace["embedding_model"] = model
             query_vec = embed_query(question, client, model)
             vector_results = vs.knn_search(
                 query_vec,
                 k=vector_k,
                 doc_ids_filter=effective_doc_ids_filter,
             )
+            trace["timings_ms"]["vector"] = round((time.perf_counter() - vector_started) * 1000, 2)
+        else:
+            trace["timings_ms"]["vector"] = 0.0
 
         # Run FTS search only when requested
         if fts_k > 0:
+            fts_started = time.perf_counter()
             fts_results = fts.search(
                 question,
                 k=fts_k,
                 doc_ids_filter=effective_doc_ids_filter,
             )
+            trace["timings_ms"]["fts"] = round((time.perf_counter() - fts_started) * 1000, 2)
+        else:
+            trace["timings_ms"]["fts"] = 0.0
 
+        fusion_started = time.perf_counter()
         # Build rank maps (1-indexed positions)
         vector_ranks = {r["chunk_id"]: i + 1 for i, r in enumerate(vector_results)}
         fts_ranks = {r["chunk_id"]: i + 1 for i, r in enumerate(fts_results)}
@@ -396,6 +445,7 @@ def retrieve(
         # Apply diversity filter (max chunks per doc) and build final results
         doc_counts: dict[str, int] = {}
         results: list[dict[str, Any]] = []
+        skipped_diversity = 0
 
         for chunk_id, rrf, v_rank, f_rank in scored_chunks:
             # Get doc_id to apply diversity filter
@@ -413,12 +463,22 @@ def retrieve(
                     chunk_id, rrf, v_rank, f_rank, vector_results, fts_results
                 )
                 results.append(result)
+            else:
+                skipped_diversity += 1
 
             # Stop when we have enough results
             if len(results) >= top_k:
                 break
 
+        trace["timings_ms"]["fusion"] = round((time.perf_counter() - fusion_started) * 1000, 2)
+        trace["counts"]["vector_hits"] = len(vector_results)
+        trace["counts"]["fts_hits"] = len(fts_results)
+        trace["counts"]["unique_candidates"] = len(all_chunk_ids)
+        trace["counts"]["results_before_temporal"] = len(results)
+        trace["counts"]["skipped_by_doc_diversity"] = skipped_diversity
+
         # Expand video temporal bundles if requested.
+        temporal_started = time.perf_counter()
         if expand_video_temporal and any(
             r.get("modality") in ("video_transcript", "video_frame") for r in results
         ):
@@ -427,5 +487,15 @@ def retrieve(
             else:
                 with VectorStore(base_dir) as temp_vs:
                     results = expand_video_chunks(results, base_dir, temp_vs, fts)
+        trace["timings_ms"]["temporal"] = round((time.perf_counter() - temporal_started) * 1000, 2)
+        trace["counts"]["final_results"] = len(results)
+        modality_counts: dict[str, int] = {}
+        for result in results:
+            modality = result.get("modality") or "unknown"
+            modality_counts[modality] = modality_counts.get(modality, 0) + 1
+        trace["counts"]["final_modalities"] = modality_counts
+        trace["timings_ms"]["total"] = round((time.perf_counter() - started_at) * 1000, 2)
+        if debug_info is not None:
+            debug_info.update(trace)
 
         return results

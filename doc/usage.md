@@ -203,9 +203,12 @@ Inside a chat session, the following commands are available:
 | `/index build` | Full index rebuild: clears and reindexes all converted docs |
 | `/index update` | Incremental index update: new/modified docs + stale cleanup |
 | `/index stats` | Show index statistics (chunks, docs, size, last indexed) |
+| `/index diagnose` | Show detailed RAG diagnostics (chunk distribution, tuning hints, runtime params) |
 | `/index-build` | Legacy alias for `/index build` |
 | `/index-update` | Legacy alias for `/index update` |
 | `/index-stats` | Legacy alias for `/index stats` |
+| `/index-diagnose` | Legacy alias for `/index diagnose` |
+| `/rag-debug [on\|off\|status]` | Toggle detailed retrieval diagnostics in `search_chunks` output |
 | `/tools` | List available tools by category |
 | `/tools <name>` | Show tool schema and parameters |
 | `/config` | Show configuration paths and active settings |
@@ -220,10 +223,14 @@ From a fresh project setup (`flavia --init`) to retrieval-ready chat:
 3. Start chatting; the agent can use `search_chunks` for semantic/content questions.
 4. After adding/modifying files, run `/index update` to keep vectors/FTS in sync.
 5. Use `/index stats` to verify chunk counts, index size, and last indexed timestamp.
+6. Use `/index diagnose` and `/rag-debug on` to inspect retrieval behavior and tune parameters.
 
 Notes:
 - `search_chunks` is only available when `.index/index.db` exists.
 - `query_catalog` remains the best tool for file discovery/metadata filtering.
+- Runtime retrieval diagnostics:
+  - `/rag-debug on`: appends pipeline trace (`router/vector/fts/fusion` counts + timings + hints) to `search_chunks` output.
+  - `/index diagnose`: reports index health, modality distribution, top docs by chunk count, and current RAG tuning parameters.
 - Converted-content policy is per-agent via `converted_access_mode` in `agents.yaml`:
   - `strict`: no direct `.converted/` reads.
   - `hybrid` (default): call `search_chunks` first, then allow direct fallback reads.
@@ -236,7 +243,7 @@ The unified help system organizes commands into logical categories:
 - **Session**: `/quit`, `/reset`, `/help`, `/compact`
 - **Agents**: `/agent`, `/agent_setup`
 - **Models & Providers**: `/model`, `/providers`, `/provider-setup`, `/provider-manage`, `/provider-test`
-- **Index**: `/index <build\|update\|stats>` (plus legacy aliases `/index-build`, `/index-update`, `/index-stats`)
+- **Index**: `/index <build\|update\|stats\|diagnose>` (plus legacy aliases `/index-build`, `/index-update`, `/index-stats`, `/index-diagnose`)
 - **Information**: `/tools`, `/config`, `/catalog`
 
 Use `/help` without arguments to see all commands with one-line descriptions grouped by category. Use `/help <command>` for detailed help including usage patterns, examples, and related commands:
@@ -376,6 +383,9 @@ flavia --agent summarizer
 
 # Verbose mode for debugging
 flavia -v
+
+# Enable RAG diagnostics at startup
+flavia --rag-debug
 
 # Show all configuration details
 flavia --config

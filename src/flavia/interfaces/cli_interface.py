@@ -1491,6 +1491,8 @@ def _print_active_model_hint(agent: RecursiveAgent, settings: Optional[Settings]
             parts.append(" | [yellow]subagents disabled[/yellow]")
         if settings.dry_run:
             parts.append(" | [bold yellow]DRY-RUN MODE[/bold yellow]")
+        if settings.rag_debug:
+            parts.append(" | [bold yellow]RAG DEBUG[/bold yellow]")
 
     console.print(f"[dim]{''.join(parts)}[/dim]\n")
 

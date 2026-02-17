@@ -45,6 +45,7 @@ class BaseAgent(ABC):
             parent_id=parent_id,
             resolved_model=self.model_id,
         )
+        self.context.rag_debug = bool(getattr(settings, "rag_debug", False))
 
         self.client = self._create_openai_client(self.provider)
 

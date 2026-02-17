@@ -54,6 +54,14 @@ class SearchChunksTool(BaseTool):
                     description="Restrict to documents matching this name substring",
                     required=False,
                 ),
+                ToolParameter(
+                    name="debug",
+                    type="boolean",
+                    description=(
+                        "Include retrieval diagnostics (routing, hit counts, timings, tuning hints)."
+                    ),
+                    required=False,
+                ),
             ],
         )
 
@@ -94,6 +102,14 @@ class SearchChunksTool(BaseTool):
             if not isinstance(doc_name_filter, str):
                 return "Error: doc_name_filter must be a string."
             doc_name_filter = doc_name_filter.strip().lower() or None
+
+        debug_raw = args.get("debug")
+        if debug_raw is None:
+            debug_mode = bool(getattr(agent_context, "rag_debug", False))
+        elif isinstance(debug_raw, bool):
+            debug_mode = debug_raw
+        else:
+            return "Error: debug must be true or false."
 
         allowed_config, config_error = check_read_permission(config_dir, agent_context)
         if not allowed_config:
@@ -150,6 +166,7 @@ class SearchChunksTool(BaseTool):
 
         settings = get_settings()
 
+        trace: dict[str, Any] = {}
         try:
             results = retrieve(
                 question=query,
@@ -157,14 +174,26 @@ class SearchChunksTool(BaseTool):
                 settings=settings,
                 doc_ids_filter=doc_ids_filter,
                 top_k=top_k,
+                catalog_router_k=settings.rag_catalog_router_k,
+                vector_k=settings.rag_vector_k,
+                fts_k=settings.rag_fts_k,
+                rrf_k=settings.rag_rrf_k,
+                max_chunks_per_doc=settings.rag_max_chunks_per_doc,
+                expand_video_temporal=settings.rag_expand_video_temporal,
+                debug_info=trace if debug_mode else None,
             )
         except Exception as e:
             return f"Error during retrieval: {e}"
 
         if not results:
-            return f"No results found for query: '{query}'"
+            message = f"No results found for query: '{query}'"
+            if debug_mode and trace:
+                message = f"{message}\n\n{self._format_debug_trace(trace)}"
+            return message
 
         formatted_results = self._format_results(results)
+        if debug_mode and trace:
+            formatted_results = f"{formatted_results}\n{self._format_debug_trace(trace)}"
         return formatted_results
 
     def _format_results(self, results: list[dict[str, Any]]) -> str:
@@ -224,6 +253,71 @@ class SearchChunksTool(BaseTool):
             parts.append("")
 
         return "\n".join(parts)
+
+    def _format_debug_trace(self, trace: dict[str, Any]) -> str:
+        """Format retrieval diagnostics for troubleshooting and tuning."""
+        params = trace.get("params", {})
+        counts = trace.get("counts", {})
+        timings = trace.get("timings_ms", {})
+        filters = trace.get("filters", {})
+
+        lines = ["[RAG DEBUG]"]
+        lines.append(
+            "params: "
+            f"top_k={params.get('top_k')} "
+            f"router_k={params.get('catalog_router_k')} "
+            f"vector_k={params.get('vector_k')} "
+            f"fts_k={params.get('fts_k')} "
+            f"rrf_k={params.get('rrf_k')} "
+            f"max_chunks_per_doc={params.get('max_chunks_per_doc')} "
+            f"expand_video_temporal={params.get('expand_video_temporal')}"
+        )
+        lines.append(
+            "filters: "
+            f"input={filters.get('input_doc_ids_filter_count')} "
+            f"effective={filters.get('effective_doc_ids_filter_count')} "
+            f"routed={counts.get('routed_doc_ids')}"
+        )
+        lines.append(
+            "hits: "
+            f"vector={counts.get('vector_hits', 0)} "
+            f"fts={counts.get('fts_hits', 0)} "
+            f"unique={counts.get('unique_candidates', 0)} "
+            f"final={counts.get('final_results', counts.get('results_before_temporal', 0))} "
+            f"skipped_by_diversity={counts.get('skipped_by_doc_diversity', 0)}"
+        )
+        lines.append(
+            "timings_ms: "
+            f"router={timings.get('router', 0)} "
+            f"vector={timings.get('vector', 0)} "
+            f"fts={timings.get('fts', 0)} "
+            f"fusion={timings.get('fusion', 0)} "
+            f"temporal={timings.get('temporal', 0)} "
+            f"total={timings.get('total', 0)}"
+        )
+
+        modalities = counts.get("final_modalities") or {}
+        if modalities:
+            modal_str = ", ".join(f"{k}={v}" for k, v in sorted(modalities.items()))
+            lines.append(f"modalities: {modal_str}")
+
+        # Lightweight, actionable hints for tuning.
+        hints: list[str] = []
+        if counts.get("vector_hits", 0) == 0 and counts.get("fts_hits", 0) > 0:
+            hints.append("Vector recall is low; consider higher vector_k or chunk tuning.")
+        if counts.get("fts_hits", 0) == 0 and counts.get("vector_hits", 0) > 0:
+            hints.append("Lexical recall is low; consider higher fts_k or query wording.")
+        if counts.get("routed_doc_ids") == 0:
+            hints.append("Catalog router found no candidates; inspect summaries/metadata quality.")
+        if counts.get("skipped_by_doc_diversity", 0) > 0:
+            hints.append("Diversity cap clipped results; consider higher RAG_MAX_CHUNKS_PER_DOC.")
+
+        if hints:
+            lines.append("hints:")
+            for hint in hints[:4]:
+                lines.append(f"- {hint}")
+
+        return "\n".join(lines)
 
     def is_available(self, agent_context: "AgentContext") -> bool:
         """Available whenever the vector index exists."""

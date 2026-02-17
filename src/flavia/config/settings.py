@@ -60,6 +60,18 @@ class Settings:
     # Runtime
     verbose: bool = False
     dry_run: bool = False
+    rag_debug: bool = False
+
+    # RAG/retrieval tuning
+    rag_catalog_router_k: int = 20
+    rag_vector_k: int = 15
+    rag_fts_k: int = 15
+    rag_rrf_k: int = 60
+    rag_max_chunks_per_doc: int = 3
+    rag_chunk_min_tokens: int = 300
+    rag_chunk_max_tokens: int = 800
+    rag_video_window_seconds: int = 60
+    rag_expand_video_temporal: bool = True
 
     # Status display settings (-1 = unlimited)
     status_max_tasks_main: int = -1
@@ -244,6 +256,7 @@ def load_settings() -> Settings:
     summary_model = os.getenv("SUMMARY_MODEL", "").strip() or None
     image_vision_model = os.getenv("IMAGE_VISION_MODEL", "").strip() or None
     compact_threshold, compact_threshold_configured = _load_compact_threshold_from_env()
+    rag_debug = _load_bool_env("RAG_DEBUG", default=False)
 
     # If no providers loaded but we have env vars, create fallback provider
     if not providers.providers and api_key:
@@ -279,6 +292,26 @@ def load_settings() -> Settings:
         providers=providers,
         status_max_tasks_main=int(os.getenv("STATUS_MAX_TASKS_MAIN", "-1")),
         status_max_tasks_subagent=int(os.getenv("STATUS_MAX_TASKS_SUBAGENT", "-1")),
+        rag_debug=rag_debug,
+        rag_catalog_router_k=_load_int_env("RAG_CATALOG_ROUTER_K", default=20, minimum=0, maximum=500),
+        rag_vector_k=_load_int_env("RAG_VECTOR_K", default=15, minimum=0, maximum=500),
+        rag_fts_k=_load_int_env("RAG_FTS_K", default=15, minimum=0, maximum=500),
+        rag_rrf_k=_load_int_env("RAG_RRF_K", default=60, minimum=1, maximum=1000),
+        rag_max_chunks_per_doc=_load_int_env(
+            "RAG_MAX_CHUNKS_PER_DOC", default=3, minimum=1, maximum=50
+        ),
+        rag_chunk_min_tokens=_load_int_env(
+            "RAG_CHUNK_MIN_TOKENS", default=300, minimum=50, maximum=2000
+        ),
+        rag_chunk_max_tokens=_load_int_env(
+            "RAG_CHUNK_MAX_TOKENS", default=800, minimum=100, maximum=4000
+        ),
+        rag_video_window_seconds=_load_int_env(
+            "RAG_VIDEO_WINDOW_SECONDS", default=60, minimum=5, maximum=600
+        ),
+        rag_expand_video_temporal=_load_bool_env(
+            "RAG_EXPAND_VIDEO_TEMPORAL", default=True
+        ),
     )
 
     # Load models and agents config
@@ -315,6 +348,32 @@ def _load_compact_threshold_from_env() -> tuple[float, bool]:
     if 0.0 <= threshold <= 1.0:
         return threshold, True
     return 0.9, False
+
+
+def _load_bool_env(name: str, default: bool) -> bool:
+    """Parse a boolean environment variable."""
+    raw = os.getenv(name, "").strip().lower()
+    if not raw:
+        return default
+    if raw in {"1", "true", "yes", "y", "on"}:
+        return True
+    if raw in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
+def _load_int_env(name: str, default: int, minimum: int, maximum: int) -> int:
+    """Parse bounded integer env var with fallback to default."""
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    if value < minimum or value > maximum:
+        return default
+    return value
 
 
 # Global settings instance

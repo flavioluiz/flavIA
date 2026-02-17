@@ -6,6 +6,7 @@ indexes.
 """
 
 import time
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -181,10 +182,19 @@ def process_document(
     Returns:
         Dict with counts: chunks_added, chunks_updated, chunks_skipped.
     """
-    stats = {"added": 0, "updated": 0, "skipped": 0}
+    doc_started = time.perf_counter()
+    stats = {"added": 0, "updated": 0, "skipped": 0, "chunked": 0, "embed_failed": 0}
 
-    chunks = chunker.chunk_document(entry, base_dir)
+    chunks = chunker.chunk_document(
+        entry,
+        base_dir,
+        chunk_min_tokens=settings.rag_chunk_min_tokens,
+        chunk_max_tokens=settings.rag_chunk_max_tokens,
+        video_window_seconds=settings.rag_video_window_seconds,
+    )
+    stats["chunked"] = len(chunks)
     if not chunks:
+        stats["duration_ms"] = int((time.perf_counter() - doc_started) * 1000)
         return stats
 
     client, model = embedder.get_embedding_client(settings)
@@ -258,6 +268,7 @@ def process_document(
 
     if failed_chunk_ids:
         stats["skipped"] += len(failed_chunk_ids)
+        stats["embed_failed"] += len(failed_chunk_ids)
         preview = ", ".join(failed_chunk_ids[:5])
         if len(failed_chunk_ids) > 5:
             preview += f", ... (+{len(failed_chunk_ids) - 5} more)"
@@ -267,6 +278,7 @@ def process_document(
         )
 
     if not vector_items:
+        stats["duration_ms"] = int((time.perf_counter() - doc_started) * 1000)
         return stats
 
     vector_inserted, vector_updated = vector_store.upsert(vector_items)
@@ -282,6 +294,7 @@ def process_document(
 
     stats["added"] = vector_inserted
     stats["updated"] = vector_updated
+    stats["duration_ms"] = int((time.perf_counter() - doc_started) * 1000)
 
     return stats
 
@@ -340,6 +353,13 @@ def build_index(
         }
 
     console.print(f"[cyan]Found {len(entries)} documents with converted content[/cyan]")
+    if settings.rag_debug:
+        console.print(
+            "[dim]RAG debug: "
+            f"chunk_min_tokens={settings.rag_chunk_min_tokens}, "
+            f"chunk_max_tokens={settings.rag_chunk_max_tokens}, "
+            f"video_window_s={settings.rag_video_window_seconds}[/dim]"
+        )
 
     console.print("[cyan]Clearing existing index...[/cyan]")
     clear_index(base_dir, console)
@@ -381,6 +401,14 @@ def build_index(
                 total_chunks += stats["added"] + stats["updated"] + stats["skipped"]
                 total_added += stats["added"]
                 total_updated += stats["updated"]
+                if settings.rag_debug:
+                    console.print(
+                        "[dim]  "
+                        f"{entry.name}: chunked={stats.get('chunked', 0)}, "
+                        f"added={stats['added']}, updated={stats['updated']}, "
+                        f"skipped={stats['skipped']}, embed_failed={stats.get('embed_failed', 0)}, "
+                        f"duration={stats.get('duration_ms', 0)}ms[/dim]"
+                    )
 
                 progress.update(task, advance=1)
 
@@ -470,6 +498,13 @@ def update_index(base_dir: Path, settings: Settings, console: Console) -> dict[s
             }
 
         console.print(f"[cyan]Found {len(entries)} documents to process[/cyan]")
+        if settings.rag_debug:
+            console.print(
+                "[dim]RAG debug: "
+                f"chunk_min_tokens={settings.rag_chunk_min_tokens}, "
+                f"chunk_max_tokens={settings.rag_chunk_max_tokens}, "
+                f"video_window_s={settings.rag_video_window_seconds}[/dim]"
+            )
         console.print("[cyan]Updating index...[/cyan]")
 
         with Progress(
@@ -502,6 +537,14 @@ def update_index(base_dir: Path, settings: Settings, console: Console) -> dict[s
 
                 total_added += stats["added"]
                 total_updated += stats["updated"]
+                if settings.rag_debug:
+                    console.print(
+                        "[dim]  "
+                        f"{entry.name}: chunked={stats.get('chunked', 0)}, "
+                        f"added={stats['added']}, updated={stats['updated']}, "
+                        f"skipped={stats['skipped']}, embed_failed={stats.get('embed_failed', 0)}, "
+                        f"duration={stats.get('duration_ms', 0)}ms[/dim]"
+                    )
 
                 progress.update(task, advance=1)
 
@@ -568,6 +611,156 @@ def show_index_stats(base_dir: Path, console: Console) -> None:
 
     except Exception as e:
         console.print(f"[red]Error reading index: {e}[/red]")
+
+
+def show_index_diagnostics(base_dir: Path, settings: Settings, console: Console) -> None:
+    """Show detailed RAG diagnostics for tuning and troubleshooting."""
+    index_db_path = base_dir / ".index" / "index.db"
+    if not index_db_path.exists():
+        console.print(
+            "[red]No index found. Run /index build (or /index-build) to create one.[/red]"
+        )
+        return
+
+    try:
+        with vector_store.VectorStore(base_dir) as vs, fts.FTSIndex(base_dir) as fts_idx:
+            vs_stats = vs.get_stats()
+            fts_stats = fts_idx.get_stats()
+
+        defaults = chunker.get_chunking_defaults()
+        config_table = Table(title="[bold]RAG Runtime Configuration[/bold]", show_header=False)
+        config_table.add_column("", justify="left")
+        config_table.add_column("", justify="right")
+        config_table.add_row("RAG debug mode:", f"[cyan]{bool(settings.rag_debug)}[/cyan]")
+        config_table.add_row("Embedding model:", f"[cyan]{embedder.EMBEDDING_MODEL}[/cyan]")
+        config_table.add_row("Embedding dimension:", f"[cyan]{embedder.EMBEDDING_DIMENSION}[/cyan]")
+        config_table.add_row(
+            "Chunk min/max tokens:",
+            f"[cyan]{settings.rag_chunk_min_tokens}/{settings.rag_chunk_max_tokens}[/cyan]",
+        )
+        config_table.add_row(
+            "Video window (seconds):", f"[cyan]{settings.rag_video_window_seconds}[/cyan]"
+        )
+        config_table.add_row(
+            "Retrieval params:",
+            "[cyan]"
+            f"router_k={settings.rag_catalog_router_k}, "
+            f"vector_k={settings.rag_vector_k}, "
+            f"fts_k={settings.rag_fts_k}, "
+            f"rrf_k={settings.rag_rrf_k}, "
+            f"max_chunks_per_doc={settings.rag_max_chunks_per_doc}"
+            "[/cyan]",
+        )
+        config_table.add_row(
+            "Expand video temporal:",
+            f"[cyan]{bool(settings.rag_expand_video_temporal)}[/cyan]",
+        )
+        config_table.add_row(
+            "Chunk defaults (code):",
+            "[dim]"
+            f"{defaults['chunk_min_tokens']}-{defaults['chunk_max_tokens']} tokens, "
+            f"window={defaults['video_window_seconds']}s"
+            "[/dim]",
+        )
+        console.print(config_table)
+
+        health_table = Table(title="[bold]Index Health[/bold]", show_header=False)
+        health_table.add_column("", justify="left")
+        health_table.add_column("", justify="right")
+        health_table.add_row("Vector chunks:", f"[cyan]{vs_stats['chunk_count']:,}[/cyan]")
+        health_table.add_row("FTS chunks:", f"[cyan]{fts_stats['chunk_count']:,}[/cyan]")
+        health_table.add_row("Documents:", f"[cyan]{vs_stats['doc_count']:,}[/cyan]")
+        health_table.add_row(
+            "Chunk parity:",
+            "[green]OK[/green]"
+            if vs_stats["chunk_count"] == fts_stats["chunk_count"]
+            else "[yellow]MISMATCH[/yellow]",
+        )
+        if vs_stats.get("last_indexed_at"):
+            health_table.add_row("Last indexed:", f"[dim]{vs_stats['last_indexed_at']}[/dim]")
+        console.print(health_table)
+
+        with sqlite3.connect(index_db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            modality_rows = conn.execute(
+                """
+                SELECT
+                    m.modality AS modality,
+                    COUNT(*) AS chunk_count,
+                    AVG(LENGTH(f.text)) AS avg_chars,
+                    MIN(LENGTH(f.text)) AS min_chars,
+                    MAX(LENGTH(f.text)) AS max_chars
+                FROM chunks_meta m
+                JOIN chunks_fts f ON m.chunk_id = f.chunk_id
+                GROUP BY m.modality
+                ORDER BY chunk_count DESC, modality ASC
+                """
+            ).fetchall()
+
+            top_doc_rows = conn.execute(
+                """
+                SELECT
+                    COALESCE(NULLIF(doc_name, ''), '(unknown)') AS doc_name,
+                    COALESCE(NULLIF(file_type, ''), '(unknown)') AS file_type,
+                    COUNT(*) AS chunk_count
+                FROM chunks_meta
+                GROUP BY doc_name, file_type
+                ORDER BY chunk_count DESC, doc_name ASC
+                LIMIT 12
+                """
+            ).fetchall()
+
+        if modality_rows:
+            modality_table = Table(title="[bold]Chunk Distribution by Modality[/bold]")
+            modality_table.add_column("Modality")
+            modality_table.add_column("Chunks", justify="right")
+            modality_table.add_column("Avg chars", justify="right")
+            modality_table.add_column("Min chars", justify="right")
+            modality_table.add_column("Max chars", justify="right")
+            modality_table.add_column("Avg tokens", justify="right")
+            for row in modality_rows:
+                avg_chars = float(row["avg_chars"] or 0.0)
+                avg_tokens = int(round(avg_chars / 4.0)) if avg_chars > 0 else 0
+                modality_table.add_row(
+                    str(row["modality"] or "(unknown)"),
+                    f"{int(row['chunk_count']):,}",
+                    f"{int(round(avg_chars)):,}",
+                    f"{int(row['min_chars'] or 0):,}",
+                    f"{int(row['max_chars'] or 0):,}",
+                    f"{avg_tokens:,}",
+                )
+            console.print(modality_table)
+
+        if top_doc_rows:
+            doc_table = Table(title="[bold]Top Documents by Chunk Count[/bold]")
+            doc_table.add_column("Document")
+            doc_table.add_column("Type")
+            doc_table.add_column("Chunks", justify="right")
+            for row in top_doc_rows:
+                doc_table.add_row(
+                    str(row["doc_name"]),
+                    str(row["file_type"]),
+                    f"{int(row['chunk_count']):,}",
+                )
+            console.print(doc_table)
+
+        hints: list[str] = []
+        if vs_stats["chunk_count"] == 0:
+            hints.append("Index is empty. Run /index build.")
+        if settings.rag_chunk_min_tokens >= settings.rag_chunk_max_tokens:
+            hints.append("Chunk min/max tokens are inverted or equal; review RAG_CHUNK_* envs.")
+        if vs_stats["chunk_count"] != fts_stats["chunk_count"]:
+            hints.append("Vector/FTS chunk counts diverge; run /index build to resync.")
+        if settings.rag_vector_k == 0 and settings.rag_fts_k == 0:
+            hints.append("Both RAG_VECTOR_K and RAG_FTS_K are 0; retrieval will always be empty.")
+
+        if hints:
+            console.print("[bold yellow]Tuning Hints[/bold yellow]")
+            for hint in hints:
+                console.print(f"- {hint}")
+
+    except Exception as e:
+        console.print(f"[red]Error reading index diagnostics: {e}[/red]")
 
 
 def format_duration(seconds: float) -> str:

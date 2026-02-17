@@ -372,6 +372,7 @@ def cmd_reset(ctx: CommandContext, args: str) -> bool:
     reset_settings()
     new_settings = load_settings()
     new_settings.verbose = ctx.settings.verbose
+    new_settings.rag_debug = ctx.settings.rag_debug
     # Preserve runtime-only flags across reset
     new_settings.subagents_enabled = ctx.settings.subagents_enabled
     new_settings.active_agent = ctx.settings.active_agent
@@ -902,14 +903,59 @@ def cmd_compact(ctx: CommandContext, args: str) -> bool:
 
 
 @register_command(
+    name="/rag-debug",
+    category="Index",
+    short_desc="Toggle RAG diagnostics mode",
+    long_desc="Enable/disable detailed retrieval diagnostics in search_chunks output. "
+    "Use 'on', 'off', or 'status'. This is runtime-only for the current session.",
+    usage="/rag-debug [on|off|status]",
+    examples=[
+        "/rag-debug           Show current state",
+        "/rag-debug on        Enable detailed RAG diagnostics",
+        "/rag-debug off       Disable detailed RAG diagnostics",
+    ],
+    related=["/index diagnose", "/config"],
+    accepts_args=True,
+)
+def cmd_rag_debug(ctx: CommandContext, args: str) -> bool:
+    """Enable/disable runtime RAG diagnostics mode."""
+    option = args.strip().lower() if args.strip() else "status"
+    if option not in {"on", "off", "status"}:
+        ctx.console.print("[red]Usage: /rag-debug [on|off|status][/red]")
+        return True
+
+    if option == "on":
+        ctx.settings.rag_debug = True
+        if hasattr(ctx.agent, "context"):
+            ctx.agent.context.rag_debug = True
+        ctx.console.print("[green]RAG debug mode enabled for this session.[/green]")
+        return True
+
+    if option == "off":
+        ctx.settings.rag_debug = False
+        if hasattr(ctx.agent, "context"):
+            ctx.agent.context.rag_debug = False
+        ctx.console.print("[yellow]RAG debug mode disabled.[/yellow]")
+        return True
+
+    state = bool(getattr(ctx.settings, "rag_debug", False))
+    ctx.console.print(f"RAG debug mode: [cyan]{state}[/cyan]")
+    if state:
+        ctx.console.print("[dim]search_chunks outputs include retrieval diagnostics.[/dim]")
+    else:
+        ctx.console.print("[dim]Use /rag-debug on to enable detailed diagnostics.[/dim]")
+    return True
+
+
+@register_command(
     name="/index",
     category="Index",
     short_desc="Manage retrieval index",
     long_desc="Index subcommands: build (full rebuild), update (incremental), "
-    "stats (current index statistics).",
-    usage="/index <build|update|stats>",
-    examples=["/index build", "/index update", "/index stats"],
-    related=["/index-build", "/index-update", "/index-stats"],
+    "stats (current index statistics), diagnose (detailed tuning diagnostics).",
+    usage="/index <build|update|stats|diagnose>",
+    examples=["/index build", "/index update", "/index stats", "/index diagnose"],
+    related=["/index-build", "/index-update", "/index-stats", "/index-diagnose", "/rag-debug"],
     accepts_args=True,
 )
 def cmd_index(ctx: CommandContext, args: str) -> bool:
@@ -922,8 +968,10 @@ def cmd_index(ctx: CommandContext, args: str) -> bool:
         return cmd_index_update(ctx, "")
     if subcommand == "stats":
         return cmd_index_stats(ctx, "")
+    if subcommand == "diagnose":
+        return cmd_index_diagnose(ctx, "")
 
-    ctx.console.print("[red]Usage: /index <build|update|stats>[/red]")
+    ctx.console.print("[red]Usage: /index <build|update|stats|diagnose>[/red]")
     return True
 
 
@@ -981,4 +1029,21 @@ def cmd_index_stats(ctx: CommandContext, args: str) -> bool:
 
     show_index_stats(ctx.settings.base_dir, ctx.console)
 
+    return True
+
+
+@register_command(
+    name="/index-diagnose",
+    category="Index",
+    short_desc="Show detailed RAG diagnostics (legacy alias)",
+    long_desc="Show detailed diagnostics for retrieval tuning: runtime RAG parameters, "
+    "chunk distributions, top documents by chunk count, and actionable hints.",
+    usage="/index-diagnose",
+    related=["/index", "/index-stats", "/rag-debug"],
+)
+def cmd_index_diagnose(ctx: CommandContext, args: str) -> bool:
+    """Show detailed index diagnostics for tuning."""
+    from flavia.content.indexer.index_manager import show_index_diagnostics
+
+    show_index_diagnostics(ctx.settings.base_dir, ctx.settings, ctx.console)
     return True

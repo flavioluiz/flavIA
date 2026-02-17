@@ -10,6 +10,18 @@ from flavia.tools import list_available_tools
 from flavia.tools.content.search_chunks import SearchChunksTool
 
 
+def _make_settings_stub():
+    class _Stub:
+        rag_catalog_router_k = 20
+        rag_vector_k = 15
+        rag_fts_k = 15
+        rag_rrf_k = 60
+        rag_max_chunks_per_doc = 3
+        rag_expand_video_temporal = True
+
+    return _Stub()
+
+
 def _make_context(base_dir: Path, permissions: AgentPermissions | None = None) -> AgentContext:
     return AgentContext(
         agent_id="test",
@@ -61,15 +73,16 @@ def test_search_chunks_file_type_filter_accepts_pdf_category(
     tool = SearchChunksTool()
     ctx = _make_context(tmp_path)
 
-    monkeypatch.setattr("flavia.config.settings.get_settings", lambda: object())
+    monkeypatch.setattr("flavia.config.settings.get_settings", _make_settings_stub)
     captured: dict[str, object] = {}
 
-    def _fake_retrieve(*, question, base_dir, settings, doc_ids_filter, top_k):
+    def _fake_retrieve(*, question, base_dir, settings, doc_ids_filter, top_k, **kwargs):
         captured["question"] = question
         captured["base_dir"] = base_dir
         captured["settings"] = settings
         captured["doc_ids_filter"] = doc_ids_filter
         captured["top_k"] = top_k
+        captured["kwargs"] = kwargs
         return [
             {
                 "doc_name": "paper.pdf",
@@ -93,6 +106,8 @@ def test_search_chunks_file_type_filter_accepts_pdf_category(
 
     assert captured["doc_ids_filter"] == [expected_doc_id]
     assert captured["top_k"] == 10
+    assert captured["kwargs"]["vector_k"] == 15
+    assert captured["kwargs"]["fts_k"] == 15
     assert "[1] paper.pdf — Section 2 > Method (lines 120–170)" in output
 
 
@@ -101,9 +116,9 @@ def test_search_chunks_formats_temporal_bundle_output(tmp_path: Path, monkeypatc
     tool = SearchChunksTool()
     ctx = _make_context(tmp_path)
 
-    monkeypatch.setattr("flavia.config.settings.get_settings", lambda: object())
+    monkeypatch.setattr("flavia.config.settings.get_settings", _make_settings_stub)
 
-    def _fake_retrieve(*, question, base_dir, settings, doc_ids_filter, top_k):
+    def _fake_retrieve(*, question, base_dir, settings, doc_ids_filter, top_k, **kwargs):
         return [
             {
                 "doc_name": "lecture.mp4",
@@ -147,3 +162,61 @@ def test_search_chunks_respects_read_permissions(tmp_path: Path) -> None:
     result = tool.execute({"query": "anything"}, ctx)
 
     assert "Access denied" in result
+
+
+def test_search_chunks_debug_output_includes_trace(tmp_path: Path, monkeypatch) -> None:
+    _create_catalog_and_index(tmp_path)
+    tool = SearchChunksTool()
+    ctx = _make_context(tmp_path)
+    ctx.rag_debug = True
+
+    monkeypatch.setattr("flavia.config.settings.get_settings", _make_settings_stub)
+
+    def _fake_retrieve(
+        *,
+        question,
+        base_dir,
+        settings,
+        doc_ids_filter,
+        top_k,
+        debug_info,
+        **kwargs,
+    ):
+        debug_info.update(
+            {
+                "params": {
+                    "top_k": top_k,
+                    "catalog_router_k": kwargs["catalog_router_k"],
+                    "vector_k": kwargs["vector_k"],
+                    "fts_k": kwargs["fts_k"],
+                    "rrf_k": kwargs["rrf_k"],
+                    "max_chunks_per_doc": kwargs["max_chunks_per_doc"],
+                    "expand_video_temporal": kwargs["expand_video_temporal"],
+                },
+                "filters": {"input_doc_ids_filter_count": None, "effective_doc_ids_filter_count": None},
+                "counts": {
+                    "routed_doc_ids": 2,
+                    "vector_hits": 4,
+                    "fts_hits": 3,
+                    "unique_candidates": 5,
+                    "final_results": 1,
+                    "skipped_by_doc_diversity": 0,
+                    "final_modalities": {"text": 1},
+                },
+                "timings_ms": {"router": 1.0, "vector": 5.0, "fts": 2.0, "fusion": 1.0, "temporal": 0.0, "total": 9.0},
+            }
+        )
+        return [
+            {
+                "doc_name": "paper.pdf",
+                "modality": "text",
+                "heading_path": ["Overview"],
+                "locator": {"line_start": 10, "line_end": 20},
+                "text": "Sample evidence.",
+            }
+        ]
+
+    monkeypatch.setattr("flavia.content.indexer.retrieve", _fake_retrieve)
+    output = tool.execute({"query": "sample"}, ctx)
+    assert "[RAG DEBUG]" in output
+    assert "hits: vector=4 fts=3" in output

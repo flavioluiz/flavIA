@@ -19,6 +19,27 @@ _CHUNK_MIN_CHARS = 300 * _CHARS_PER_TOKEN  # ~300 tokens
 _CHUNK_MAX_CHARS = 800 * _CHARS_PER_TOKEN  # ~800 tokens
 
 
+def _token_limits_to_char_limits(
+    min_tokens: Optional[int],
+    max_tokens: Optional[int],
+) -> tuple[int, int]:
+    """Convert token limits to safe char limits used by chunk merging."""
+    min_chars = _CHUNK_MIN_CHARS if min_tokens is None else max(1, int(min_tokens) * _CHARS_PER_TOKEN)
+    max_chars = _CHUNK_MAX_CHARS if max_tokens is None else max(1, int(max_tokens) * _CHARS_PER_TOKEN)
+    if min_chars > max_chars:
+        min_chars, max_chars = max_chars, min_chars
+    return min_chars, max_chars
+
+
+def get_chunking_defaults() -> dict[str, int]:
+    """Expose default chunking parameters for diagnostics and docs."""
+    return {
+        "chunk_min_tokens": _CHUNK_MIN_CHARS // _CHARS_PER_TOKEN,
+        "chunk_max_tokens": _CHUNK_MAX_CHARS // _CHARS_PER_TOKEN,
+        "video_window_seconds": 60,
+    }
+
+
 def _safe_resolve(base_dir: Path, path_value: str | Path) -> Optional[Path]:
     """Resolve a path and ensure it stays inside base_dir."""
     candidate = path_value if isinstance(path_value, Path) else Path(path_value)
@@ -210,6 +231,8 @@ def chunk_text_document(
     file_type: str,
     base_dir: Path,
     original_path: str,
+    chunk_min_tokens: Optional[int] = None,
+    chunk_max_tokens: Optional[int] = None,
 ) -> list[dict]:
     """Chunk a plain text/markdown converted document.
 
@@ -282,10 +305,11 @@ def chunk_text_document(
     if current_key is not None and current_run:
         section_runs.append((current_headings_run, current_run))
 
+    min_chars, max_chars = _token_limits_to_char_limits(chunk_min_tokens, chunk_max_tokens)
     chunks = []
     offset = 0
     for headings, paras in section_runs:
-        merged = _merge_paragraphs(paras, _CHUNK_MIN_CHARS, _CHUNK_MAX_CHARS)
+        merged = _merge_paragraphs(paras, min_chars, max_chars)
         for chunk_text, line_start, line_end in merged:
             if not chunk_text.strip():
                 continue
@@ -319,6 +343,9 @@ def chunk_video_document(
     base_dir: Path,
     original_path: str,
     frame_desc_paths: Optional[list[str]] = None,
+    chunk_min_tokens: Optional[int] = None,
+    chunk_max_tokens: Optional[int] = None,
+    video_window_seconds: Optional[int] = None,
 ) -> list[dict]:
     """Chunk a video document: transcript stream + frame description stream.
 
@@ -357,6 +384,9 @@ def chunk_video_document(
                 base_dir,
                 converted_path,
                 original_path,
+                chunk_min_tokens=chunk_min_tokens,
+                chunk_max_tokens=chunk_max_tokens,
+                video_window_seconds=video_window_seconds,
             )
         )
 
@@ -384,6 +414,9 @@ def _chunk_video_transcript(
     base_dir: Path,
     converted_path: Path,
     original_path: str,
+    chunk_min_tokens: Optional[int] = None,
+    chunk_max_tokens: Optional[int] = None,
+    video_window_seconds: Optional[int] = None,
 ) -> list[dict]:
     """Produce video_transcript chunks grouped into ~60-second windows."""
     body = _extract_transcription_body(text)
@@ -419,10 +452,18 @@ def _chunk_video_transcript(
 
     if not segments:
         # Fall back to plain text chunking
-        return chunk_text_document(converted_path, source_name, "video", base_dir, original_path)
+        return chunk_text_document(
+            converted_path,
+            source_name,
+            "video",
+            base_dir,
+            original_path,
+            chunk_min_tokens=chunk_min_tokens,
+            chunk_max_tokens=chunk_max_tokens,
+        )
 
     # Group into ~60-second windows
-    window_secs = 60.0
+    window_secs = float(video_window_seconds or 60)
     chunks = []
     window_start = segments[0][0]
     window_parts: list[tuple[float, float, str]] = []
@@ -531,6 +572,9 @@ def _chunk_frame_descriptions(
 def chunk_document(
     entry,
     base_dir: Path,
+    chunk_min_tokens: Optional[int] = None,
+    chunk_max_tokens: Optional[int] = None,
+    video_window_seconds: Optional[int] = None,
 ) -> list[dict]:
     """Dispatch to the right chunker based on a catalog FileEntry.
 
@@ -571,6 +615,9 @@ def chunk_document(
             base_dir=base_dir,
             original_path=path,
             frame_desc_paths=frame_descriptions if frame_descriptions else None,
+            chunk_min_tokens=chunk_min_tokens,
+            chunk_max_tokens=chunk_max_tokens,
+            video_window_seconds=video_window_seconds,
         )
 
     return chunk_text_document(
@@ -579,4 +626,6 @@ def chunk_document(
         file_type=file_type,
         base_dir=base_dir,
         original_path=path,
+        chunk_min_tokens=chunk_min_tokens,
+        chunk_max_tokens=chunk_max_tokens,
     )

@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **RAG diagnostics mode and tuning controls**:
+  - New runtime command `/rag-debug [on|off|status]` to toggle detailed retrieval diagnostics in `search_chunks`
+  - New `/index diagnose` command (alias `/index-diagnose`) with deeper index health insights:
+    - runtime RAG configuration
+    - modality chunk distribution (count/min/max/avg size)
+    - top documents by chunk count
+    - actionable tuning hints
+  - `search_chunks` now supports `debug: true` and can emit pipeline traces (router/vector/FTS/fusion timings and counts)
+  - New RAG tuning environment variables:
+    - `RAG_CATALOG_ROUTER_K`, `RAG_VECTOR_K`, `RAG_FTS_K`, `RAG_RRF_K`, `RAG_MAX_CHUNKS_PER_DOC`
+    - `RAG_CHUNK_MIN_TOKENS`, `RAG_CHUNK_MAX_TOKENS`, `RAG_VIDEO_WINDOW_SECONDS`
+    - `RAG_EXPAND_VIDEO_TEMPORAL`, `RAG_DEBUG`
+  - Index build/update now includes richer per-document diagnostics when RAG debug mode is enabled
 - **Agent Guidance Update (Task 11.8)**: Updated `_build_catalog_first_guidance()` in `src/flavia/agent/context.py` to clarify tool usage:
   - Use `search_chunks` for document content and semantic questions (what/how/why)
   - Keep `query_catalog` for metadata and file discovery/filtering by type or name

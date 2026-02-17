@@ -31,6 +31,7 @@ class AgentContext:
     dry_run: bool = False
     max_context_tokens: int = 128_000
     current_context_tokens: int = 0
+    rag_debug: bool = False
     converted_access_mode: str = "hybrid"
     allow_converted_read: bool = False
 

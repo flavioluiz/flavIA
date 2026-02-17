@@ -93,7 +93,11 @@ def test_process_document_handles_embedding_tuples_and_partial_failures(monkeypa
     assert [c["chunk_id"] for c in embed_input["chunks"]] == ["chunk_ok", "chunk_fail"]
     assert [item[0] for item in fake_vs.items] == ["chunk_ok"]
     assert [item["chunk_id"] for item in fake_fts.chunks] == ["chunk_ok"]
-    assert stats == {"added": 1, "updated": 0, "skipped": 1}
+    assert stats["added"] == 1
+    assert stats["updated"] == 0
+    assert stats["skipped"] == 1
+    assert stats["chunked"] == 2
+    assert stats["embed_failed"] == 1
     assert existing_chunk_ids == {"chunk_ok"}
 
 

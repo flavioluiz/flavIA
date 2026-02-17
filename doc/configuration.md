@@ -311,6 +311,18 @@ DEFAULT_MODEL=synthetic:hf:moonshotai/Kimi-K2.5
 AGENT_MAX_DEPTH=3
 AGENT_PARALLEL_WORKERS=4
 
+# RAG diagnostics and tuning (optional)
+RAG_DEBUG=false
+RAG_CATALOG_ROUTER_K=20
+RAG_VECTOR_K=15
+RAG_FTS_K=15
+RAG_RRF_K=60
+RAG_MAX_CHUNKS_PER_DOC=3
+RAG_CHUNK_MIN_TOKENS=300
+RAG_CHUNK_MAX_TOKENS=800
+RAG_VIDEO_WINDOW_SECONDS=60
+RAG_EXPAND_VIDEO_TEMPORAL=true
+
 # CLI status panel limits (-1 = unlimited)
 STATUS_MAX_TASKS_MAIN=5
 STATUS_MAX_TASKS_SUBAGENT=3
@@ -320,6 +332,8 @@ TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
 TELEGRAM_ALLOWED_USER_IDS=123456789,987654321
 TELEGRAM_ALLOW_ALL_USERS=true
 ```
+
+`RAG_DEBUG=true` enables detailed retrieval diagnostics in `search_chunks` output (equivalent to runtime `/rag-debug on`).
 
 ## Connection test
 
