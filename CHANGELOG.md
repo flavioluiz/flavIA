@@ -152,6 +152,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - `chunker.chunk_document()` now uses the original source checksum (`entry.checksum_sha256`) for `doc_id` derivation when available
   - This aligns index-time `doc_id` generation with retrieval/router/filter derivation and avoids scope mismatches
   - Legacy fallback (converted checksum) is preserved only for direct chunker calls without catalog checksum context
+  - **Migration note**: existing indexes built before this change should run `/index build` once to regenerate chunk metadata with the new stable `doc_id` mapping
   - Added regression test in `tests/test_content_indexer_chunker.py`
 - **Agent retrieval guidance update**:
   - Catalog-first prompt guidance now explicitly instructs keeping `@arquivo.ext` mentions in `search_chunks` queries for precise file scoping

@@ -227,6 +227,7 @@ From a fresh project setup (`flavia --init`) to retrieval-ready chat:
 
 Notes:
 - `search_chunks` is only available when `.index/index.db` exists.
+- After upgrading to this release, run `/index build` once to realign stored chunk `doc_id`s with the hardened source-checksum mapping.
 - `query_catalog` remains the best tool for file discovery/metadata filtering.
 - `search_chunks` supports explicit file scoping via `@arquivo` in the query text.
   - Example: `@ficha_recomendacao_33011010008P0.pdf pontos mal avaliados`

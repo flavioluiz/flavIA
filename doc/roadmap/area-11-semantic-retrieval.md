@@ -373,6 +373,7 @@ vault/
 3. Matching originals are mapped to their indexed converted chunks through stable `doc_id`.
 4. Multiple mentions produce a union scope; explicit filters (`file_type_filter`, `doc_name_filter`) are then intersected.
 5. Unknown/unindexed mentions return explicit feedback instead of silently widening search.
+6. Migration: pre-hardening indexes should run `/index build` once to regenerate chunk metadata with consistent `doc_id`s.
 
 ### Open optimization backlog (next iterations)
 
