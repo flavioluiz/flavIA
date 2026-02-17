@@ -31,6 +31,7 @@ class AgentContext:
     dry_run: bool = False
     max_context_tokens: int = 128_000
     current_context_tokens: int = 0
+    allow_converted_read: bool = False
 
     @classmethod
     def from_profile(
@@ -53,6 +54,7 @@ class AgentContext:
             subagents=profile.subagents.copy(),
             model_id=resolved_model or str(profile.model),
             permissions=profile.permissions.copy(),
+            allow_converted_read=profile.allow_converted_read,
         )
 
     def can_spawn(self) -> bool:
@@ -79,6 +81,7 @@ class AgentContext:
             permissions=profile.permissions.copy(),
             write_confirmation=self.write_confirmation,
             dry_run=self.dry_run,
+            allow_converted_read=profile.allow_converted_read,
         )
 
 

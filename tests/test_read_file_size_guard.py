@@ -26,12 +26,14 @@ def _make_context(
     base_dir: Path,
     max_context_tokens: int = 128_000,
     current_context_tokens: int = 0,
+    allow_converted_read: bool = False,
 ) -> AgentContext:
     """Create a minimal AgentContext for testing."""
     return AgentContext(
         base_dir=base_dir,
         max_context_tokens=max_context_tokens,
         current_context_tokens=current_context_tokens,
+        allow_converted_read=allow_converted_read,
     )
 
 
@@ -124,6 +126,34 @@ class TestReadFileSmallFiles:
         result = tool.execute({"path": "nonexistent.txt"}, ctx)
         assert "Error" in result
         assert "not found" in result.lower()
+
+
+class TestReadFileConvertedDirPolicy:
+    """Direct reads from .converted should be policy-gated."""
+
+    def test_blocks_direct_read_from_converted_by_default(self, tmp_path):
+        converted_dir = tmp_path / ".converted"
+        converted_dir.mkdir()
+        (converted_dir / "video.md").write_text("converted transcript", encoding="utf-8")
+
+        tool = ReadFileTool()
+        ctx = _make_context(tmp_path, allow_converted_read=False)
+        result = tool.execute({"path": ".converted/video.md"}, ctx)
+
+        assert "blocked" in result.lower()
+        assert "search_chunks" in result
+        assert "allow_converted_read: true" in result
+
+    def test_allows_direct_read_from_converted_when_enabled(self, tmp_path):
+        converted_dir = tmp_path / ".converted"
+        converted_dir.mkdir()
+        (converted_dir / "video.md").write_text("converted transcript", encoding="utf-8")
+
+        tool = ReadFileTool()
+        ctx = _make_context(tmp_path, allow_converted_read=True)
+        result = tool.execute({"path": ".converted/video.md"}, ctx)
+
+        assert result == "converted transcript"
 
 
 class TestReadFileLargeFileBlocked:

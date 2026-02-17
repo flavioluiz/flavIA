@@ -96,6 +96,7 @@ def test_spawn_dynamic_inherits_parent_permissions(monkeypatch, tmp_path):
         base_dir=tmp_path,
         tools=["read_file"],
         subagents={},
+        allow_converted_read=True,
         permissions=parent_permissions,
     )
 
@@ -115,6 +116,7 @@ def test_spawn_dynamic_inherits_parent_permissions(monkeypatch, tmp_path):
     assert spawned_permissions.read_paths == parent_permissions.read_paths
     assert spawned_permissions.write_paths == parent_permissions.write_paths
     assert spawned_permissions is not parent_permissions
+    assert captured["profile"].allow_converted_read is True
 
 
 def test_spawn_dynamic_assigns_consistent_id_and_profile_name_under_concurrency(

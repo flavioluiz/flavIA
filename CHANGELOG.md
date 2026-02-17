@@ -129,6 +129,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- **RAG-first converted-content access policy**:
+  - `read_file` now blocks direct reads from `.converted/` by default
+  - Agents are guided to use `search_chunks` + `/index update` for semantic retrieval workflows
+  - New per-agent override in `agents.yaml`: `allow_converted_read: true` (useful for specialized reader/debug agents)
 - **Parallel CLI status display compaction**:
   - Per-agent recent activity window now defaults to 5 entries (was 8)
   - Window shrinks automatically when many sub-agents are active (`3` when >3 agents, `2` when >5)

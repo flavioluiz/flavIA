@@ -108,6 +108,7 @@ class AgentProfile:
     max_depth: int = 3
     compact_threshold: float = 0.9
     compact_threshold_source: str = "default"
+    allow_converted_read: bool = False
     permissions: AgentPermissions = field(default_factory=lambda: AgentPermissions())
 
     def __post_init__(self) -> None:
@@ -125,12 +126,14 @@ class AgentProfile:
             max_depth = parent.max_depth
             compact_threshold = parent.compact_threshold
             compact_threshold_source = parent.compact_threshold_source
+            allow_converted_read = parent.allow_converted_read
         else:
             base_dir = Path.cwd()
             model = "hf:moonshotai/Kimi-K2.5"
             max_depth = 3
             compact_threshold = 0.9
             compact_threshold_source = "default"
+            allow_converted_read = False
 
         if "path" in config:
             path = Path(config["path"])
@@ -148,6 +151,11 @@ class AgentProfile:
         if "compact_threshold" in config:
             compact_threshold = cls._validate_compact_threshold(config["compact_threshold"])
             compact_threshold_source = "config"
+        if "allow_converted_read" in config:
+            value = config["allow_converted_read"]
+            if not isinstance(value, bool):
+                raise ValueError("allow_converted_read must be true or false")
+            allow_converted_read = value
 
         # Parse permissions with inheritance
         if "permissions" in config:
@@ -169,6 +177,7 @@ class AgentProfile:
             max_depth=max_depth,
             compact_threshold=compact_threshold,
             compact_threshold_source=compact_threshold_source,
+            allow_converted_read=allow_converted_read,
             permissions=permissions,
         )
 
@@ -194,6 +203,8 @@ class AgentProfile:
             "max_depth": self.max_depth,
             "compact_threshold": self.compact_threshold,
         }
+        if self.allow_converted_read:
+            result["allow_converted_read"] = True
         perm_dict = self.permissions.to_dict(self.base_dir)
         if perm_dict:
             result["permissions"] = perm_dict

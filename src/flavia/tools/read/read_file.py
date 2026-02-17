@@ -141,6 +141,16 @@ def _build_blocked_message(
     )
 
 
+def _is_in_converted_dir(full_path: Path, base_dir: Path) -> bool:
+    """Return True when full_path is under base_dir/.converted."""
+    converted_dir = (base_dir / ".converted").resolve()
+    try:
+        full_path.resolve().relative_to(converted_dir)
+        return True
+    except ValueError:
+        return False
+
+
 class ReadFileTool(BaseTool):
     """Tool for reading file contents with context-window protection.
 
@@ -214,6 +224,17 @@ class ReadFileTool(BaseTool):
 
         if not full_path.is_file():
             return f"Error: '{path}' is not a file"
+
+        if _is_in_converted_dir(full_path, agent_context.base_dir) and not getattr(
+            agent_context, "allow_converted_read", False
+        ):
+            return (
+                "Error: Direct reads from '.converted/' are blocked for this agent. "
+                "Use 'search_chunks' for semantic/content questions and citations. "
+                "If retrieval is stale, run '/index update' (or '/index build' for first-time setup). "
+                "To allow direct '.converted/' reads for a specific agent, set "
+                "'allow_converted_read: true' in agents.yaml."
+            )
 
         try:
             file_size = full_path.stat().st_size

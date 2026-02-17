@@ -1369,6 +1369,10 @@ main:
     - Help the user understand and work with their documents
     - Prefer catalog-first workflow: get_catalog_summary/query_catalog before reading many files
 
+  # Default false: prefer RAG (`search_chunks`) instead of direct reads from `.converted/`.
+  # Set to true only for specialized reader/debug agents.
+  # allow_converted_read: false
+
   tools:
 {main_tools_block}\
 

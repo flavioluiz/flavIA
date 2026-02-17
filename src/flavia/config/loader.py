@@ -193,6 +193,10 @@ main:
   #     - "/etc/configs"   # Absolute paths (outside project)
   #   write:
   #     - "./output"       # Write access (also grants read)
+  #
+  # Allow direct reads from .converted/ markdown files.
+  # Default false keeps semantic retrieval via search_chunks as primary path.
+  # allow_converted_read: false
 
   # Tools available to this agent
   # Keep write-capable tools (write_* and compile_latex) disabled unless
