@@ -1,6 +1,7 @@
 """Tests for search_chunks tool."""
 
 import hashlib
+import json
 from pathlib import Path
 
 from flavia.agent.context import AgentContext
@@ -170,7 +171,7 @@ def test_search_chunks_respects_read_permissions(tmp_path: Path) -> None:
     assert "Access denied" in result
 
 
-def test_search_chunks_debug_output_includes_trace(tmp_path: Path, monkeypatch) -> None:
+def test_search_chunks_debug_persists_trace_without_injecting_output(tmp_path: Path, monkeypatch) -> None:
     _create_catalog_and_index(tmp_path)
     tool = SearchChunksTool()
     ctx = _make_context(tmp_path)
@@ -224,8 +225,17 @@ def test_search_chunks_debug_output_includes_trace(tmp_path: Path, monkeypatch) 
 
     monkeypatch.setattr("flavia.content.indexer.retrieve", _fake_retrieve)
     output = tool.execute({"query": "sample"}, ctx)
-    assert "[RAG DEBUG]" in output
-    assert "hits: vector=4 fts=3" in output
+    assert "[RAG DEBUG]" not in output
+    assert "Sample evidence." in output
+
+    log_path = tmp_path / ".flavia" / "rag_debug.jsonl"
+    assert log_path.exists()
+    lines = [line for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(lines) == 1
+    payload = json.loads(lines[0])
+    assert payload["query_raw"] == "sample"
+    assert payload["query_effective"] == "sample"
+    assert payload["trace"]["counts"]["vector_hits"] == 4
 
 
 def test_search_chunks_scopes_by_at_file_reference(tmp_path: Path, monkeypatch) -> None:

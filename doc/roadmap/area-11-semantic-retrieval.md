@@ -363,8 +363,9 @@ vault/
 |----|-------|--------|------------|--------|
 | H-11-01 | `doc_id` mismatch between chunker and retrieval filters (chunker used converted checksum while router/tool filters used original checksum) | file-scoped retrieval and Stage-A routing could miss indexed chunks | chunker updated to use catalog source checksum when available; fallback kept for legacy paths | Fixed |
 | H-11-02 | `search_chunks` lacked explicit `@arquivo` scoping | agent could ignore user-requested file scope and search broadly | implemented mention parser + resolver in `search_chunks` with doc filter intersection | Fixed |
-| H-11-03 | weak observability of retrieval decisions | difficult to tune router/vector/FTS behavior | added `/rag-debug`, `/index diagnose`, and trace output in `search_chunks` | Fixed |
+| H-11-03 | weak observability of retrieval decisions | difficult to tune router/vector/FTS behavior | added `/rag-debug`, `/index diagnose`, and persisted trace logging in `.flavia/rag_debug.jsonl` | Fixed |
 | H-11-04 | strict `.converted/` blocking sometimes reduced answer completeness | agent over-corrected with complex fallback paths | introduced `converted_access_mode` (`strict|hybrid|open`) with `hybrid` default | Fixed |
+| H-11-05 | debug traces inflated model context and could bias later turns | unnecessary token usage and behavior drift during diagnostics | removed verbose trace injection from `search_chunks` output; diagnostics now inspected via `/rag-debug last` | Fixed |
 
 ### Current behavior for explicit file targeting (`@arquivo`)
 

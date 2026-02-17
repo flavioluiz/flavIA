@@ -906,22 +906,33 @@ def cmd_compact(ctx: CommandContext, args: str) -> bool:
     name="/rag-debug",
     category="Index",
     short_desc="Toggle RAG diagnostics mode",
-    long_desc="Enable/disable detailed retrieval diagnostics in search_chunks output. "
-    "Use 'on', 'off', or 'status'. This is runtime-only for the current session.",
-    usage="/rag-debug [on|off|status]",
+    long_desc="Enable/disable RAG diagnostics capture for search_chunks. "
+    "When enabled, diagnostics are saved to `.flavia/rag_debug.jsonl` and can be inspected with "
+    "`/rag-debug last` without injecting verbose traces into model context.",
+    usage="/rag-debug [on|off|status|last [N]]",
     examples=[
         "/rag-debug           Show current state",
         "/rag-debug on        Enable detailed RAG diagnostics",
         "/rag-debug off       Disable detailed RAG diagnostics",
+        "/rag-debug last      Show the most recent diagnostics trace",
+        "/rag-debug last 5    Show the 5 most recent diagnostics traces",
     ],
     related=["/index diagnose", "/config"],
     accepts_args=True,
 )
 def cmd_rag_debug(ctx: CommandContext, args: str) -> bool:
-    """Enable/disable runtime RAG diagnostics mode."""
-    option = args.strip().lower() if args.strip() else "status"
-    if option not in {"on", "off", "status"}:
-        ctx.console.print("[red]Usage: /rag-debug [on|off|status][/red]")
+    """Enable/disable runtime RAG diagnostics mode and inspect recent traces."""
+    from flavia.content.indexer.rag_debug_log import (
+        format_rag_debug_trace,
+        read_recent_rag_debug_traces,
+    )
+
+    raw = args.strip()
+    parts = raw.split() if raw else []
+    option = parts[0].lower() if parts else "status"
+
+    if option not in {"on", "off", "status", "last"}:
+        ctx.console.print("[red]Usage: /rag-debug [on|off|status|last [N]][/red]")
         return True
 
     if option == "on":
@@ -929,6 +940,10 @@ def cmd_rag_debug(ctx: CommandContext, args: str) -> bool:
         if hasattr(ctx.agent, "context"):
             ctx.agent.context.rag_debug = True
         ctx.console.print("[green]RAG debug mode enabled for this session.[/green]")
+        ctx.console.print(
+            "[dim]Diagnostics are persisted to .flavia/rag_debug.jsonl "
+            "(not injected into model context).[/dim]"
+        )
         return True
 
     if option == "off":
@@ -938,12 +953,56 @@ def cmd_rag_debug(ctx: CommandContext, args: str) -> bool:
         ctx.console.print("[yellow]RAG debug mode disabled.[/yellow]")
         return True
 
+    if option == "last":
+        if len(parts) > 2:
+            ctx.console.print("[red]Usage: /rag-debug last [N][/red]")
+            return True
+
+        limit = 1
+        if len(parts) == 2:
+            if not parts[1].isdigit():
+                ctx.console.print("[red]Usage: /rag-debug last [N][/red]")
+                return True
+            limit = int(parts[1])
+            if limit <= 0 or limit > 50:
+                ctx.console.print("[red]N must be between 1 and 50.[/red]")
+                return True
+
+        entries = read_recent_rag_debug_traces(ctx.settings.base_dir, limit=limit)
+        if not entries:
+            ctx.console.print("[yellow]No RAG diagnostics traces found.[/yellow]")
+            ctx.console.print("[dim]Enable with /rag-debug on and run a retrieval query.[/dim]")
+            return True
+
+        for idx, entry in enumerate(entries, start=1):
+            trace_id = str(entry.get("trace_id", "unknown"))
+            timestamp = str(entry.get("timestamp", ""))
+            query = str(entry.get("query_effective") or entry.get("query_raw") or "")
+            mentions = entry.get("mentions") or []
+            ctx.console.print(
+                f"[bold]Trace {idx}/{len(entries)}[/bold] "
+                f"[cyan]{trace_id}[/cyan] "
+                f"[dim]{timestamp}[/dim]"
+            )
+            if query:
+                ctx.console.print(f"query: {query}")
+            if mentions:
+                ctx.console.print("mentions: " + ", ".join(str(m) for m in mentions))
+            formatted = format_rag_debug_trace(entry.get("trace", {}))
+            ctx.console.print(formatted, markup=False)
+            if idx != len(entries):
+                ctx.console.print("")
+        return True
+
     state = bool(getattr(ctx.settings, "rag_debug", False))
     ctx.console.print(f"RAG debug mode: [cyan]{state}[/cyan]")
     if state:
-        ctx.console.print("[dim]search_chunks outputs include retrieval diagnostics.[/dim]")
+        ctx.console.print(
+            "[dim]Diagnostics are being saved to .flavia/rag_debug.jsonl. "
+            "Use /rag-debug last to inspect.[/dim]"
+        )
     else:
-        ctx.console.print("[dim]Use /rag-debug on to enable detailed diagnostics.[/dim]")
+        ctx.console.print("[dim]Use /rag-debug on to enable diagnostics capture.[/dim]")
     return True
 
 

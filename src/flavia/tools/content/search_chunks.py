@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from ..base import BaseTool, ToolParameter, ToolSchema
 from ..permissions import check_read_permission
+from flavia.content.indexer.rag_debug_log import append_rag_debug_trace
 
 if TYPE_CHECKING:
     from flavia.agent.context import AgentContext
@@ -199,7 +200,9 @@ class SearchChunksTool(BaseTool):
                     name="debug",
                     type="boolean",
                     description=(
-                        "Include retrieval diagnostics (routing, hit counts, timings, tuning hints)."
+                        "Persist retrieval diagnostics to `.flavia/rag_debug.jsonl` "
+                        "for out-of-band inspection (`/rag-debug last`). "
+                        "Diagnostics are not injected into model context."
                     ),
                     required=False,
                 ),
@@ -306,7 +309,6 @@ class SearchChunksTool(BaseTool):
             if not doc_ids_filter:
                 doc_ids_filter = None
 
-        resolved_mentions: list[str] = []
         unresolved_mentions: list[str] = []
         unindexed_mentions: list[str] = []
         if mentions:
@@ -315,8 +317,6 @@ class SearchChunksTool(BaseTool):
                 catalog=catalog,
                 base_dir=base_dir,
             )
-            resolved_mentions = mentions[:]
-
             if not mention_doc_ids:
                 unresolved_parts: list[str] = []
                 if unresolved_mentions:
@@ -372,11 +372,25 @@ class SearchChunksTool(BaseTool):
         except Exception as e:
             return f"Error during retrieval: {e}"
 
+        if debug_mode:
+            append_rag_debug_trace(
+                base_dir,
+                {
+                    "query_raw": query,
+                    "query_effective": effective_query,
+                    "top_k": top_k,
+                    "file_type_filter": file_type_filter,
+                    "doc_name_filter": doc_name_filter,
+                    "mentions": [f"@{item}" for item in mentions],
+                    "unresolved_mentions": [f"@{item}" for item in unresolved_mentions],
+                    "unindexed_mentions": [f"@{item}" for item in unindexed_mentions],
+                    "doc_ids_filter_count": len(doc_ids_filter) if doc_ids_filter is not None else None,
+                    "trace": trace,
+                },
+            )
+
         if not results:
-            message = f"No results found for query: '{effective_query}'"
-            if debug_mode and trace:
-                message = f"{message}\n\n{self._format_debug_trace(trace)}"
-            return message
+            return f"No results found for query: '{effective_query}'"
 
         formatted_results = self._format_results(results)
         if mentions and (unresolved_mentions or unindexed_mentions):
@@ -386,8 +400,6 @@ class SearchChunksTool(BaseTool):
             if unindexed_mentions:
                 notes.append("not indexed: " + ", ".join(f"@{item}" for item in unindexed_mentions))
             formatted_results = f"Note: some @file references were ignored ({'; '.join(notes)}).\n\n{formatted_results}"
-        if debug_mode and trace:
-            formatted_results = f"{formatted_results}\n{self._format_debug_trace(trace)}"
         return formatted_results
 
     def _format_results(self, results: list[dict[str, Any]]) -> str:
@@ -447,80 +459,6 @@ class SearchChunksTool(BaseTool):
             parts.append("")
 
         return "\n".join(parts)
-
-    def _format_debug_trace(self, trace: dict[str, Any]) -> str:
-        """Format retrieval diagnostics for troubleshooting and tuning."""
-        params = trace.get("params", {})
-        counts = trace.get("counts", {})
-        timings = trace.get("timings_ms", {})
-        filters = trace.get("filters", {})
-        mention_scope = trace.get("mention_scope", {})
-
-        lines = ["[RAG DEBUG]"]
-        lines.append(
-            "params: "
-            f"top_k={params.get('top_k')} "
-            f"router_k={params.get('catalog_router_k')} "
-            f"vector_k={params.get('vector_k')} "
-            f"fts_k={params.get('fts_k')} "
-            f"rrf_k={params.get('rrf_k')} "
-            f"max_chunks_per_doc={params.get('max_chunks_per_doc')} "
-            f"expand_video_temporal={params.get('expand_video_temporal')}"
-        )
-        lines.append(
-            "filters: "
-            f"input={filters.get('input_doc_ids_filter_count')} "
-            f"effective={filters.get('effective_doc_ids_filter_count')} "
-            f"routed={counts.get('routed_doc_ids')}"
-        )
-        lines.append(
-            "hits: "
-            f"vector={counts.get('vector_hits', 0)} "
-            f"fts={counts.get('fts_hits', 0)} "
-            f"unique={counts.get('unique_candidates', 0)} "
-            f"final={counts.get('final_results', counts.get('results_before_temporal', 0))} "
-            f"skipped_by_diversity={counts.get('skipped_by_doc_diversity', 0)}"
-        )
-        lines.append(
-            "timings_ms: "
-            f"router={timings.get('router', 0)} "
-            f"vector={timings.get('vector', 0)} "
-            f"fts={timings.get('fts', 0)} "
-            f"fusion={timings.get('fusion', 0)} "
-            f"temporal={timings.get('temporal', 0)} "
-            f"total={timings.get('total', 0)}"
-        )
-
-        modalities = counts.get("final_modalities") or {}
-        if modalities:
-            modal_str = ", ".join(f"{k}={v}" for k, v in sorted(modalities.items()))
-            lines.append(f"modalities: {modal_str}")
-        if mention_scope:
-            lines.append(
-                "mention_scope: "
-                f"mentions={mention_scope.get('query_mentions', [])} "
-                f"unresolved={mention_scope.get('unresolved_mentions', [])} "
-                f"unindexed={mention_scope.get('unindexed_mentions', [])}"
-            )
-            lines.append(f"effective_query: {mention_scope.get('effective_query', '')}")
-
-        # Lightweight, actionable hints for tuning.
-        hints: list[str] = []
-        if counts.get("vector_hits", 0) == 0 and counts.get("fts_hits", 0) > 0:
-            hints.append("Vector recall is low; consider higher vector_k or chunk tuning.")
-        if counts.get("fts_hits", 0) == 0 and counts.get("vector_hits", 0) > 0:
-            hints.append("Lexical recall is low; consider higher fts_k or query wording.")
-        if counts.get("routed_doc_ids") == 0:
-            hints.append("Catalog router found no candidates; inspect summaries/metadata quality.")
-        if counts.get("skipped_by_doc_diversity", 0) > 0:
-            hints.append("Diversity cap clipped results; consider higher RAG_MAX_CHUNKS_PER_DOC.")
-
-        if hints:
-            lines.append("hints:")
-            for hint in hints[:4]:
-                lines.append(f"- {hint}")
-
-        return "\n".join(lines)
 
     def is_available(self, agent_context: "AgentContext") -> bool:
         """Available whenever the vector index exists."""

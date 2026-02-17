@@ -335,7 +335,8 @@ TELEGRAM_ALLOWED_USER_IDS=123456789,987654321
 TELEGRAM_ALLOW_ALL_USERS=true
 ```
 
-`RAG_DEBUG=true` enables detailed retrieval diagnostics in `search_chunks` output (equivalent to runtime `/rag-debug on`).
+`RAG_DEBUG=true` enables retrieval diagnostics capture (equivalent to runtime `/rag-debug on`).
+Captured traces are persisted to `.flavia/rag_debug.jsonl` and can be inspected with `/rag-debug last`.
 
 ## Connection test
 

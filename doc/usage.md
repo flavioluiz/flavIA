@@ -208,7 +208,7 @@ Inside a chat session, the following commands are available:
 | `/index-update` | Legacy alias for `/index update` |
 | `/index-stats` | Legacy alias for `/index stats` |
 | `/index-diagnose` | Legacy alias for `/index diagnose` |
-| `/rag-debug [on\|off\|status]` | Toggle detailed retrieval diagnostics in `search_chunks` output |
+| `/rag-debug [on\|off\|status\|last [N]]` | Toggle diagnostics capture and inspect recent persisted traces |
 | `/tools` | List available tools by category |
 | `/tools <name>` | Show tool schema and parameters |
 | `/config` | Show configuration paths and active settings |
@@ -236,7 +236,8 @@ Notes:
   - Multiple mentions are supported; retrieval scope is the union of mentioned files, then intersected with explicit filters (`file_type_filter`, `doc_name_filter`) when provided.
   - Unknown/unindexed mentions return an explicit message so the agent can correct scope (instead of silently searching everything).
 - Runtime retrieval diagnostics:
-  - `/rag-debug on`: appends pipeline trace (`router/vector/fts/fusion` counts + timings + hints) to `search_chunks` output.
+  - `/rag-debug on`: captures retrieval traces to `.flavia/rag_debug.jsonl` (no verbose trace injection into model context).
+  - `/rag-debug last` (or `/rag-debug last N`): inspect the most recent persisted diagnostics traces.
   - `/index diagnose`: reports index health, modality distribution, top docs by chunk count, and current RAG tuning parameters.
 - Converted-content policy is per-agent via `converted_access_mode` in `agents.yaml`:
   - `strict`: no direct `.converted/` reads.

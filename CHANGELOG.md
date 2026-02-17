@@ -15,13 +15,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Unknown or unindexed mentions now return explicit feedback instead of silently broadening retrieval
   - Added regression tests in `tests/test_search_chunks_tool.py` for mention scoping and filter intersection
 - **RAG diagnostics mode and tuning controls**:
-  - New runtime command `/rag-debug [on|off|status]` to toggle detailed retrieval diagnostics in `search_chunks`
+  - Runtime command `/rag-debug [on|off|status|last [N]]` to toggle diagnostics capture and inspect recent traces
+  - New persistent diagnostics log: `.flavia/rag_debug.jsonl` (JSONL, one retrieval trace per entry)
   - New `/index diagnose` command (alias `/index-diagnose`) with deeper index health insights:
     - runtime RAG configuration
     - modality chunk distribution (count/min/max/avg size)
     - top documents by chunk count
     - actionable tuning hints
-  - `search_chunks` now supports `debug: true` and can emit pipeline traces (router/vector/FTS/fusion timings and counts)
+  - `search_chunks` supports `debug: true` and persists pipeline traces (router/vector/FTS/fusion timings and counts) out-of-band
   - New RAG tuning environment variables:
     - `RAG_CATALOG_ROUTER_K`, `RAG_VECTOR_K`, `RAG_FTS_K`, `RAG_RRF_K`, `RAG_MAX_CHUNKS_PER_DOC`
     - `RAG_CHUNK_MIN_TOKENS`, `RAG_CHUNK_MAX_TOKENS`, `RAG_VIDEO_WINDOW_SECONDS`
@@ -156,6 +157,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Added regression test in `tests/test_content_indexer_chunker.py`
 - **Agent retrieval guidance update**:
   - Catalog-first prompt guidance now explicitly instructs keeping `@arquivo.ext` mentions in `search_chunks` queries for precise file scoping
+- **RAG debug context hardening**:
+  - Detailed retrieval traces are no longer appended to `search_chunks` tool output
+  - This avoids inflating model context during diagnostics and keeps debug inspection outside agent memory via `/rag-debug last`
 - **Hybrid converted-content access policy**:
   - New per-agent `converted_access_mode` in `agents.yaml`: `strict`, `hybrid`, `open`
   - `hybrid` is the default: agents must call `search_chunks` first, then can fallback to direct `.converted/` reads

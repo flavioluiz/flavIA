@@ -1,5 +1,6 @@
 """Tests for CLI command registry and help system."""
 
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -546,6 +547,53 @@ def test_dispatch_rag_debug_toggles_runtime_flag():
     assert dispatch_command(ctx, "/rag-debug off") is True
     assert settings.rag_debug is False
     assert agent.context.rag_debug is False
+
+
+def test_dispatch_rag_debug_last_prints_recent_trace(tmp_path):
+    """`/rag-debug last` should print persisted diagnostics traces."""
+    console = _DummyConsole()
+    settings = Settings(base_dir=tmp_path)
+    ctx = _make_test_context(console=console, settings=settings)
+
+    flavia_dir = tmp_path / ".flavia"
+    flavia_dir.mkdir(parents=True, exist_ok=True)
+    trace_path = flavia_dir / "rag_debug.jsonl"
+    trace_path.write_text(
+        json.dumps(
+            {
+                "trace_id": "abc123",
+                "timestamp": "2026-02-17T12:00:00+00:00",
+                "query_raw": "laplace",
+                "query_effective": "laplace",
+                "mentions": ["@video.mp4"],
+                "trace": {
+                    "params": {"top_k": 10},
+                    "filters": {"input_doc_ids_filter_count": 1, "effective_doc_ids_filter_count": 1},
+                    "counts": {"vector_hits": 2, "fts_hits": 3, "unique_candidates": 4, "final_results": 2},
+                    "timings_ms": {"total": 5.0},
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert dispatch_command(ctx, "/rag-debug last") is True
+    printed = "\n".join(console.printed)
+    assert "Trace 1/1" in printed
+    assert "abc123" in printed
+    assert "query: laplace" in printed
+    assert "mentions: @video.mp4" in printed
+    assert "[RAG DEBUG]" in printed
+
+
+def test_dispatch_rag_debug_last_rejects_invalid_limit():
+    """`/rag-debug last` should validate optional limit argument."""
+    console = _DummyConsole()
+    ctx = _make_test_context(console=console)
+
+    assert dispatch_command(ctx, "/rag-debug last nope") is True
+    assert any("Usage: /rag-debug last [N]" in line for line in console.printed)
 
 
 def test_get_help_listing_shows_short_descriptions():
