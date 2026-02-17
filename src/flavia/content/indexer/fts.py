@@ -125,6 +125,7 @@ class FTSIndex:
                     (chunk_id, doc_id, modality, text, heading_str),
                 )
                 inserted += 1
+                existing_ids.add(chunk_id)
 
         conn.commit()
         return inserted, updated
@@ -151,6 +152,10 @@ class FTSIndex:
         """
         if not query or not query.strip():
             return []
+        if k <= 0:
+            return []
+        if doc_ids_filter is not None and len(doc_ids_filter) == 0:
+            return []
 
         conn = self._get_connection()
 
@@ -161,36 +166,30 @@ class FTSIndex:
 
         if doc_ids_filter:
             placeholders = ",".join("?" * len(doc_ids_filter))
-            try:
-                cursor = conn.execute(
-                    f"""
-                    SELECT chunk_id, doc_id, modality, text, heading_path,
-                           bm25(chunks_fts) AS bm25_score
-                    FROM chunks_fts
-                    WHERE chunks_fts MATCH ?
-                      AND doc_id IN ({placeholders})
-                    ORDER BY bm25_score
-                    LIMIT ?
-                    """,
-                    (fts_query, *doc_ids_filter, k),
-                )
-            except sqlite3.OperationalError:
-                return []
+            cursor = conn.execute(
+                f"""
+                SELECT chunk_id, doc_id, modality, text, heading_path,
+                       bm25(chunks_fts) AS bm25_score
+                FROM chunks_fts
+                WHERE chunks_fts MATCH ?
+                  AND doc_id IN ({placeholders})
+                ORDER BY bm25_score
+                LIMIT ?
+                """,
+                (fts_query, *doc_ids_filter, k),
+            )
         else:
-            try:
-                cursor = conn.execute(
-                    """
-                    SELECT chunk_id, doc_id, modality, text, heading_path,
-                           bm25(chunks_fts) AS bm25_score
-                    FROM chunks_fts
-                    WHERE chunks_fts MATCH ?
-                    ORDER BY bm25_score
-                    LIMIT ?
-                    """,
-                    (fts_query, k),
-                )
-            except sqlite3.OperationalError:
-                return []
+            cursor = conn.execute(
+                """
+                SELECT chunk_id, doc_id, modality, text, heading_path,
+                       bm25(chunks_fts) AS bm25_score
+                FROM chunks_fts
+                WHERE chunks_fts MATCH ?
+                ORDER BY bm25_score
+                LIMIT ?
+                """,
+                (fts_query, k),
+            )
 
         results = []
         for row in cursor:

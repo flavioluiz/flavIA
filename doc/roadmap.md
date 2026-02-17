@@ -121,8 +121,8 @@ Transform keyword-based catalog search into a full RAG pipeline: chunk converted
 
 - ~~**11.1** Chunk Pipeline (Medium)~~ — **DONE** ✓ Split `.converted/*.md` files into 300–800 token chunks by heading/paragraph; two streams for video (transcript + frames with timecodes)
 - ~~**11.2** Embedding Index — sqlite-vec (Medium)~~ — **DONE** ✓ Embed chunks via Synthetic provider; store L2-normalised 768-dim vectors in `vec0` table
-- **11.3** FTS Index — SQLite FTS5 (Easy) — BM25 full-text search for exact-term matching (numbers, codes, siglas)
-- **11.4** Hybrid Retrieval Engine (Medium) — `retrieve(question, filters, top_k)`: Stage A catalog router + Stage B vector+FTS merge via RRF
+- ~~**11.3** FTS Index — SQLite FTS5 (Easy)~~ — **DONE** ✓ BM25 full-text search for exact-term matching (numbers, codes, siglas)
+- **11.4** Hybrid Retrieval Engine (Medium) — `retrieve(question, filters, top_k)`: Stage A catalog router + Stage B vector+FTS merge via RRF; normalize filter semantics (`doc_ids_filter=None` = no filter, `doc_ids_filter=[]` = empty scope/no results) consistently across VectorStore and FTS
 - **11.5** Video Temporal Expansion (Medium) — Expand anchor timecode ±15s (transcript) / ±10s (frames); return chronological evidence bundle
 - **11.6** `search_chunks` Tool (Easy) — Agent tool calling `retrieve()`, formatting annotated context blocks with citations
 - **11.7** Index CLI Commands `/index` (Easy) — `/index build`, `/index update`, `/index stats`
@@ -303,11 +303,11 @@ Task 10.3 benefits from ── Task 3.1 (YAML Bot Config, for per-bot file size 
 
 Area 11 -- Semantic Retrieval & RAG Pipeline:
 ~~Task 11.1 (Chunk Pipeline)~~ ✓ ──┬── ~~Task 11.2 (Embedder + sqlite-vec)~~ ✓ ──┐
-                                    └── Task 11.3 (FTS5 Index) ────────────────────┴── Task 11.4 (Hybrid Retrieval)
+                                    └── ~~Task 11.3 (FTS5 Index)~~ ✓ ──────────────┴── Task 11.4 (Hybrid Retrieval)
                                                                                         ├── Task 11.5 (Video Temporal Expansion)
                                                                                         └── Task 11.6 (search_chunks Tool)
                                                                                                     └── Task 11.8 (Agent Guidance)
-~~Task 11.1~~ ✓ + ~~Task 11.2~~ ✓ + Task 11.3 ────────────────────────────────────────── Task 11.7 (Index CLI)
+~~Task 11.1~~ ✓ + ~~Task 11.2~~ ✓ + ~~Task 11.3~~ ✓ ──────────────────────────────────── Task 11.7 (Index CLI)
 
 Cross-area dependencies for Area 11:
 Task 11.1 depends on ── Area 1 (converters produce .converted/ files)
@@ -369,7 +369,7 @@ Tasks ordered by a pragmatic implementation sequence that balances dependency re
 | 45 | **10.2** Send file tool | Easy | Telegram File Delivery |
 | 46 | **10.3** Telegram file delivery handler | Medium | Telegram File Delivery |
 | 47 | ~~**11.1** Chunk pipeline~~ ✓ | ~~Medium~~ | ~~Semantic Retrieval~~ |
-| 48 | **11.3** FTS index (SQLite FTS5) | Easy | Semantic Retrieval |
+| 48 | ~~**11.3** FTS index (SQLite FTS5)~~ ✓ | ~~Easy~~ | ~~Semantic Retrieval~~ |
 | 49 | **11.7** Index CLI commands `/index` | Easy | Semantic Retrieval |
 | 50 | ~~**11.2** Embedding index (sqlite-vec)~~ ✓ | ~~Medium~~ | ~~Semantic Retrieval~~ |
 | 51 | **11.4** Hybrid retrieval engine | Medium | Semantic Retrieval |

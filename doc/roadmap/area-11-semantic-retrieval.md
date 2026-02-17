@@ -2,7 +2,7 @@
 
 Transform flavIA's current keyword-based catalog search into a full RAG pipeline that embeds converted documents, stores vectors in SQLite, and provides hybrid retrieval (vector + full-text) to the agent.
 
-**Status**: 2 / 8 tasks complete
+**Status**: 3 / 8 tasks complete
 **Dependencies**: Area 1 complete (all converters done ✓)
 
 ---
@@ -92,13 +92,13 @@ CREATE TABLE chunks_meta (
 
 ---
 
-### 11.3 FTS Index (SQLite FTS5)
+### 11.3 FTS Index (SQLite FTS5) ✓ DONE
 **Difficulty**: Easy
 **Dependencies**: 11.1
 
 Create and maintain a FTS5 virtual table in `index.db` for exact-term matching (numbers, codes, siglas).
 
-**File**: `src/flavia/content/indexer/fts.py` — `FTSIndex` class: `upsert(chunks)`, `search(query, k, doc_ids_filter)`
+**File**: `src/flavia/content/indexer/fts.py` — `FTSIndex` class: `upsert(chunks)`, `search(query, k, doc_ids_filter)`, `get_existing_chunk_ids()`, `delete_chunks()`, `get_stats()`
 
 **Schema**:
 ```sql
@@ -112,7 +112,7 @@ CREATE VIRTUAL TABLE chunks_fts USING fts5(
 );
 ```
 
-BM25 ranking via `fts5(... rank)` built-in.
+BM25 ranking via `bm25(chunks_fts)` in query ordering.
 
 ---
 
@@ -123,6 +123,11 @@ BM25 ranking via `fts5(... rank)` built-in.
 Core `retrieve(question, filters, top_k)` combining vector and FTS results via Reciprocal Rank Fusion (RRF).
 
 **File**: `src/flavia/content/indexer/retrieval.py`
+
+**Mandatory filter semantics alignment (future implementation requirement)**:
+- `doc_ids_filter=None` means no doc_id restriction.
+- `doc_ids_filter=[]` means explicit empty scope and must return no results.
+- Behavior must be consistent between `VectorStore.knn_search()` and `FTSIndex.search()`.
 
 **Retrieval flow**:
 ```
@@ -267,6 +272,7 @@ These metrics define when each task is considered complete in a production-ready
 | Retrieval latency | p95 <= 1.5 s for `top_k=10` on 50k chunks | Benchmark job |
 | Diversity policy | 100% responses enforce max 3 chunks/doc | Unit + integration tests |
 | Filter correctness | 100% respect `file_type_filter` and `doc_name_filter` | Tool-level tests |
+| Filter semantics consistency | `doc_ids_filter=None` vs `doc_ids_filter=[]` handled identically in vector+FTS contracts (`None`=unfiltered, `[]`=empty result) | Unit tests for `VectorStore` + `FTSIndex` |
 
 ### 11.5 Video Temporal Expansion
 

@@ -102,6 +102,23 @@ class TestUpsert:
             ).fetchone()
             assert row["heading_path"] == "Chapter 1 > Section A"
 
+    def test_repeated_chunk_id_in_same_batch_keeps_last_version(self, tmp_path: Path):
+        """Repeated chunk IDs in one batch should not create duplicate rows."""
+        with FTSIndex(tmp_path) as idx:
+            inserted, updated = idx.upsert(
+                [
+                    _make_chunk("c1", text="first version"),
+                    _make_chunk("c1", text="second version"),
+                ]
+            )
+
+            assert inserted == 1
+            assert updated == 1
+            assert idx.get_existing_chunk_ids() == {"c1"}
+            results = idx.search("second")
+            assert len(results) == 1
+            assert results[0]["text"] == "second version"
+
 
 class TestSearch:
     """Tests for FTSIndex.search method."""
@@ -190,6 +207,21 @@ class TestSearch:
 
             assert idx.search("") == []
             assert idx.search("   ") == []
+
+    def test_non_positive_k_returns_empty(self, tmp_path: Path):
+        """k <= 0 should return no results."""
+        with FTSIndex(tmp_path) as idx:
+            idx.upsert([_make_chunk("c1", text="network protocol")])
+
+            assert idx.search("network", k=0) == []
+            assert idx.search("network", k=-1) == []
+
+    def test_empty_doc_ids_filter_returns_empty(self, tmp_path: Path):
+        """Explicit empty doc_ids_filter should return no results."""
+        with FTSIndex(tmp_path) as idx:
+            idx.upsert([_make_chunk("c1", doc_id="doc_a", text="security audit")])
+
+            assert idx.search("security", doc_ids_filter=[]) == []
 
     def test_handles_special_characters(self, tmp_path: Path):
         """Should handle queries with special characters without raising."""
