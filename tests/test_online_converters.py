@@ -1,14 +1,12 @@
 """Tests for online source converters."""
 
 import importlib.util
-from pathlib import Path
-
-import pytest
+import json
 
 from flavia.content.converters.online import (
     OnlineSourceConverter,
-    YouTubeConverter,
     WebPageConverter,
+    YouTubeConverter,
 )
 
 
@@ -88,6 +86,10 @@ class TestYouTubeConverter:
         )
         assert converter.parse_video_id("https://youtu.be/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
         assert converter.parse_video_id("https://youtube.com/embed/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+        assert (
+            converter.parse_video_id("https://music.youtube.com/watch?v=dQw4w9WgXcQ")
+            == "dQw4w9WgXcQ"
+        )
         assert converter.parse_video_id("not-a-url") is None
 
     def test_excludes_youtube_from_webpage(self):
@@ -95,6 +97,72 @@ class TestYouTubeConverter:
         webpage = WebPageConverter()
         assert not webpage.can_handle_source("https://www.youtube.com/watch?v=abc123")
         assert not webpage.can_handle_source("https://youtu.be/abc123")
+
+    def test_parse_json3_captions(self):
+        """Parses JSON3 captions into timestamped transcript."""
+        payload = json.dumps(
+            {
+                "events": [
+                    {
+                        "tStartMs": 0,
+                        "dDurationMs": 1200,
+                        "segs": [{"utf8": "Singular "}, {"utf8": "value decomposition"}],
+                    }
+                ]
+            }
+        )
+        transcript = YouTubeConverter._parse_json3_captions(payload)
+        assert transcript is not None
+        assert "[00:00 - 00:01] Singular value decomposition" in transcript
+
+    def test_parse_text_captions(self):
+        """Parses VTT/SRT-like captions into timestamped transcript."""
+        payload = """WEBVTT
+
+00:00.000 --> 00:02.000
+First line
+
+00:02.000 --> 00:04.000
+Second line
+"""
+        transcript = YouTubeConverter._parse_text_captions(payload)
+        assert transcript is not None
+        assert "[00:00 - 00:02] First line" in transcript
+        assert "[00:02 - 00:04] Second line" in transcript
+
+    def test_fetch_and_convert_prefers_ytdlp_captions_before_audio(self, tmp_path, monkeypatch):
+        """Caption-track fallback should run before audio transcription fallback."""
+        converter = YouTubeConverter()
+        source_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+        monkeypatch.setattr(
+            YouTubeConverter,
+            "_get_transcript_api",
+            staticmethod(lambda _video_id: None),
+        )
+        monkeypatch.setattr(
+            YouTubeConverter,
+            "_get_transcript_ytdlp_captions",
+            staticmethod(lambda _source_url: "[00:00 - 00:02] Caption transcript"),
+        )
+        monkeypatch.setattr(
+            YouTubeConverter,
+            "_download_and_transcribe_audio",
+            staticmethod(
+                lambda _source_url: (_ for _ in ()).throw(AssertionError("Should not run"))
+            ),
+        )
+        monkeypatch.setattr(
+            YouTubeConverter,
+            "_fetch_metadata_ytdlp",
+            staticmethod(lambda _source_url: {"title": "SVD Overview"}),
+        )
+
+        output = converter.fetch_and_convert(source_url, tmp_path)
+        assert output is not None
+        content = output.read_text(encoding="utf-8")
+        assert "transcript_source: yt-dlp subtitle track" in content
+        assert "Caption transcript" in content
 
 
 class TestWebPageConverter:
@@ -217,3 +285,14 @@ class TestOnlineSourceConverterBase:
 
         assert ok is True
         assert missing == []
+
+    def test_youtube_cookie_options_from_env(self, monkeypatch):
+        """yt-dlp cookie options can be injected from environment variables."""
+        opts = {}
+        monkeypatch.setenv("FLAVIA_YTDLP_COOKIEFILE", "/tmp/cookies.txt")
+        monkeypatch.setenv("FLAVIA_YTDLP_COOKIES_FROM_BROWSER", "chrome")
+
+        YouTubeConverter._apply_ytdlp_cookie_options(opts)
+
+        assert opts["cookiefile"] == "/tmp/cookies.txt"
+        assert opts["cookiesfrombrowser"] == ("chrome",)

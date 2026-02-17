@@ -122,6 +122,7 @@ This installs:
 Notes:
 - Web page conversion still works with a basic fallback extractor if `trafilatura` is unavailable.
 - YouTube audio transcription fallback uses the same `MISTRAL_API_KEY` as OCR/transcription features.
+- If `yt-dlp` hits HTTP 403 for some videos, you can export `FLAVIA_YTDLP_COOKIES_FROM_BROWSER=chrome` (or `firefox`, `safari`) or set `FLAVIA_YTDLP_COOKIEFILE=/path/to/cookies.txt`.
 
 ## Development dependencies
 

@@ -307,6 +307,7 @@ Inside the interactive CLI:
 Notes:
 - Online source converters are implemented. `/catalog` can fetch/re-fetch, view content/metadata, summarize, and delete YouTube/webpage sources.
 - YouTube sources support transcript retrieval (youtube-transcript-api), audio fallback transcription via Mistral (yt-dlp + `MISTRAL_API_KEY`), and thumbnail download/description.
+- If YouTube media download returns HTTP 403 in your environment, you can pass browser cookies via `FLAVIA_YTDLP_COOKIES_FROM_BROWSER` (for example: `chrome` or `firefox`) or a Netscape cookie file via `FLAVIA_YTDLP_COOKIEFILE`.
 - Web pages are fetched with `httpx`, extracted with `trafilatura` when available, and fall back to basic HTML text extraction when `trafilatura` is missing.
 - Online sources are persisted in `.flavia/content_catalog.json`.
 - `PDF Files` menu in `/catalog` supports per-file quality display, local text extraction, and explicit Mistral OCR execution.

@@ -13,10 +13,13 @@ Dependencies (optional extras -- ``pip install 'flavia[online]'``):
 
 import hashlib
 import importlib.util
+import json
 import logging
+import os
 import re
 import shutil
 import subprocess
+from html import unescape
 from pathlib import Path
 from typing import Optional, Tuple
 from urllib.parse import parse_qs, urlparse
@@ -30,6 +33,9 @@ _YOUTUBE_HOSTS = {
     "music.youtube.com",
     "youtu.be",
 }
+_TRANSCRIPT_LANGUAGE_PREFERENCE = ("en", "en-US", "en-GB", "pt", "pt-BR")
+_YT_DLP_EXTRACTOR_ARGS = {"youtube": {"player_client": ["android", "web"]}}
+_HTTP_TIMEOUT_SECONDS = 30
 
 
 class YouTubeConverter(OnlineSourceConverter):
@@ -128,6 +134,111 @@ class YouTubeConverter(OnlineSourceConverter):
 
         return None
 
+    @staticmethod
+    def _apply_ytdlp_cookie_options(ydl_opts: dict) -> None:
+        """Apply optional cookie settings from environment variables."""
+        cookie_file = os.getenv("FLAVIA_YTDLP_COOKIEFILE", "").strip()
+        if cookie_file:
+            ydl_opts["cookiefile"] = cookie_file
+
+        browser = os.getenv("FLAVIA_YTDLP_COOKIES_FROM_BROWSER", "").strip()
+        if browser:
+            # Simple form: "chrome", "firefox", "safari", etc.
+            ydl_opts["cookiesfrombrowser"] = (browser,)
+
+    @staticmethod
+    def _parse_timestamp_to_seconds(timestamp: str) -> Optional[float]:
+        """Parse VTT/SRT timestamp into seconds."""
+        ts = timestamp.strip().replace(",", ".")
+        parts = ts.split(":")
+        try:
+            if len(parts) == 3:
+                h, m, s = parts
+                return int(h) * 3600 + int(m) * 60 + float(s)
+            if len(parts) == 2:
+                m, s = parts
+                return int(m) * 60 + float(s)
+        except ValueError:
+            return None
+        return None
+
+    @classmethod
+    def _parse_json3_captions(cls, payload: str) -> Optional[str]:
+        """Parse YouTube json3 captions into timestamped transcript text."""
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError:
+            return None
+
+        events = data.get("events")
+        if not isinstance(events, list):
+            return None
+
+        parts: list[str] = []
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            start_ms = event.get("tStartMs")
+            duration_ms = event.get("dDurationMs", 0)
+            segs = event.get("segs", [])
+            if start_ms is None or not isinstance(segs, list):
+                continue
+
+            text = "".join(
+                seg.get("utf8", "") for seg in segs if isinstance(seg, dict) and seg.get("utf8")
+            )
+            text = unescape(re.sub(r"\s+", " ", text)).strip()
+            if not text:
+                continue
+
+            start = float(start_ms) / 1000.0
+            end = start + max(float(duration_ms or 0) / 1000.0, 0.0)
+            parts.append(f"[{_format_timestamp(start)} - {_format_timestamp(end)}] {text}")
+
+        if parts:
+            return "\n\n".join(parts)
+        return None
+
+    @classmethod
+    def _parse_text_captions(cls, payload: str) -> Optional[str]:
+        """Parse VTT/SRT captions into timestamped transcript text."""
+        lines = payload.splitlines()
+        cue_time = re.compile(
+            r"^\s*([0-9:.]{4,12})\s*-->\s*([0-9:.]{4,12})(?:\s+.*)?$"
+        )
+        parts: list[str] = []
+
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            if not line or line.upper() == "WEBVTT" or line.startswith("NOTE"):
+                i += 1
+                continue
+
+            match = cue_time.match(line)
+            if not match:
+                i += 1
+                continue
+
+            start = cls._parse_timestamp_to_seconds(match.group(1))
+            end = cls._parse_timestamp_to_seconds(match.group(2))
+
+            i += 1
+            text_lines: list[str] = []
+            while i < len(lines) and lines[i].strip():
+                text_lines.append(lines[i].strip())
+                i += 1
+
+            text = unescape(re.sub(r"<[^>]+>", "", " ".join(text_lines))).strip()
+            text = re.sub(r"\s+", " ", text)
+
+            if text and start is not None and end is not None:
+                parts.append(f"[{_format_timestamp(start)} - {_format_timestamp(end)}] {text}")
+
+        if parts:
+            return "\n\n".join(parts)
+        return None
+
     def check_dependencies(self) -> tuple[bool, list[str]]:
         """
         Check availability for at least one transcript backend.
@@ -181,11 +292,17 @@ class YouTubeConverter(OnlineSourceConverter):
             transcript_source = "youtube-transcript-api"
             logger.info(f"Obtained transcript via youtube-transcript-api for {video_id}")
         else:
-            # Tier 2: yt-dlp audio download + Mistral transcription
-            transcript_text = self._download_and_transcribe_audio(source_url)
+            # Tier 2: yt-dlp subtitle/auto-caption track retrieval
+            transcript_text = self._get_transcript_ytdlp_captions(source_url)
             if transcript_text:
-                transcript_source = "yt-dlp + Mistral voxtral-mini-latest"
-                logger.info(f"Transcribed audio via Mistral for {video_id}")
+                transcript_source = "yt-dlp subtitle track"
+                logger.info(f"Obtained transcript via yt-dlp caption track for {video_id}")
+            else:
+                # Tier 3: yt-dlp audio download + Mistral transcription
+                transcript_text = self._download_and_transcribe_audio(source_url)
+                if transcript_text:
+                    transcript_source = "yt-dlp + Mistral voxtral-mini-latest"
+                    logger.info(f"Transcribed audio via Mistral for {video_id}")
 
         if not transcript_text:
             logger.error(f"No transcript obtained for {source_url}")
@@ -255,6 +372,7 @@ class YouTubeConverter(OnlineSourceConverter):
                 "url_patterns": self.url_patterns,
                 "features": [
                     "Transcript retrieval via youtube-transcript-api (free, fast)",
+                    "Caption track retrieval via yt-dlp metadata",
                     "Audio download + Mistral transcription fallback",
                     "Metadata extraction (title, channel, duration)",
                     "Thumbnail download and vision LLM description",
@@ -314,7 +432,102 @@ class YouTubeConverter(OnlineSourceConverter):
         return None
 
     # ------------------------------------------------------------------
-    # Tier 2: yt-dlp audio download + Mistral transcription
+    # Tier 2: yt-dlp caption tracks (no audio download)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _preferred_languages(keys: list[str]) -> list[str]:
+        preferred = [lang for lang in _TRANSCRIPT_LANGUAGE_PREFERENCE if lang in keys]
+        for lang in keys:
+            if lang not in preferred:
+                preferred.append(lang)
+        return preferred
+
+    @classmethod
+    def _get_transcript_ytdlp_captions(cls, source_url: str) -> Optional[str]:
+        """
+        Try to fetch subtitle/auto-caption tracks via yt-dlp metadata.
+
+        This path does not download audio and can still succeed when
+        media stream download is blocked (e.g., HTTP 403).
+        """
+        try:
+            import httpx
+            import yt_dlp
+        except ImportError:
+            return None
+
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "extractor_args": _YT_DLP_EXTRACTOR_ARGS,
+        }
+        cls._apply_ytdlp_cookie_options(ydl_opts)
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(source_url, download=False)
+        except Exception as e:
+            logger.debug(f"yt-dlp caption metadata extraction failed: {e}")
+            return None
+
+        if not isinstance(info, dict):
+            return None
+
+        # Prefer manually provided subtitles; fallback to automatic captions.
+        for key in ("subtitles", "automatic_captions"):
+            caption_map = info.get(key)
+            if not isinstance(caption_map, dict) or not caption_map:
+                continue
+
+            languages = cls._preferred_languages(list(caption_map.keys()))
+            for language in languages:
+                tracks = caption_map.get(language)
+                if not isinstance(tracks, list) or not tracks:
+                    continue
+
+                sorted_tracks = sorted(
+                    (
+                        t
+                        for t in tracks
+                        if isinstance(t, dict) and isinstance(t.get("url"), str) and t.get("url")
+                    ),
+                    key=lambda t: {
+                        "json3": 0,
+                        "srv3": 1,
+                        "vtt": 2,
+                        "srt": 3,
+                    }.get(str(t.get("ext", "")).lower(), 99),
+                )
+
+                for track in sorted_tracks:
+                    caption_url = str(track.get("url", "")).strip()
+                    if not caption_url.startswith(("http://", "https://")):
+                        continue
+
+                    ext = str(track.get("ext", "")).lower()
+                    try:
+                        response = httpx.get(caption_url, timeout=_HTTP_TIMEOUT_SECONDS)
+                        response.raise_for_status()
+                    except Exception as e:
+                        logger.debug(f"Failed to download caption track ({language}/{ext}): {e}")
+                        continue
+
+                    payload = response.text
+                    parsed: Optional[str] = None
+                    if ext in ("json3", "srv3"):
+                        parsed = cls._parse_json3_captions(payload)
+                    if not parsed:
+                        parsed = cls._parse_text_captions(payload)
+
+                    if parsed:
+                        return parsed
+
+        return None
+
+    # ------------------------------------------------------------------
+    # Tier 3: yt-dlp audio download + Mistral transcription
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -344,6 +557,7 @@ class YouTubeConverter(OnlineSourceConverter):
             "outtmpl": output_template,
             "quiet": True,
             "no_warnings": True,
+            "extractor_args": _YT_DLP_EXTRACTOR_ARGS,
             "postprocessors": [
                 {
                     "key": "FFmpegExtractAudio",
@@ -352,6 +566,7 @@ class YouTubeConverter(OnlineSourceConverter):
                 }
             ],
         }
+        YouTubeConverter._apply_ytdlp_cookie_options(ydl_opts)
 
         audio_path: Optional[Path] = None
         try:
@@ -381,6 +596,13 @@ class YouTubeConverter(OnlineSourceConverter):
 
         except Exception as e:
             logger.error(f"Audio download/transcription failed: {e}")
+            error_text = str(e).lower()
+            if "403" in error_text or "forbidden" in error_text:
+                logger.error(
+                    "YouTube blocked media download (HTTP 403). "
+                    "Try setting FLAVIA_YTDLP_COOKIES_FROM_BROWSER=chrome "
+                    "(or firefox/safari) before running flavia."
+                )
             return None
         finally:
             # Cleanup temp audio
