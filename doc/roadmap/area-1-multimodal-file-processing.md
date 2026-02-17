@@ -1,6 +1,6 @@
 # Area 1: Multimodal File Processing
 
-The content system (`content/converters/`) has a clean `BaseConverter` / `ConverterRegistry` architecture. It supports PDF conversion (pdfplumber/pypdf) and scanned-PDF OCR with quality assessment via the catalog workflow. The `FileScanner` already classifies files into types (image, audio, video, binary\_document) but still lacks dedicated converters for most non-text formats. Online converters (YouTube, webpage) are placeholders.
+The content system (`content/converters/`) has a clean `BaseConverter` / `ConverterRegistry` architecture. It supports PDF conversion (pdfplumber/pypdf), scanned-PDF OCR with quality assessment, Office documents, audio/video transcription, image descriptions, visual frame extraction, and online source converters (YouTube, web pages). All tasks in this area are now complete.
 
 All new converters follow the same pattern: implement `BaseConverter`, register in `ConverterRegistry`, output Markdown to `.converted/`. The general approach for multimodal processing is to use external APIs (Mistral API for audio transcription and OCR, GPT-4o vision for images).
 
@@ -145,24 +145,45 @@ Implemented visual frame extraction and description for video files using vision
 
 ---
 
-### Task 1.6 -- Online Source Converters (YouTube, Webpage)
+### ~~Task 1.6 -- Online Source Converters (YouTube, Webpage)~~ ✅ DONE
 
-**Difficulty**: Medium | **Dependencies**: Task 1.1 (YouTube shares transcription infrastructure)
+**Difficulty**: ~~Medium~~ | **Dependencies**: ~~Task 1.1~~ (YouTube shares transcription infrastructure)
 
-Implement the existing placeholder converters in `content/converters/online/`. These files already exist with `is_implemented = False`.
+Implemented online source converters for YouTube videos and web pages, with full interactive management in `/catalog`.
 
-**YouTube**: Use `yt-dlp` to download audio, then transcribe via Mistral Transcription API. Alternatively, use the `youtube-transcript-api` library for videos that already have transcripts/subtitles (faster, free, no API cost). Ideally support both: try transcript API first, fall back to audio download + Mistral transcription.
+**What was delivered**:
+- **YouTubeConverter** (`content/converters/online/youtube.py`) with two-tier transcript strategy:
+  - Tier 1: `youtube-transcript-api` for free/fast transcript retrieval (videos with existing subtitles)
+  - Tier 2: `yt-dlp` audio download + Mistral `voxtral-mini-latest` transcription fallback
+  - Metadata extraction via `yt-dlp` (title, channel, duration, description, thumbnail, view count)
+  - Thumbnail download via `yt-dlp --write-thumbnail` with webp-to-jpg conversion
+  - Thumbnail description via vision LLM (`ImageConverter`)
+  - URL parsing for all YouTube formats (watch, youtu.be, shorts, embed, live)
+  - Markdown output with metadata header and timestamped transcript segments
+- **WebPageConverter** (`content/converters/online/webpage.py`):
+  - HTML fetching via `httpx` (already a core dependency)
+  - Article text extraction via `trafilatura` (with Markdown output, links, tables)
+  - Metadata extraction (title, author, date, description, sitename, categories, tags)
+  - Fallback to basic HTML tag stripping when trafilatura is unavailable
+  - YouTube URL exclusion (defers to YouTubeConverter)
+  - Size guard (10 MB max HTML) and configurable timeout
+- **Full `/catalog` online sources menu** (`interfaces/catalog_command.py`):
+  - List all online sources with type, URL, status, and title
+  - Per-source action menu: fetch, re-fetch, view content, view metadata, refresh metadata, summarize, delete
+  - YouTube-specific: download & describe thumbnail action
+  - Immediate fetch offered after adding a new source
+  - Delete with optional removal of converted content files
+- **Updated `_add_online_source()`**: removed "not implemented" warning, auto-detects source type, fetches metadata on add, offers immediate content fetch
 
-**Webpage**: Use `httpx` (already a dependency) with `readability-lxml` or `trafilatura` to extract clean article text from web pages. Output as Markdown.
+**Implemented files**:
+- `src/flavia/content/converters/online/youtube.py` (rewritten from placeholder, ~640 lines)
+- `src/flavia/content/converters/online/webpage.py` (rewritten from placeholder, ~380 lines)
+- `src/flavia/interfaces/catalog_command.py` (new `_manage_online_sources()` + helper functions)
+- `pyproject.toml` (new `[online]` optional dependency group)
 
-Update the `fetch_status` field in `FileEntry` from `"not_implemented"` to `"completed"` or `"failed"`.
+**New dependencies** (optional `[online]` extra): `yt-dlp>=2024.0`, `youtube-transcript-api>=0.6.0`, `trafilatura>=1.6.0`.
 
-**Key files to modify**:
-- `content/converters/online/youtube.py` (implement)
-- `content/converters/online/webpage.py` (implement)
-- `content/converters/online/base.py` (if needed)
-
-**New dependencies**: `yt-dlp`, `youtube-transcript-api`, `trafilatura` or `readability-lxml` (all optional extras).
+**Output format**: Markdown files in `.converted/_online/{youtube,webpage}/` with metadata header, content body, and timestamps (for YouTube transcripts).
 
 ---
 

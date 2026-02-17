@@ -44,9 +44,9 @@ def run_catalog_command(settings: Settings) -> bool:
         elif choice == "4":
             _show_summaries(catalog)
         elif choice == "5":
-            _show_online_sources(catalog)
+            _manage_online_sources(catalog, config_dir, settings)
         elif choice == "6":
-            _add_online_source(catalog, config_dir)
+            _add_online_source(catalog, config_dir, settings)
         elif choice == "7":
             _manage_pdf_files(catalog, config_dir, settings)
         elif choice == "8":
@@ -286,53 +286,510 @@ def _show_summaries(catalog: ContentCatalog) -> None:
         console.print(Panel(entry.summary, expand=False))
 
 
-def _show_online_sources(catalog: ContentCatalog) -> None:
-    """Display online sources in the catalog."""
-    online_sources = catalog.get_online_sources()
+def _manage_online_sources(
+    catalog: ContentCatalog,
+    config_dir: Path,
+    settings: Settings,
+) -> None:
+    """Interactive online source manager with fetch, view, and delete support."""
+    base_dir = config_dir.parent
+    converted_dir = base_dir / ".converted"
 
-    if not online_sources:
-        console.print("[yellow]No online sources in catalog.[/yellow]")
-        return
+    while True:
+        online_sources = catalog.get_online_sources()
 
-    console.print(f"\n[bold]Online Sources ({len(online_sources)}):[/bold]")
+        if not online_sources:
+            console.print("[yellow]No online sources in catalog.[/yellow]")
+            return
 
-    table = Table(show_header=True)
-    table.add_column("Type", style="dim")
-    table.add_column("URL", style="cyan", max_width=50)
-    table.add_column("Status", style="yellow")
-    table.add_column("Title", max_width=30)
+        console.print(f"\n[bold]Online Sources ({len(online_sources)})[/bold]")
 
-    for entry in online_sources:
-        title = entry.source_metadata.get("title", entry.name)[:30]
-        url = (entry.source_url or "")[:50]
-        if len(entry.source_url or "") > 50:
-            url += "..."
-        table.add_row(
-            entry.source_type,
-            url,
-            entry.fetch_status,
-            title,
+        table = Table(show_header=True)
+        table.add_column("#", style="dim", justify="right")
+        table.add_column("Type", style="dim")
+        table.add_column("URL", style="cyan", max_width=50)
+        table.add_column("Status")
+        table.add_column("Title", max_width=30)
+
+        for i, entry in enumerate(online_sources, 1):
+            title = entry.source_metadata.get("title", entry.name)[:30]
+            url = (entry.source_url or "")[:50]
+            if len(entry.source_url or "") > 50:
+                url += "..."
+            status_style = {
+                "completed": "[green]completed[/green]",
+                "pending": "[yellow]pending[/yellow]",
+                "failed": "[red]failed[/red]",
+                "not_implemented": "[dim]not implemented[/dim]",
+            }.get(entry.fetch_status, entry.fetch_status)
+            table.add_row(str(i), entry.source_type, url, status_style, title)
+
+        console.print(table)
+
+        # Stats line
+        pending = sum(1 for e in online_sources if e.fetch_status == "pending")
+        completed = sum(1 for e in online_sources if e.fetch_status == "completed")
+        failed = sum(1 for e in online_sources if e.fetch_status == "failed")
+        console.print(
+            f"\n[dim]Pending: {pending} | Completed: {completed} | Failed: {failed}[/dim]"
         )
 
-    console.print(table)
+        # Build source selection menu
+        try:
+            import questionary
 
-    # Show stats
-    pending = sum(1 for e in online_sources if e.fetch_status == "pending")
-    completed = sum(1 for e in online_sources if e.fetch_status == "completed")
-    not_impl = sum(1 for e in online_sources if e.fetch_status == "not_implemented")
-    failed = sum(1 for e in online_sources if e.fetch_status == "failed")
+            source_choices = [
+                questionary.Choice(
+                    title=f"[{e.source_type}] {e.source_metadata.get('title', e.source_url or e.name)[:60]}",
+                    value=e.path,
+                )
+                for e in online_sources
+            ]
+            source_choices.append(questionary.Choice(title="Back", value="__back__"))
+        except ImportError:
+            source_choices = [
+                f"[{e.source_type}] {e.source_metadata.get('title', e.source_url or e.name)[:60]}"
+                for e in online_sources
+            ] + ["Back"]
 
-    console.print(
-        f"\n[dim]Pending: {pending} | Completed: {completed} | "
-        f"Not Implemented: {not_impl} | Failed: {failed}[/dim]"
-    )
+        selected = q_select("Select a source:", choices=source_choices)
+        if selected in (None, "__back__", "Back"):
+            break
+
+        # Map selection to entry (handle both value and title-based selection)
+        entry = catalog.files.get(selected)
+        if entry is None:
+            # Fallback: match by title
+            for e in online_sources:
+                label = f"[{e.source_type}] {e.source_metadata.get('title', e.source_url or e.name)[:60]}"
+                if selected == label:
+                    entry = e
+                    break
+        if entry is None:
+            continue
+
+        # Show entry details and action menu
+        _show_online_entry_details(entry, base_dir)
+        _online_source_action_menu(entry, catalog, config_dir, base_dir, converted_dir, settings)
 
 
-def _add_online_source(catalog: ContentCatalog, config_dir: Path) -> None:
-    """Add a new online source to the catalog."""
+def _show_online_entry_details(entry, base_dir: Path) -> None:
+    """Show details for a selected online source entry."""
+    console.print(f"\n[bold cyan]{entry.source_metadata.get('title', entry.name)}[/bold cyan]")
+
+    converted_exists = False
+    if entry.converted_to:
+        converted_path = (base_dir / entry.converted_to).resolve()
+        try:
+            converted_path.relative_to(base_dir.resolve())
+            converted_exists = converted_path.exists()
+        except ValueError:
+            converted_exists = False
+
+    status_style = {
+        "completed": "[green]completed[/green]",
+        "pending": "[yellow]pending[/yellow]",
+        "failed": "[red]failed[/red]",
+        "not_implemented": "[dim]not implemented[/dim]",
+    }.get(entry.fetch_status, entry.fetch_status)
+
+    details = Table(show_header=False, box=None)
+    details.add_column("Field", style="dim")
+    details.add_column("Value")
+    details.add_row("Source type", entry.source_type)
+    details.add_row("URL", entry.source_url or "[dim](none)[/dim]")
+    details.add_row("Fetch status", status_style)
+    details.add_row("Converted file", entry.converted_to or "[dim](none)[/dim]")
+    details.add_row("Content exists", "[green]yes[/green]" if converted_exists else "[dim]no[/dim]")
+    details.add_row("Summary", "[green]yes[/green]" if entry.summary else "[dim]no[/dim]")
+
+    # Source-specific metadata
+    meta = entry.source_metadata
+    if entry.source_type == "youtube":
+        channel = meta.get("channel", "")
+        if channel:
+            details.add_row("Channel", channel)
+        duration = meta.get("duration", "")
+        if duration:
+            details.add_row("Duration", duration)
+        upload_date = meta.get("upload_date", "")
+        if upload_date:
+            if len(upload_date) == 8 and upload_date.isdigit():
+                upload_date = f"{upload_date[:4]}-{upload_date[4:6]}-{upload_date[6:]}"
+            details.add_row("Upload date", upload_date)
+        view_count = meta.get("view_count")
+        if view_count is not None:
+            details.add_row("Views", f"{view_count:,}")
+    elif entry.source_type == "webpage":
+        author = meta.get("author", "")
+        if author:
+            details.add_row("Author", author)
+        date = meta.get("date", "")
+        if date:
+            details.add_row("Date", date)
+        domain = meta.get("domain", "")
+        if domain:
+            details.add_row("Domain", domain)
+
+    console.print(details)
+
+    if entry.summary:
+        console.print(Panel(entry.summary, title="Summary", expand=False))
+
+
+def _online_source_action_menu(
+    entry,
+    catalog: ContentCatalog,
+    config_dir: Path,
+    base_dir: Path,
+    converted_dir: Path,
+    settings: Settings,
+) -> None:
+    """Show action menu for a selected online source."""
+    is_youtube = entry.source_type == "youtube"
+    has_content = bool(entry.converted_to)
+
+    # Build action list
+    try:
+        import questionary as _q
+
+        action_choices = []
+        if entry.fetch_status in ("pending", "failed"):
+            action_choices.append(_q.Choice(title="Fetch content", value="fetch"))
+        if has_content:
+            action_choices.append(_q.Choice(title="View content", value="view"))
+            action_choices.append(_q.Choice(title="Re-fetch content", value="refetch"))
+            action_choices.append(_q.Choice(title="Summarize / Re-summarize", value="summarize"))
+        else:
+            if entry.fetch_status == "completed":
+                # Content was fetched before but file might be missing
+                action_choices.append(_q.Choice(title="Re-fetch content", value="refetch"))
+        if is_youtube:
+            action_choices.append(
+                _q.Choice(title="Download & describe thumbnail", value="thumbnail")
+            )
+        action_choices.append(_q.Choice(title="View metadata", value="metadata"))
+        action_choices.append(_q.Choice(title="Refresh metadata", value="refresh_meta"))
+        action_choices.append(_q.Choice(title="Delete source", value="delete"))
+        action_choices.append(_q.Choice(title="Back", value="back"))
+    except ImportError:
+        action_choices = []
+        if entry.fetch_status in ("pending", "failed"):
+            action_choices.append("Fetch content")
+        if has_content:
+            action_choices.extend(["View content", "Re-fetch content", "Summarize / Re-summarize"])
+        else:
+            if entry.fetch_status == "completed":
+                action_choices.append("Re-fetch content")
+        if is_youtube:
+            action_choices.append("Download & describe thumbnail")
+        action_choices.extend(["View metadata", "Refresh metadata", "Delete source", "Back"])
+
+    action = q_select("Action:", choices=action_choices)
+
+    if action in (None, "back", "Back"):
+        return
+
+    # --- Fetch content ----------------------------------------------------
+    if action in ("fetch", "Fetch content", "refetch", "Re-fetch content"):
+        _fetch_online_source(entry, catalog, config_dir, base_dir, converted_dir, settings)
+
+    # --- View content -----------------------------------------------------
+    elif action in ("view", "View content"):
+        _view_online_content(entry, base_dir)
+
+    # --- Summarize --------------------------------------------------------
+    elif action in ("summarize", "Summarize / Re-summarize"):
+        if not entry.converted_to:
+            console.print("[yellow]No content available. Fetch first.[/yellow]")
+            return
+        _offer_resummarization_with_quality(entry, base_dir, settings, ask_confirmation=False)
+        catalog.save(config_dir)
+        console.print("[dim]Catalog saved.[/dim]")
+
+    # --- Thumbnail (YouTube only) -----------------------------------------
+    elif action in ("thumbnail", "Download & describe thumbnail"):
+        _fetch_youtube_thumbnail(entry, catalog, config_dir, base_dir, converted_dir, settings)
+
+    # --- View metadata ----------------------------------------------------
+    elif action in ("metadata", "View metadata"):
+        _view_online_metadata(entry)
+
+    # --- Refresh metadata -------------------------------------------------
+    elif action in ("refresh_meta", "Refresh metadata"):
+        _refresh_online_metadata(entry, catalog, config_dir)
+
+    # --- Delete source ----------------------------------------------------
+    elif action in ("delete", "Delete source"):
+        _delete_online_source(entry, catalog, config_dir, base_dir)
+
+
+def _fetch_online_source(
+    entry,
+    catalog: ContentCatalog,
+    config_dir: Path,
+    base_dir: Path,
+    converted_dir: Path,
+    settings: Settings,
+) -> None:
+    """Fetch and convert an online source."""
+    from flavia.content.converters import converter_registry
+
+    source_url = entry.source_url
+    if not source_url:
+        console.print("[red]No URL available for this source.[/red]")
+        return
+
+    converter = converter_registry.get_for_source(entry.source_type)
+    if converter is None:
+        console.print(f"[red]No converter found for source type: {entry.source_type}[/red]")
+        return
+
+    if not converter.is_implemented:
+        console.print(
+            f"[yellow]Converter for '{entry.source_type}' is not yet implemented.[/yellow]"
+        )
+        return
+
+    # Check dependencies
+    deps_ok, missing = converter.check_dependencies()
+    if not deps_ok:
+        console.print(
+            f"[red]Missing dependencies: {', '.join(missing)}.[/red]\n"
+            f"[dim]Install with: pip install 'flavia[online]'[/dim]"
+        )
+        return
+
+    console.print(f"[dim]Fetching content from {source_url}...[/dim]")
+
+    try:
+        output_dir = converted_dir / "_online" / entry.source_type
+        result_path = converter.fetch_and_convert(source_url, output_dir)
+
+        if result_path and result_path.exists():
+            try:
+                entry.converted_to = str(result_path.relative_to(base_dir))
+            except ValueError:
+                entry.converted_to = str(result_path)
+            entry.fetch_status = "completed"
+            console.print(f"[green]Content fetched successfully:[/green] {entry.converted_to}")
+
+            if _prompt_yes_no("View content now?", "Yes", "No"):
+                _view_online_content(entry, base_dir)
+
+            # Offer summarization
+            if _prompt_yes_no("Summarize now?", "Yes", "No"):
+                _offer_resummarization_with_quality(
+                    entry, base_dir, settings, ask_confirmation=False
+                )
+
+            catalog.save(config_dir)
+            console.print("[dim]Catalog saved.[/dim]")
+        else:
+            entry.fetch_status = "failed"
+            console.print("[red]Fetch failed. No content was retrieved.[/red]")
+            catalog.save(config_dir)
+
+    except Exception as e:
+        entry.fetch_status = "failed"
+        console.print(f"[red]Fetch failed: {e}[/red]")
+        catalog.save(config_dir)
+
+
+def _view_online_content(entry, base_dir: Path) -> None:
+    """View fetched online source content."""
+    if not entry.converted_to:
+        console.print("[yellow]No content available. Fetch first.[/yellow]")
+        return
+
+    content_path = (base_dir / entry.converted_to).resolve()
+    try:
+        content_path.relative_to(base_dir.resolve())
+    except ValueError:
+        console.print("[red]Blocked unsafe path outside project directory.[/red]")
+        return
+
+    if not content_path.exists():
+        console.print("[yellow]Content file not found. Try re-fetching.[/yellow]")
+        return
+
+    try:
+        content = content_path.read_text(encoding="utf-8")
+        title = entry.source_metadata.get("title", entry.name)
+        console.print(Panel(content, title=f"Content: {title}", expand=False))
+    except Exception as e:
+        console.print(f"[red]Failed to read content: {e}[/red]")
+
+
+def _fetch_youtube_thumbnail(
+    entry,
+    catalog: ContentCatalog,
+    config_dir: Path,
+    base_dir: Path,
+    converted_dir: Path,
+    settings: Settings,
+) -> None:
+    """Download and describe a YouTube video thumbnail."""
+    from flavia.content.converters.online.youtube import YouTubeConverter
+
+    source_url = entry.source_url
+    if not source_url:
+        console.print("[red]No URL available.[/red]")
+        return
+
+    converter = YouTubeConverter()
+
+    # Check dependencies
+    deps_ok, missing = converter.check_dependencies()
+    if not deps_ok:
+        console.print(
+            f"[red]Missing dependencies: {', '.join(missing)}.[/red]\n"
+            f"[dim]Install with: pip install 'flavia[online]'[/dim]"
+        )
+        return
+
+    console.print(f"[dim]Downloading and describing thumbnail...[/dim]")
+
+    output_dir = converted_dir / "_online" / "youtube"
+    result = converter.download_and_describe_thumbnail(source_url, output_dir)
+
+    if result is None:
+        console.print("[red]Thumbnail download or description failed.[/red]")
+        return
+
+    md_path, description = result
+    console.print(f"[green]Thumbnail described:[/green] {md_path.name}")
+    console.print(Panel(description, title="Thumbnail Description", expand=False))
+
+    # Store reference in metadata
+    try:
+        thumb_rel = str(md_path.relative_to(base_dir))
+    except ValueError:
+        thumb_rel = str(md_path)
+    entry.source_metadata["thumbnail_description_file"] = thumb_rel
+
+    catalog.save(config_dir)
+    console.print("[dim]Catalog saved.[/dim]")
+
+
+def _view_online_metadata(entry) -> None:
+    """Display metadata for an online source."""
+    meta = entry.source_metadata
+    if not meta:
+        console.print("[yellow]No metadata available.[/yellow]")
+        return
+
+    console.print(f"\n[bold]Metadata for {entry.source_type} source[/bold]")
+
+    meta_table = Table(show_header=False, box=None)
+    meta_table.add_column("Key", style="dim")
+    meta_table.add_column("Value")
+
+    for key, value in sorted(meta.items()):
+        if key == "status":
+            continue
+        val_str = str(value)
+        if len(val_str) > 200:
+            val_str = val_str[:200] + "..."
+        meta_table.add_row(key, val_str)
+
+    console.print(meta_table)
+
+
+def _refresh_online_metadata(
+    entry,
+    catalog: ContentCatalog,
+    config_dir: Path,
+) -> None:
+    """Re-fetch metadata for an online source."""
+    from flavia.content.converters import converter_registry
+
+    source_url = entry.source_url
+    if not source_url:
+        console.print("[red]No URL available.[/red]")
+        return
+
+    converter = converter_registry.get_for_source(entry.source_type)
+    if converter is None or not converter.is_implemented:
+        console.print("[yellow]Converter not available for metadata refresh.[/yellow]")
+        return
+
+    deps_ok, missing = converter.check_dependencies()
+    if not deps_ok:
+        console.print(
+            f"[red]Missing dependencies: {', '.join(missing)}.[/red]\n"
+            f"[dim]Install with: pip install 'flavia[online]'[/dim]"
+        )
+        return
+
+    console.print("[dim]Refreshing metadata...[/dim]")
+
+    try:
+        new_meta = converter.get_metadata(source_url)
+        if new_meta and new_meta.get("status") != "error":
+            # Preserve any extra keys we added (like thumbnail_description_file)
+            preserved_keys = {"thumbnail_description_file"}
+            for key in preserved_keys:
+                if key in entry.source_metadata:
+                    new_meta[key] = entry.source_metadata[key]
+
+            entry.source_metadata = new_meta
+            entry.name = new_meta.get("title", entry.name)
+            console.print("[green]Metadata refreshed.[/green]")
+            _view_online_metadata(entry)
+            catalog.save(config_dir)
+            console.print("[dim]Catalog saved.[/dim]")
+        else:
+            msg = new_meta.get("message", "Unknown error") if new_meta else "No metadata returned"
+            console.print(f"[red]Metadata refresh failed: {msg}[/red]")
+    except Exception as e:
+        console.print(f"[red]Metadata refresh failed: {e}[/red]")
+
+
+def _delete_online_source(
+    entry,
+    catalog: ContentCatalog,
+    config_dir: Path,
+    base_dir: Path,
+) -> None:
+    """Delete an online source from the catalog and optionally remove converted files."""
+    title = entry.source_metadata.get("title", entry.source_url or entry.name)
+    console.print(f"\n[yellow]Delete source: {title}[/yellow]")
+
+    if not _prompt_yes_no("Are you sure you want to delete this source?", "Yes, delete", "No"):
+        return
+
+    # Optionally delete converted content file
+    if entry.converted_to:
+        content_path = (base_dir / entry.converted_to).resolve()
+        try:
+            content_path.relative_to(base_dir.resolve())
+            if content_path.exists():
+                if _prompt_yes_no("Also delete the converted content file?", "Yes", "No"):
+                    content_path.unlink(missing_ok=True)
+                    console.print(f"[dim]Deleted: {entry.converted_to}[/dim]")
+        except ValueError:
+            pass
+
+    # Remove from catalog
+    if entry.path in catalog.files:
+        del catalog.files[entry.path]
+        console.print("[green]Source removed from catalog.[/green]")
+        catalog.save(config_dir)
+        console.print("[dim]Catalog saved.[/dim]")
+
+
+def _add_online_source(
+    catalog: ContentCatalog,
+    config_dir: Path,
+    settings: Settings,
+) -> None:
+    """Add a new online source to the catalog with optional immediate fetch."""
+    base_dir = config_dir.parent
+    converted_dir = base_dir / ".converted"
+
     console.print("\n[bold]Add Online Source[/bold]")
-    console.print("[dim]Supported: YouTube videos, web pages[/dim]")
-    console.print("[yellow]Note: Actual fetching/conversion is not yet implemented.[/yellow]")
+    console.print("[dim]Supported: YouTube videos, web pages (any HTTP/HTTPS URL)[/dim]")
 
     try:
         url = console.input("[bold]URL:[/bold] ").strip()
@@ -347,6 +804,7 @@ def _add_online_source(catalog: ContentCatalog, config_dir: Path) -> None:
         console.print("[red]Invalid URL. Must start with http:// or https://[/red]")
         return
 
+    console.print("[dim]Detecting source type and fetching metadata...[/dim]")
     entry = catalog.add_online_source(url)
 
     if entry is None:
@@ -354,17 +812,23 @@ def _add_online_source(catalog: ContentCatalog, config_dir: Path) -> None:
         return
 
     console.print(f"\n[green]Added {entry.source_type} source:[/green]")
+    console.print(f"  Title: {entry.source_metadata.get('title', '(unknown)')}")
     console.print(f"  Path: {entry.path}")
     console.print(f"  Status: {entry.fetch_status}")
 
-    if entry.fetch_status == "not_implemented":
+    # Save catalog immediately
+    catalog.save(config_dir)
+
+    # Offer immediate fetch if converter is implemented
+    if entry.fetch_status == "pending":
+        if _prompt_yes_no("Fetch content now?", "Yes", "No"):
+            _fetch_online_source(entry, catalog, config_dir, base_dir, converted_dir, settings)
+    elif entry.fetch_status == "not_implemented":
         console.print(
-            "\n[yellow]This source type is not yet implemented. "
+            "\n[yellow]This source type converter is not yet fully implemented. "
             "The URL has been saved for future processing.[/yellow]"
         )
 
-    # Save catalog
-    catalog.save(config_dir)
     console.print("[dim]Catalog saved.[/dim]")
 
 

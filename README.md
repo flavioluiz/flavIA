@@ -21,7 +21,7 @@ flavia --telegram
 
 ## What flavIA does
 
-- **Understands your documents**: converts PDFs, Office files (`.docx`, `.xlsx`, `.pptx`, plus legacy/OpenDocument variants), audio, and video files to searchable text and analyzes content to create agents specialized in the subject matter
+- **Understands your documents**: converts PDFs, Office files (`.docx`, `.xlsx`, `.pptx`, plus legacy/OpenDocument variants), audio, video, images, YouTube videos, and web pages to searchable text and analyzes content to create agents specialized in the subject matter
 - **Contextual conversation**: answers questions, explains concepts, finds citations, compares arguments -- all grounded in your materials
 - **File modification**: agents can create, edit, and manage files with permission controls, user confirmation, and automatic backups
 - **Works in any folder**: each directory can have its own configuration with agents adapted to its content

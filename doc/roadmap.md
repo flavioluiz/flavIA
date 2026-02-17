@@ -12,9 +12,9 @@ This roadmap outlines **45 tasks** across **10 major areas** to extend flavIA fr
 
 ### Quick Stats
 - **10 Easy tasks** (< 1 day each) — Quick wins for immediate value — **7 completed** ✓
-- **26 Medium tasks** (1-2 days each) — Core feature development — **9 completed** ✓
+- **26 Medium tasks** (1-2 days each) — Core feature development — **10 completed** ✓
 - **9 Hard tasks** (3+ days each) — Complex integrations requiring careful design — **1 completed** ✓
-- **Total completed so far**: **17 / 45 tasks** ✓
+- **Total completed so far**: **18 / 45 tasks** ✓
 
 ### Strategic Priorities
 1. **Immediate value** (Tasks 4.1-4.8, 8.1): Improve CLI UX and add token tracking
@@ -37,7 +37,7 @@ Expand content processing beyond PDF/text to audio, video, images, Office docs, 
 - ~~**1.3** Word/Office Documents (Easy)~~ — **DONE** ✓ OfficeConverter with python-docx, openpyxl, python-pptx
 - ~~**1.4** OCR + LaTeX Equations (Hard)~~ — **DONE** ✓ Scanned PDF OCR pipeline + quality assessment in `/catalog`
 - ~~**1.5** Visual Frame Extraction from Videos (Medium)~~ — **DONE** ✓ Sampled frame extraction + LLM vision descriptions with catalog integration
-- **1.6** YouTube/Web Converters (Medium) — yt-dlp, trafilatura
+- ~~**1.6** YouTube/Web Converters (Medium)~~ — **DONE** ✓ YouTube transcript/audio + web page extraction with full `/catalog` management
 
 ### [Area 2: Agent System Improvements](roadmap/area-2-agent-system-improvements.md) (3 tasks)
 Redesign agent configuration for richer, more maintainable agent definitions.
@@ -140,15 +140,15 @@ Enable safe file modification and LaTeX compilation for productive academic work
 - ~~Agent shows write operation previews and supports `--dry-run` for non-destructive execution~~ ✓
 - ~~Compile LaTeX documents directly from chat~~ ✓
 
-### Phase 3: Multimodal Expansion (Tasks 1.1 completed, 1.5; 1.2 completed)
-**Timeline**: 2 weeks | **Effort**: 1 Medium pending = ~2-3 days
+### Phase 3: Multimodal Expansion (Tasks 1.1-1.6 completed)
+**Timeline**: ~~2 weeks~~ — **COMPLETE** ✓
 
-Add audio/video transcription, image understanding, and online source processing.
+All multimodal file processing tasks are now complete.
 
 **Deliverables**:
 - ~~Transcribe audio/video files via Mistral voxtral-mini-latest~~ ✓
 - ~~Describe images via vision-capable multimodal models~~ ✓
-- Process YouTube videos and web pages
+- ~~Process YouTube videos and web pages~~ ✓
 
 ### Phase 4: Production Messaging (Tasks 3.1-3.3, 8.2-8.3)
 **Timeline**: 2 weeks | **Effort**: 3 Medium = ~4-6 days
@@ -322,7 +322,7 @@ Tasks ordered by a pragmatic implementation sequence that balances dependency re
 | 24 | **2.2** CLI agent management commands | Medium | Agents |
 | 25 | **3.2** Per-conversation agent binding | Medium | Messaging |
 | 26 | **3.3** Multi-bot support | Medium | Messaging |
-| 27 | **1.6** Online source converters (YouTube/Web) | Medium | File Processing |
+| 27 | ~~**1.6** Online source converters (YouTube/Web)~~ — **DONE** ✓ | ~~Medium~~ | ~~File Processing~~ |
 | 28 | **3.6** Web API interface | Medium | Messaging |
 | 29 | ~~**1.4** OCR + LaTeX equation support~~ — **DONE** ✓ | ~~Hard~~ | ~~File Processing~~ |
 | 30 | **3.4** Abstract messaging interface | Hard | Messaging |

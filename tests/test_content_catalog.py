@@ -866,7 +866,7 @@ class TestOnlineSources:
         assert entry is not None
         assert entry.source_type == "youtube"
         assert entry.source_url == "https://www.youtube.com/watch?v=abc123"
-        assert entry.fetch_status == "not_implemented"
+        assert entry.fetch_status == "pending"
         assert entry.file_type == "online"
         assert entry.category == "youtube"
         assert entry.path.startswith("_online/youtube/")
@@ -884,7 +884,7 @@ class TestOnlineSources:
         assert entry is not None
         assert entry.source_type == "webpage"
         assert entry.source_url == "https://docs.python.org/3/"
-        assert entry.fetch_status == "not_implemented"
+        assert entry.fetch_status == "pending"
 
     def test_add_source_normalizes_source_type(self, tmp_path):
         """Source type is normalized to lowercase."""
@@ -1021,10 +1021,10 @@ class TestOnlineSources:
         # Manually change one status to test filtering
         entry2.fetch_status = "completed"
 
-        not_impl = catalog.get_online_sources(fetch_status="not_implemented")
+        pending = catalog.get_online_sources(fetch_status="pending")
         completed = catalog.get_online_sources(fetch_status="completed")
 
-        assert len(not_impl) == 1
+        assert len(pending) == 1
         assert len(completed) == 1
 
     def test_get_pending_fetches(self, tmp_path):

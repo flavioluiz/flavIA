@@ -13,9 +13,9 @@ from flavia.interfaces.catalog_command import (
     _browse_files,
     _manage_media_files,
     _manage_office_files,
+    _manage_online_sources,
     _manage_pdf_files,
     _offer_resummarization_with_quality,
-    _show_online_sources,
     run_catalog_command,
 )
 from flavia.content.scanner import FileEntry
@@ -82,8 +82,10 @@ class TestCatalogCommandFunctions:
         catalog = ContentCatalog(tmp_path)
         catalog.build()
 
+        settings = MagicMock()
+
         with patch("flavia.interfaces.catalog_command.console") as mock_console:
-            _show_online_sources(catalog)
+            _manage_online_sources(catalog, tmp_path / ".flavia", settings)
             # Should print a message about no sources
             mock_console.print.assert_called()
 
@@ -116,8 +118,10 @@ class TestRunCatalogCommand:
         settings = MagicMock()
         settings.base_dir = tmp_path
 
-        with patch("flavia.interfaces.catalog_command.console") as mock_console, \
-             patch("flavia.interfaces.catalog_command.q_select") as mock_q_select:
+        with (
+            patch("flavia.interfaces.catalog_command.console") as mock_console,
+            patch("flavia.interfaces.catalog_command.q_select") as mock_q_select,
+        ):
             # Mock q_select to return 'q' immediately
             mock_q_select.return_value = "q"
 
@@ -137,8 +141,10 @@ class TestRunCatalogCommand:
         settings = MagicMock()
         settings.base_dir = tmp_path
 
-        with patch("flavia.interfaces.catalog_command.console") as mock_console, \
-             patch("flavia.interfaces.catalog_command.q_select") as mock_q_select:
+        with (
+            patch("flavia.interfaces.catalog_command.console") as mock_console,
+            patch("flavia.interfaces.catalog_command.q_select") as mock_q_select,
+        ):
             # Return "1" first, then "q" to exit
             mock_q_select.side_effect = ["1", "q"]
 
@@ -171,8 +177,10 @@ class TestCatalogCommandIntegration:
         settings = MagicMock()
         settings.base_dir = tmp_path
 
-        with patch("flavia.interfaces.catalog_command.console") as mock_console, \
-             patch("flavia.interfaces.catalog_command.q_select") as mock_q_select:
+        with (
+            patch("flavia.interfaces.catalog_command.console") as mock_console,
+            patch("flavia.interfaces.catalog_command.q_select") as mock_q_select,
+        ):
             # Simulate: overview -> browse -> summaries -> quit
             mock_q_select.side_effect = ["1", "2", "4", "q"]
 
@@ -207,14 +215,20 @@ def test_manage_pdf_files_blocks_path_traversal(monkeypatch, tmp_path):
         convert_calls.append((source_path, output_dir, output_format))
         return None
 
-    with patch("flavia.interfaces.catalog_command.console") as mock_console, patch(
-        "flavia.interfaces.catalog_command.q_select",
-        side_effect=["../secret.pdf", "simple", "__back__"],
-    ), patch("flavia.content.converters.PdfConverter.convert", _fake_convert):
+    with (
+        patch("flavia.interfaces.catalog_command.console") as mock_console,
+        patch(
+            "flavia.interfaces.catalog_command.q_select",
+            side_effect=["../secret.pdf", "simple", "__back__"],
+        ),
+        patch("flavia.content.converters.PdfConverter.convert", _fake_convert),
+    ):
         _manage_pdf_files(catalog, config_dir, settings)
 
     assert convert_calls == []
-    printed = " ".join(" ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list)
+    printed = " ".join(
+        " ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list
+    )
     assert "Blocked unsafe path outside project directory" in printed
 
 
@@ -245,17 +259,24 @@ def test_manage_office_files_blocks_path_traversal(monkeypatch, tmp_path):
         convert_calls.append((source_path, output_dir, output_format))
         return None
 
-    with patch("flavia.interfaces.catalog_command.console") as mock_console, patch(
-        "flavia.interfaces.catalog_command.q_select",
-        side_effect=["../secret.docx", "convert", "__back__"],
-    ), patch("flavia.content.converters.OfficeConverter.convert", _fake_convert), patch(
-        "flavia.content.converters.OfficeConverter.check_dependencies",
-        return_value=(True, []),
+    with (
+        patch("flavia.interfaces.catalog_command.console") as mock_console,
+        patch(
+            "flavia.interfaces.catalog_command.q_select",
+            side_effect=["../secret.docx", "convert", "__back__"],
+        ),
+        patch("flavia.content.converters.OfficeConverter.convert", _fake_convert),
+        patch(
+            "flavia.content.converters.OfficeConverter.check_dependencies",
+            return_value=(True, []),
+        ),
     ):
         _manage_office_files(catalog, config_dir, settings)
 
     assert convert_calls == []
-    printed = " ".join(" ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list)
+    printed = " ".join(
+        " ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list
+    )
     assert "Blocked unsafe path outside project directory" in printed
 
 
@@ -286,14 +307,20 @@ def test_manage_media_files_blocks_path_traversal(monkeypatch, tmp_path):
         convert_calls.append((source_path, output_dir, output_format))
         return None
 
-    with patch("flavia.interfaces.catalog_command.console") as mock_console, patch(
-        "flavia.interfaces.catalog_command.q_select",
-        side_effect=["../secret.mp3", "transcribe", "__back__"],
-    ), patch("flavia.content.converters.AudioConverter.convert", _fake_convert):
+    with (
+        patch("flavia.interfaces.catalog_command.console") as mock_console,
+        patch(
+            "flavia.interfaces.catalog_command.q_select",
+            side_effect=["../secret.mp3", "transcribe", "__back__"],
+        ),
+        patch("flavia.content.converters.AudioConverter.convert", _fake_convert),
+    ):
         _manage_media_files(catalog, config_dir, settings)
 
     assert convert_calls == []
-    printed = " ".join(" ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list)
+    printed = " ".join(
+        " ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list
+    )
     assert "Blocked unsafe path outside project directory" in printed
 
 
@@ -331,25 +358,33 @@ def test_manage_media_files_transcribe_can_resummarize_with_quality(monkeypatch,
         "test-model",
     )
 
-    with patch("flavia.interfaces.catalog_command.console") as mock_console, patch(
-        "flavia.interfaces.catalog_command.q_select",
-        side_effect=["lecture.mp3", "transcribe", "Yes", "Yes", "__back__"],
-    ), patch(
-        "flavia.content.converters.AudioConverter.check_dependencies",
-        return_value=(True, []),
-    ), patch(
-        "flavia.content.converters.AudioConverter.convert",
-        lambda self, source_path, output_dir, output_format="md": converted_path,
-    ), patch(
-        "flavia.content.summarizer.summarize_file_with_quality",
-        lambda *args, **kwargs: ("Resumo da transcrição", "good"),
+    with (
+        patch("flavia.interfaces.catalog_command.console") as mock_console,
+        patch(
+            "flavia.interfaces.catalog_command.q_select",
+            side_effect=["lecture.mp3", "transcribe", "Yes", "Yes", "__back__"],
+        ),
+        patch(
+            "flavia.content.converters.AudioConverter.check_dependencies",
+            return_value=(True, []),
+        ),
+        patch(
+            "flavia.content.converters.AudioConverter.convert",
+            lambda self, source_path, output_dir, output_format="md": converted_path,
+        ),
+        patch(
+            "flavia.content.summarizer.summarize_file_with_quality",
+            lambda *args, **kwargs: ("Resumo da transcrição", "good"),
+        ),
     ):
         _manage_media_files(catalog, config_dir, settings)
 
     assert catalog.files["lecture.mp3"].converted_to == ".converted/lecture.md"
     assert catalog.files["lecture.mp3"].summary == "Resumo da transcrição"
     assert catalog.files["lecture.mp3"].extraction_quality == "good"
-    printed = " ".join(" ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list)
+    printed = " ".join(
+        " ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list
+    )
     assert "Transcription complete:" in printed
     assert "Re-summarized." in printed
 
@@ -386,21 +421,28 @@ def test_manage_pdf_files_simple_can_resummarize_with_quality(monkeypatch, tmp_p
 
     converted_path = tmp_path / ".converted" / "paper.md"
 
-    with patch("flavia.interfaces.catalog_command.console") as mock_console, patch(
-        "flavia.interfaces.catalog_command.q_select",
-        side_effect=["paper.pdf", "simple", "yes", "__back__"],
-    ), patch(
-        "flavia.content.converters.PdfConverter.convert",
-        lambda self, source_path, output_dir, output_format="md": converted_path,
-    ), patch(
-        "flavia.content.summarizer.summarize_file_with_quality",
-        lambda *args, **kwargs: ("Resumo do documento", "good"),
+    with (
+        patch("flavia.interfaces.catalog_command.console") as mock_console,
+        patch(
+            "flavia.interfaces.catalog_command.q_select",
+            side_effect=["paper.pdf", "simple", "yes", "__back__"],
+        ),
+        patch(
+            "flavia.content.converters.PdfConverter.convert",
+            lambda self, source_path, output_dir, output_format="md": converted_path,
+        ),
+        patch(
+            "flavia.content.summarizer.summarize_file_with_quality",
+            lambda *args, **kwargs: ("Resumo do documento", "good"),
+        ),
     ):
         _manage_pdf_files(catalog, config_dir, settings)
 
     assert catalog.files["paper.pdf"].summary == "Resumo do documento"
     assert catalog.files["paper.pdf"].extraction_quality == "good"
-    printed = " ".join(" ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list)
+    printed = " ".join(
+        " ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list
+    )
     assert "Re-summarized." in printed
 
 
@@ -432,17 +474,25 @@ def test_manage_pdf_files_simple_warns_when_provider_key_missing(monkeypatch, tm
 
     converted_path = tmp_path / ".converted" / "paper.md"
 
-    with patch("flavia.interfaces.catalog_command.console") as mock_console, patch(
-        "flavia.interfaces.catalog_command.q_select",
-        side_effect=["paper.pdf", "simple", "Yes", "No", "__back__"],
-    ), patch(
-        "flavia.content.converters.PdfConverter.convert",
-        lambda self, source_path, output_dir, output_format="md": converted_path,
+    with (
+        patch("flavia.interfaces.catalog_command.console") as mock_console,
+        patch(
+            "flavia.interfaces.catalog_command.q_select",
+            side_effect=["paper.pdf", "simple", "Yes", "No", "__back__"],
+        ),
+        patch(
+            "flavia.content.converters.PdfConverter.convert",
+            lambda self, source_path, output_dir, output_format="md": converted_path,
+        ),
     ):
         _manage_pdf_files(catalog, config_dir, settings)
 
-    printed = " ".join(" ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list)
-    assert "Summary/quality skipped: no API key configured for the active model provider." in printed
+    printed = " ".join(
+        " ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list
+    )
+    assert (
+        "Summary/quality skipped: no API key configured for the active model provider." in printed
+    )
 
 
 def test_manage_pdf_files_resummarize_does_not_reextract(monkeypatch, tmp_path):
@@ -479,15 +529,20 @@ def test_manage_pdf_files_resummarize_does_not_reextract(monkeypatch, tmp_path):
         "test-model",
     )
 
-    with patch("flavia.interfaces.catalog_command.console"), patch(
-        "flavia.interfaces.catalog_command.q_select",
-        side_effect=["paper.pdf", "resummarize", "__back__"],
-    ), patch(
-        "flavia.content.converters.PdfConverter.convert",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("Should not reconvert")),
-    ), patch(
-        "flavia.content.summarizer.summarize_file_with_quality",
-        lambda *args, **kwargs: ("Resumo atualizado", "good"),
+    with (
+        patch("flavia.interfaces.catalog_command.console"),
+        patch(
+            "flavia.interfaces.catalog_command.q_select",
+            side_effect=["paper.pdf", "resummarize", "__back__"],
+        ),
+        patch(
+            "flavia.content.converters.PdfConverter.convert",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("Should not reconvert")),
+        ),
+        patch(
+            "flavia.content.summarizer.summarize_file_with_quality",
+            lambda *args, **kwargs: ("Resumo atualizado", "good"),
+        ),
     ):
         _manage_pdf_files(catalog, config_dir, settings)
 
@@ -522,8 +577,9 @@ def test_offer_resummarization_retries_after_model_switch(monkeypatch, tmp_path)
         api_base_url="https://api.example.com/v1",
         headers={},
     )
-    settings.resolve_model_with_provider.side_effect = (
-        lambda model_ref: (provider, str(model_ref).split(":", 1)[-1])
+    settings.resolve_model_with_provider.side_effect = lambda model_ref: (
+        provider,
+        str(model_ref).split(":", 1)[-1],
     )
 
     summarize_results = iter([(None, None), ("Resumo final", "partial")])
@@ -554,7 +610,9 @@ def test_offer_resummarization_retries_after_model_switch(monkeypatch, tmp_path)
 
     assert entry.summary == "Resumo final"
     assert entry.extraction_quality == "partial"
-    printed = " ".join(" ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list)
+    printed = " ".join(
+        " ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list
+    )
     assert "Re-summarized." in printed
 
 
@@ -598,8 +656,9 @@ def test_offer_resummarization_auto_fallbacks_to_instruct(monkeypatch, tmp_path)
     settings.default_model = "synthetic:hf:zai-org/GLM-4.7"
     settings.summary_model = None
     settings.providers = SimpleNamespace(providers={"synthetic": provider})
-    settings.resolve_model_with_provider.side_effect = (
-        lambda model_ref: (provider, str(model_ref).split(":", 1)[-1])
+    settings.resolve_model_with_provider.side_effect = lambda model_ref: (
+        provider,
+        str(model_ref).split(":", 1)[-1],
     )
 
     called_models = []
@@ -633,7 +692,9 @@ def test_offer_resummarization_auto_fallbacks_to_instruct(monkeypatch, tmp_path)
     assert settings.summary_model == "synthetic:hf:moonshotai/Kimi-K2-Instruct-0905"
     assert entry.summary == "Resumo final"
     assert entry.extraction_quality == "good"
-    printed = " ".join(" ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list)
+    printed = " ".join(
+        " ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list
+    )
     assert "Retrying automatically with instruct model" in printed
 
 
@@ -654,12 +715,15 @@ def test_run_catalog_command_media_option_dispatches(monkeypatch, tmp_path):
     def _fake_manage_media(_catalog, _config_dir, _settings):
         called["media"] += 1
 
-    with patch(
-        "flavia.interfaces.catalog_command.q_select",
-        side_effect=["10", "q"],
-    ), patch(
-        "flavia.interfaces.catalog_command._manage_media_files",
-        _fake_manage_media,
+    with (
+        patch(
+            "flavia.interfaces.catalog_command.q_select",
+            side_effect=["10", "q"],
+        ),
+        patch(
+            "flavia.interfaces.catalog_command._manage_media_files",
+            _fake_manage_media,
+        ),
     ):
         assert run_catalog_command(settings) is True
 

@@ -41,6 +41,7 @@ telegram = ["python-telegram-bot==22.6"]
 ocr = ["mistralai"]
 transcription = ["mistralai"]
 office = ["python-docx>=0.8.11", "openpyxl>=3.1.0", "python-pptx>=0.6.21"]
+online = ["yt-dlp>=2024.0", "youtube-transcript-api>=0.6.0", "trafilatura>=1.6.0"]
 dev = ["pytest", "pytest-cov", "black", "ruff"]
 all = [
     "python-telegram-bot==22.6",
@@ -48,6 +49,9 @@ all = [
     "python-docx>=0.8.11",
     "openpyxl>=3.1.0",
     "python-pptx>=0.6.21",
+    "yt-dlp>=2024.0",
+    "youtube-transcript-api>=0.6.0",
+    "trafilatura>=1.6.0",
 ]
 
 [project.scripts]

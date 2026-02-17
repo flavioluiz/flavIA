@@ -13,23 +13,23 @@ from flavia.content.converters.online import (
 
 
 class TestYouTubeConverter:
-    """Tests for the YouTubeConverter placeholder."""
+    """Tests for the YouTubeConverter."""
 
     def test_source_type(self):
         """Verify source type identifier."""
         converter = YouTubeConverter()
         assert converter.source_type == "youtube"
 
-    def test_is_not_implemented(self):
-        """Converter is marked as not implemented."""
+    def test_is_implemented(self):
+        """Converter is marked as implemented."""
         converter = YouTubeConverter()
-        assert converter.is_implemented is False
+        assert converter.is_implemented is True
 
     def test_requires_dependencies(self):
         """Required dependencies are listed."""
         converter = YouTubeConverter()
         assert "yt_dlp" in converter.requires_dependencies
-        assert "whisper" in converter.requires_dependencies
+        assert "youtube_transcript_api" in converter.requires_dependencies
 
     def test_can_handle_youtube_com(self):
         """Recognizes youtube.com URLs."""
@@ -48,32 +48,22 @@ class TestYouTubeConverter:
         assert not converter.can_handle_source("https://vimeo.com/123")
         assert not converter.can_handle_source("https://example.com/video")
 
-    def test_fetch_and_convert_returns_none(self, tmp_path):
-        """Fetch returns None (not implemented)."""
-        converter = YouTubeConverter()
-        result = converter.fetch_and_convert(
-            "https://youtube.com/watch?v=abc",
-            tmp_path,
-        )
-        assert result is None
-
-    def test_get_metadata_returns_status(self):
-        """Get metadata returns not_implemented status."""
+    def test_get_metadata_returns_source_info(self):
+        """Get metadata returns source type and URL."""
         converter = YouTubeConverter()
         metadata = converter.get_metadata("https://youtube.com/watch?v=abc")
 
-        assert metadata["status"] == "not_implemented"
         assert metadata["source_type"] == "youtube"
         assert "source_url" in metadata
 
     def test_get_implementation_status(self):
-        """Implementation status includes planned features."""
+        """Implementation status includes features."""
         converter = YouTubeConverter()
         status = converter.get_implementation_status()
 
-        assert status["is_implemented"] is False
-        assert "planned_features" in status
-        assert len(status["planned_features"]) > 0
+        assert status["is_implemented"] is True
+        assert "features" in status
+        assert len(status["features"]) > 0
         assert status["source_type"] == "youtube"
 
     def test_does_not_handle_local_files(self, tmp_path):
@@ -86,26 +76,40 @@ class TestYouTubeConverter:
         assert converter.convert(test_file, tmp_path) is None
         assert converter.extract_text(test_file) is None
 
+    def test_extract_video_id(self):
+        """Extracts video ID from various YouTube URL formats."""
+        converter = YouTubeConverter()
+        assert (
+            converter.parse_video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+        )
+        assert converter.parse_video_id("https://youtu.be/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+        assert converter.parse_video_id("https://youtube.com/embed/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+        assert converter.parse_video_id("not-a-url") is None
+
+    def test_excludes_youtube_from_webpage(self):
+        """WebPageConverter does not handle YouTube URLs."""
+        webpage = WebPageConverter()
+        assert not webpage.can_handle_source("https://www.youtube.com/watch?v=abc123")
+        assert not webpage.can_handle_source("https://youtu.be/abc123")
+
 
 class TestWebPageConverter:
-    """Tests for the WebPageConverter placeholder."""
+    """Tests for the WebPageConverter."""
 
     def test_source_type(self):
         """Verify source type identifier."""
         converter = WebPageConverter()
         assert converter.source_type == "webpage"
 
-    def test_is_not_implemented(self):
-        """Converter is marked as not implemented."""
+    def test_is_implemented(self):
+        """Converter is marked as implemented."""
         converter = WebPageConverter()
-        assert converter.is_implemented is False
+        assert converter.is_implemented is True
 
     def test_requires_dependencies(self):
         """Required dependencies are listed."""
         converter = WebPageConverter()
-        assert "httpx" in converter.requires_dependencies
-        assert "beautifulsoup4" in converter.requires_dependencies
-        assert "markdownify" in converter.requires_dependencies
+        assert "trafilatura" in converter.requires_dependencies
 
     def test_can_handle_https(self):
         """Recognizes HTTPS URLs."""
@@ -125,29 +129,22 @@ class TestWebPageConverter:
         assert not converter.can_handle_source("file:///path/to/file")
         assert not converter.can_handle_source("/local/path")
 
-    def test_fetch_and_convert_returns_none(self, tmp_path):
-        """Fetch returns None (not implemented)."""
-        converter = WebPageConverter()
-        result = converter.fetch_and_convert("https://example.com", tmp_path)
-        assert result is None
-
-    def test_get_metadata_returns_status(self):
-        """Get metadata returns not_implemented status."""
+    def test_get_metadata_returns_source_info(self):
+        """Get metadata returns source type and URL."""
         converter = WebPageConverter()
         metadata = converter.get_metadata("https://example.com")
 
-        assert metadata["status"] == "not_implemented"
         assert metadata["source_type"] == "webpage"
         assert "source_url" in metadata
 
     def test_get_implementation_status(self):
-        """Implementation status includes planned features."""
+        """Implementation status includes features."""
         converter = WebPageConverter()
         status = converter.get_implementation_status()
 
-        assert status["is_implemented"] is False
-        assert "planned_features" in status
-        assert len(status["planned_features"]) > 0
+        assert status["is_implemented"] is True
+        assert "features" in status
+        assert len(status["features"]) > 0
         assert status["source_type"] == "webpage"
 
 
@@ -185,11 +182,11 @@ class TestOnlineSourceConverterBase:
         assert not ok or len(missing) == 0
 
     def test_check_dependencies_uses_import_map(self, monkeypatch):
-        """Package-to-module mapping is honored (e.g., beautifulsoup4 -> bs4)."""
+        """Package-to-module mapping is honored for dependency checking."""
         converter = WebPageConverter()
 
         def fake_find_spec(module_name):
-            if module_name in {"httpx", "bs4", "markdownify"}:
+            if module_name == "trafilatura":
                 return object()
             return None
 
