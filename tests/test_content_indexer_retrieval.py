@@ -1,17 +1,55 @@
 """Tests for hybrid retrieval engine combining vector and FTS search."""
 
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from flavia.content.catalog import ContentCatalog
 from flavia.content.indexer.retrieval import (
+    _catalog_doc_id,
     _get_doc_id,
     _merge_chunk_data,
     _rrf_score,
     retrieve,
 )
+from flavia.content.scanner import FileEntry
 from flavia.config import Settings
+
+
+def _make_catalog_entry(
+    *,
+    path: str,
+    summary: str,
+    checksum_sha256: str,
+    file_type: str = "text",
+    category: str = "markdown",
+) -> FileEntry:
+    now = datetime.now(timezone.utc).isoformat()
+    return FileEntry(
+        path=path,
+        name=Path(path).name,
+        extension=Path(path).suffix,
+        file_type=file_type,
+        category=category,
+        size_bytes=123,
+        created_at=now,
+        modified_at=now,
+        indexed_at=now,
+        checksum_sha256=checksum_sha256,
+        summary=summary,
+        status="current",
+    )
+
+
+def _write_catalog(base_dir: Path, entries: list[FileEntry]) -> None:
+    catalog = ContentCatalog(base_dir)
+    now = datetime.now(timezone.utc).isoformat()
+    catalog.catalog_created_at = now
+    catalog.catalog_updated_at = now
+    catalog.files = {entry.path: entry for entry in entries}
+    catalog.save(base_dir / ".flavia")
 
 
 class TestRRFScore:
@@ -210,6 +248,183 @@ class TestInputValidation:
         assert retrieve("question", base_dir, settings, top_k=0) == []
         assert retrieve("question", base_dir, settings, top_k=-5) == []
         mock_get_client.assert_not_called()
+
+
+class TestCatalogRouterStageA:
+    """Tests for Stage A catalog routing behavior."""
+
+    @patch("flavia.content.indexer.retrieval.FTSIndex")
+    @patch("flavia.content.indexer.retrieval.VectorStore")
+    @patch("flavia.content.indexer.retrieval.get_embedding_client")
+    def test_catalog_router_shortlists_doc_ids(self, mock_get_client, mock_vs, mock_fts, tmp_path: Path):
+        """Question terms should narrow Stage-B search to routed doc_ids."""
+        quantum_entry = _make_catalog_entry(
+            path="docs/quantum.md",
+            summary="Quantum mechanics and entanglement notes",
+            checksum_sha256="sha_quantum",
+        )
+        cooking_entry = _make_catalog_entry(
+            path="docs/cooking.md",
+            summary="Italian cooking recipes and sauces",
+            checksum_sha256="sha_cooking",
+        )
+        _write_catalog(tmp_path, [quantum_entry, cooking_entry])
+
+        quantum_doc_id = _catalog_doc_id(tmp_path, quantum_entry.path, quantum_entry.checksum_sha256)
+
+        mock_client = MagicMock()
+        mock_get_client.return_value = (mock_client, "model")
+
+        mock_vs_instance = MagicMock()
+        mock_vs_instance.__enter__ = MagicMock(return_value=mock_vs_instance)
+        mock_vs_instance.__exit__ = MagicMock(return_value=None)
+        mock_vs_instance.knn_search.return_value = []
+
+        mock_fts_instance = MagicMock()
+        mock_fts_instance.__enter__ = MagicMock(return_value=mock_fts_instance)
+        mock_fts_instance.__exit__ = MagicMock(return_value=None)
+        mock_fts_instance.search.return_value = []
+
+        mock_vs.return_value = mock_vs_instance
+        mock_fts.return_value = mock_fts_instance
+
+        with patch("flavia.content.indexer.retrieval.embed_query", return_value=[0.0] * 768):
+            settings = Settings()
+            retrieve("quantum entanglement", tmp_path, settings)
+
+        vs_filter = mock_vs_instance.knn_search.call_args[1]["doc_ids_filter"]
+        fts_filter = mock_fts_instance.search.call_args[1]["doc_ids_filter"]
+        assert vs_filter == [quantum_doc_id]
+        assert fts_filter == [quantum_doc_id]
+
+    @patch("flavia.content.indexer.retrieval.FTSIndex")
+    @patch("flavia.content.indexer.retrieval.VectorStore")
+    @patch("flavia.content.indexer.retrieval.get_embedding_client")
+    def test_catalog_router_intersects_explicit_scope(
+        self, mock_get_client, mock_vs, mock_fts, tmp_path: Path
+    ):
+        """When doc_ids_filter is provided, Stage A should narrow within that scope."""
+        quantum_entry = _make_catalog_entry(
+            path="docs/quantum.md",
+            summary="Quantum mechanics and entanglement notes",
+            checksum_sha256="sha_quantum",
+        )
+        cooking_entry = _make_catalog_entry(
+            path="docs/cooking.md",
+            summary="Italian cooking recipes and sauces",
+            checksum_sha256="sha_cooking",
+        )
+        _write_catalog(tmp_path, [quantum_entry, cooking_entry])
+
+        quantum_doc_id = _catalog_doc_id(tmp_path, quantum_entry.path, quantum_entry.checksum_sha256)
+        cooking_doc_id = _catalog_doc_id(tmp_path, cooking_entry.path, cooking_entry.checksum_sha256)
+
+        mock_client = MagicMock()
+        mock_get_client.return_value = (mock_client, "model")
+
+        mock_vs_instance = MagicMock()
+        mock_vs_instance.__enter__ = MagicMock(return_value=mock_vs_instance)
+        mock_vs_instance.__exit__ = MagicMock(return_value=None)
+        mock_vs_instance.knn_search.return_value = []
+
+        mock_fts_instance = MagicMock()
+        mock_fts_instance.__enter__ = MagicMock(return_value=mock_fts_instance)
+        mock_fts_instance.__exit__ = MagicMock(return_value=None)
+        mock_fts_instance.search.return_value = []
+
+        mock_vs.return_value = mock_vs_instance
+        mock_fts.return_value = mock_fts_instance
+
+        with patch("flavia.content.indexer.retrieval.embed_query", return_value=[0.0] * 768):
+            settings = Settings()
+            retrieve(
+                "cooking pasta",
+                tmp_path,
+                settings,
+                doc_ids_filter=[quantum_doc_id, cooking_doc_id],
+            )
+
+        vs_filter = mock_vs_instance.knn_search.call_args[1]["doc_ids_filter"]
+        fts_filter = mock_fts_instance.search.call_args[1]["doc_ids_filter"]
+        assert vs_filter == [cooking_doc_id]
+        assert fts_filter == [cooking_doc_id]
+
+    @patch("flavia.content.indexer.retrieval.FTSIndex")
+    @patch("flavia.content.indexer.retrieval.VectorStore")
+    @patch("flavia.content.indexer.retrieval.get_embedding_client")
+    def test_missing_catalog_keeps_original_scope(
+        self, mock_get_client, mock_vs, mock_fts, tmp_path: Path
+    ):
+        """If no catalog exists, retrieval should not change doc_ids_filter."""
+        mock_client = MagicMock()
+        mock_get_client.return_value = (mock_client, "model")
+
+        mock_vs_instance = MagicMock()
+        mock_vs_instance.__enter__ = MagicMock(return_value=mock_vs_instance)
+        mock_vs_instance.__exit__ = MagicMock(return_value=None)
+        mock_vs_instance.knn_search.return_value = []
+
+        mock_fts_instance = MagicMock()
+        mock_fts_instance.__enter__ = MagicMock(return_value=mock_fts_instance)
+        mock_fts_instance.__exit__ = MagicMock(return_value=None)
+        mock_fts_instance.search.return_value = []
+
+        mock_vs.return_value = mock_vs_instance
+        mock_fts.return_value = mock_fts_instance
+
+        with patch("flavia.content.indexer.retrieval.embed_query", return_value=[0.0] * 768):
+            settings = Settings()
+            retrieve("question", tmp_path, settings, doc_ids_filter=None)
+
+        vs_filter = mock_vs_instance.knn_search.call_args[1]["doc_ids_filter"]
+        fts_filter = mock_fts_instance.search.call_args[1]["doc_ids_filter"]
+        assert vs_filter is None
+        assert fts_filter is None
+
+    @patch("flavia.content.indexer.retrieval.FTSIndex")
+    @patch("flavia.content.indexer.retrieval.VectorStore")
+    @patch("flavia.content.indexer.retrieval.get_embedding_client")
+    def test_no_catalog_match_does_not_override_explicit_scope(
+        self, mock_get_client, mock_vs, mock_fts, tmp_path: Path
+    ):
+        """No Stage-A hit should preserve caller-provided scope."""
+        entry = _make_catalog_entry(
+            path="docs/quantum.md",
+            summary="Quantum mechanics and entanglement notes",
+            checksum_sha256="sha_quantum",
+        )
+        _write_catalog(tmp_path, [entry])
+        scoped_doc_id = _catalog_doc_id(tmp_path, entry.path, entry.checksum_sha256)
+
+        mock_client = MagicMock()
+        mock_get_client.return_value = (mock_client, "model")
+
+        mock_vs_instance = MagicMock()
+        mock_vs_instance.__enter__ = MagicMock(return_value=mock_vs_instance)
+        mock_vs_instance.__exit__ = MagicMock(return_value=None)
+        mock_vs_instance.knn_search.return_value = []
+
+        mock_fts_instance = MagicMock()
+        mock_fts_instance.__enter__ = MagicMock(return_value=mock_fts_instance)
+        mock_fts_instance.__exit__ = MagicMock(return_value=None)
+        mock_fts_instance.search.return_value = []
+
+        mock_vs.return_value = mock_vs_instance
+        mock_fts.return_value = mock_fts_instance
+
+        with patch("flavia.content.indexer.retrieval.embed_query", return_value=[0.0] * 768):
+            settings = Settings()
+            retrieve(
+                "culinary fermentation",
+                tmp_path,
+                settings,
+                doc_ids_filter=[scoped_doc_id],
+            )
+
+        vs_filter = mock_vs_instance.knn_search.call_args[1]["doc_ids_filter"]
+        fts_filter = mock_fts_instance.search.call_args[1]["doc_ids_filter"]
+        assert vs_filter == [scoped_doc_id]
+        assert fts_filter == [scoped_doc_id]
 
 
 class TestDiversityFilter:

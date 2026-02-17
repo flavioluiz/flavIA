@@ -4,14 +4,138 @@ This module implements Reciprocal Rank Fusion (RRF) to combine results from
 semantic (vector) search and full-text search into a unified ranking.
 """
 
+import hashlib
+import re
+import sqlite3
 from pathlib import Path
 from typing import Any, Optional
 
 from flavia.config import Settings
 
+from ..catalog import ContentCatalog
 from .embedder import embed_query, get_embedding_client
 from .fts import FTSIndex
 from .vector_store import VectorStore
+
+
+def _catalog_doc_id(base_dir: Path, path: str, checksum: str) -> str:
+    """Reproduce chunker doc_id derivation for catalog routing."""
+    raw = f"{base_dir}:{path}:{checksum}"
+    return hashlib.sha1(raw.encode()).hexdigest()
+
+
+def _catalog_router_tokens(question: str) -> list[str]:
+    """Extract normalized terms for catalog Stage-A routing."""
+    tokens = re.findall(r"[A-Za-z0-9_-]{2,}", question.lower())
+    # Preserve order while deduplicating
+    return list(dict.fromkeys(tokens))
+
+
+def _route_doc_ids_from_catalog(
+    question: str,
+    base_dir: Path,
+    shortlist_k: int = 20,
+    scope_doc_ids: Optional[list[str]] = None,
+) -> Optional[list[str]]:
+    """Stage A router: shortlist doc_ids using catalog summaries + metadata.
+
+    Returns:
+        - None: routing unavailable (e.g. catalog missing/unreadable)
+        - []: routing ran but found no candidates
+        - [doc_id, ...]: shortlisted candidates
+    """
+    if shortlist_k <= 0:
+        return []
+
+    catalog = ContentCatalog.load(base_dir / ".flavia")
+    if catalog is None:
+        return None
+
+    scope = set(scope_doc_ids) if scope_doc_ids is not None else None
+    rows: list[tuple[str, str]] = []
+    for entry in catalog.files.values():
+        if entry.status == "missing":
+            continue
+
+        doc_id = _catalog_doc_id(base_dir, entry.path, entry.checksum_sha256)
+        if scope is not None and doc_id not in scope:
+            continue
+
+        content_parts = [
+            entry.path,
+            entry.name,
+            entry.file_type,
+            entry.category,
+            entry.source_type,
+            entry.summary or "",
+            entry.extraction_quality or "",
+            entry.source_url or "",
+        ]
+        if entry.tags:
+            content_parts.append(" ".join(entry.tags))
+        if entry.source_metadata:
+            content_parts.extend(str(v) for v in entry.source_metadata.values())
+
+        searchable = " ".join(p for p in content_parts if p).strip()
+        if searchable:
+            rows.append((doc_id, searchable))
+
+    if not rows:
+        return []
+
+    tokens = _catalog_router_tokens(question)
+    if not tokens:
+        return []
+
+    # Query terms are quoted and OR-ed to avoid FTS syntax edge cases.
+    fts_query = " OR ".join(f'"{t}"' for t in tokens[:16])
+
+    try:
+        with sqlite3.connect(":memory:") as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute(
+                """
+                CREATE VIRTUAL TABLE catalog_fts USING fts5(
+                    doc_id UNINDEXED,
+                    content,
+                    tokenize = 'porter unicode61'
+                )
+                """
+            )
+            conn.executemany(
+                "INSERT INTO catalog_fts (doc_id, content) VALUES (?, ?)",
+                rows,
+            )
+            cursor = conn.execute(
+                """
+                SELECT doc_id, bm25(catalog_fts) AS bm25_score
+                FROM catalog_fts
+                WHERE catalog_fts MATCH ?
+                ORDER BY bm25_score
+                LIMIT ?
+                """,
+                (fts_query, shortlist_k),
+            )
+
+            shortlisted: list[str] = []
+            seen: set[str] = set()
+            for row in cursor:
+                doc_id = row["doc_id"]
+                if doc_id not in seen:
+                    seen.add(doc_id)
+                    shortlisted.append(doc_id)
+            return shortlisted
+    except sqlite3.Error:
+        # Graceful fallback: if FTS5 is unavailable, do simple token-overlap routing.
+        token_set = set(tokens)
+        scored: list[tuple[int, str]] = []
+        for doc_id, searchable in rows:
+            doc_terms = set(re.findall(r"[A-Za-z0-9_-]{2,}", searchable.lower()))
+            overlap = len(token_set & doc_terms)
+            if overlap > 0:
+                scored.append((overlap, doc_id))
+        scored.sort(key=lambda x: (-x[0], x[1]))
+        return [doc_id for _, doc_id in scored[:shortlist_k]]
 
 
 def _rrf_score(ranks: list[Optional[int]], k: int = 60) -> float:
@@ -135,6 +259,7 @@ def retrieve(
     settings: Settings,
     doc_ids_filter: Optional[list[str]] = None,
     top_k: int = 10,
+    catalog_router_k: int = 20,
     vector_k: int = 15,
     fts_k: int = 15,
     rrf_k: int = 60,
@@ -142,7 +267,8 @@ def retrieve(
 ) -> list[dict[str, Any]]:
     """Hybrid retrieval combining vector and FTS search with RRF fusion.
 
-    Performs semantic (vector) and full-text (FTS) searches, then
+    Performs Stage A catalog routing, then Stage B semantic (vector) and
+    full-text (FTS) searches, then
     combines results using Reciprocal Rank Fusion (RRF). Applies diversity
     filtering to limit chunks per document.
 
@@ -155,6 +281,7 @@ def retrieve(
             - []: Return empty results (explicit empty scope)
             - ["id1", "id2"]: Search only specified documents
         top_k: Number of final results to return (default 10).
+        catalog_router_k: Stage-A catalog shortlist size in doc_ids (default 20).
         vector_k: Number of vector search results before fusion (default 15).
         fts_k: Number of FTS results before fusion (default 15).
         rrf_k: RRF constant k (default 60).
@@ -189,6 +316,19 @@ def retrieve(
     if doc_ids_filter is not None and len(doc_ids_filter) == 0:
         return []
 
+    # Stage A — Catalog router (best-effort):
+    # use catalog metadata/summaries to shortlist candidate docs.
+    # If it yields no candidates, keep the original filter to preserve recall.
+    effective_doc_ids_filter = doc_ids_filter
+    routed_doc_ids = _route_doc_ids_from_catalog(
+        question=question,
+        base_dir=base_dir,
+        shortlist_k=catalog_router_k,
+        scope_doc_ids=doc_ids_filter,
+    )
+    if routed_doc_ids:
+        effective_doc_ids_filter = routed_doc_ids
+
     vector_results: list[dict[str, Any]] = []
     fts_results: list[dict[str, Any]] = []
 
@@ -197,12 +337,20 @@ def retrieve(
         client, model = get_embedding_client(settings)
         query_vec = embed_query(question, client, model)
         with VectorStore(base_dir) as vs:
-            vector_results = vs.knn_search(query_vec, k=vector_k, doc_ids_filter=doc_ids_filter)
+            vector_results = vs.knn_search(
+                query_vec,
+                k=vector_k,
+                doc_ids_filter=effective_doc_ids_filter,
+            )
 
     # Run FTS search only when requested
     if fts_k > 0:
         with FTSIndex(base_dir) as fts:
-            fts_results = fts.search(question, k=fts_k, doc_ids_filter=doc_ids_filter)
+            fts_results = fts.search(
+                question,
+                k=fts_k,
+                doc_ids_filter=effective_doc_ids_filter,
+            )
 
     # Build rank maps (1-indexed positions)
     vector_ranks = {r["chunk_id"]: i + 1 for i, r in enumerate(vector_results)}
