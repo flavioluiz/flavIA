@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **FTS Index with SQLite FTS5 (Task 11.3)**: New `fts.py` module in `content/indexer/` for exact-term full-text search:
+  - `FTSIndex` class with `upsert()`, `search()`, `get_existing_chunk_ids()`, `delete_chunks()`, `get_stats()`
+  - FTS5 virtual table `chunks_fts` with BM25 ranking
+  - Porter stemming + unicode61 tokenizer for international text support
+  - Shares `index.db` with VectorStore for unified index management
 - **Embedding Index with sqlite-vec (Task 11.2)**: New `embedder.py` and `vector_store.py` modules in `content/indexer/` for semantic search:
   - `embed_chunks(chunks, client)` — Batch embed chunks with retry and progress reporting
   - `embed_query(query, client)` — Embed search queries for retrieval

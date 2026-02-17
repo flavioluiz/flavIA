@@ -9,6 +9,7 @@ Currently implemented:
   chunker.chunk_document(entry, base_dir) — Task 11.1 ✓
   embedder.embed_chunks(...), embed_query(...) — Task 11.2 ✓
   vector_store.VectorStore — Task 11.2 ✓
+  fts.FTSIndex — Task 11.3 ✓
 """
 
 from .chunker import chunk_document, chunk_text_document, chunk_video_document
@@ -19,6 +20,7 @@ from .embedder import (
     embed_query,
     get_embedding_client,
 )
+from .fts import FTSIndex
 from .vector_store import VectorStore
 
 __all__ = [
@@ -34,4 +36,6 @@ __all__ = [
     "EMBEDDING_DIMENSION",
     # Vector Store (11.2)
     "VectorStore",
+    # FTS Index (11.3)
+    "FTSIndex",
 ]
