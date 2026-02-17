@@ -1369,9 +1369,14 @@ main:
     - Help the user understand and work with their documents
     - Prefer catalog-first workflow: get_catalog_summary/query_catalog before reading many files
 
-  # Default false: prefer RAG (`search_chunks`) instead of direct reads from `.converted/`.
-  # Set to true only for specialized reader/debug agents.
-  # allow_converted_read: false
+  # Converted-content access policy:
+  # strict: block direct .converted reads (RAG-only)
+  # hybrid: require search_chunks first, then allow direct fallback reads (recommended)
+  # open: allow direct .converted reads without RAG-first gating
+  # converted_access_mode: hybrid
+  #
+  # Legacy compatibility (deprecated):
+  # allow_converted_read: true
 
   tools:
 {main_tools_block}\

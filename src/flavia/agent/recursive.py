@@ -460,6 +460,7 @@ class RecursiveAgent(BaseAgent):
             max_depth=self.profile.max_depth,
             compact_threshold=self.profile.compact_threshold,
             compact_threshold_source=self.profile.compact_threshold_source,
+            converted_access_mode=self.profile.converted_access_mode,
             allow_converted_read=self.profile.allow_converted_read,
             permissions=self.profile.permissions.copy(),
         )

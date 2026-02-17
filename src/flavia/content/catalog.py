@@ -544,9 +544,9 @@ class ContentCatalog:
         if stats["with_conversion"] > 0:
             lines.append(
                 f"\nNote: {stats['with_conversion']} document(s) have been converted to text "
-                "in the .converted/ folder. Use query_catalog with text_search to find "
-                "information inside these documents, or use read_file on the converted_to "
-                "path shown in query results to read the full extracted text."
+                "in the .converted/ folder. Use search_chunks for semantic content retrieval "
+                "and citations, and use query_catalog with text_search for discovery/filtering. "
+                "Direct read_file on converted_to paths is controlled by converted_access_mode."
             )
 
         result = "\n".join(lines)

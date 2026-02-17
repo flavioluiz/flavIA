@@ -27,13 +27,19 @@ def _make_context(
     max_context_tokens: int = 128_000,
     current_context_tokens: int = 0,
     allow_converted_read: bool = False,
+    converted_access_mode: str = "hybrid",
+    messages: list[dict] | None = None,
+    available_tools: list[str] | None = None,
 ) -> AgentContext:
     """Create a minimal AgentContext for testing."""
     return AgentContext(
         base_dir=base_dir,
         max_context_tokens=max_context_tokens,
         current_context_tokens=current_context_tokens,
+        converted_access_mode=converted_access_mode,
         allow_converted_read=allow_converted_read,
+        messages=messages or [],
+        available_tools=available_tools or [],
     )
 
 
@@ -131,26 +137,68 @@ class TestReadFileSmallFiles:
 class TestReadFileConvertedDirPolicy:
     """Direct reads from .converted should be policy-gated."""
 
-    def test_blocks_direct_read_from_converted_by_default(self, tmp_path):
+    def test_hybrid_blocks_without_prior_search_chunks(self, tmp_path):
         converted_dir = tmp_path / ".converted"
         converted_dir.mkdir()
         (converted_dir / "video.md").write_text("converted transcript", encoding="utf-8")
+        index_dir = tmp_path / ".index"
+        index_dir.mkdir()
+        (index_dir / "index.db").write_text("", encoding="utf-8")
 
         tool = ReadFileTool()
-        ctx = _make_context(tmp_path, allow_converted_read=False)
+        ctx = _make_context(
+            tmp_path,
+            converted_access_mode="hybrid",
+            allow_converted_read=False,
+            messages=[],
+            available_tools=["search_chunks"],
+        )
         result = tool.execute({"path": ".converted/video.md"}, ctx)
 
-        assert "blocked" in result.lower()
+        assert "requires a prior 'search_chunks' call" in result
         assert "search_chunks" in result
-        assert "allow_converted_read: true" in result
 
-    def test_allows_direct_read_from_converted_when_enabled(self, tmp_path):
+    def test_hybrid_allows_after_search_chunks_call(self, tmp_path):
+        converted_dir = tmp_path / ".converted"
+        converted_dir.mkdir()
+        (converted_dir / "video.md").write_text("converted transcript", encoding="utf-8")
+        index_dir = tmp_path / ".index"
+        index_dir.mkdir()
+        (index_dir / "index.db").write_text("", encoding="utf-8")
+
+        tool = ReadFileTool()
+        ctx = _make_context(
+            tmp_path,
+            converted_access_mode="hybrid",
+            messages=[
+                {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {"name": "search_chunks", "arguments": '{"query":"laplace"}'},
+                        }
+                    ],
+                }
+            ],
+            available_tools=["search_chunks"],
+        )
+        result = tool.execute({"path": ".converted/video.md"}, ctx)
+
+        assert result == "converted transcript"
+
+    def test_open_mode_allows_direct_read_from_converted(self, tmp_path):
         converted_dir = tmp_path / ".converted"
         converted_dir.mkdir()
         (converted_dir / "video.md").write_text("converted transcript", encoding="utf-8")
 
         tool = ReadFileTool()
-        ctx = _make_context(tmp_path, allow_converted_read=True)
+        ctx = _make_context(
+            tmp_path,
+            converted_access_mode="open",
+            allow_converted_read=True,
+        )
         result = tool.execute({"path": ".converted/video.md"}, ctx)
 
         assert result == "converted transcript"
@@ -386,6 +434,7 @@ class TestContextFieldsPropagated:
         ctx = AgentContext()
         assert ctx.max_context_tokens == 128_000
         assert ctx.current_context_tokens == 0
+        assert ctx.converted_access_mode == "hybrid"
 
     def test_custom_values(self, tmp_path):
         ctx = _make_context(tmp_path, max_context_tokens=50_000, current_context_tokens=10_000)

@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+CONVERTED_ACCESS_MODES = {"strict", "hybrid", "open"}
+
 
 @dataclass
 class AgentPermissions:
@@ -108,12 +110,21 @@ class AgentProfile:
     max_depth: int = 3
     compact_threshold: float = 0.9
     compact_threshold_source: str = "default"
-    allow_converted_read: bool = False
+    converted_access_mode: str = "hybrid"
+    allow_converted_read: bool | None = None
     permissions: AgentPermissions = field(default_factory=lambda: AgentPermissions())
 
     def __post_init__(self) -> None:
         """Validate compact threshold constraints."""
         self.compact_threshold = self._validate_compact_threshold(self.compact_threshold)
+        self.converted_access_mode = self._validate_converted_access_mode(
+            self.converted_access_mode
+        )
+        # Backward compatibility for direct constructor calls still using
+        # allow_converted_read.
+        if self.allow_converted_read is not None and self.converted_access_mode == "hybrid":
+            self.converted_access_mode = "open" if self.allow_converted_read else "strict"
+        self.allow_converted_read = self.converted_access_mode == "open"
 
     @classmethod
     def from_config(
@@ -126,14 +137,14 @@ class AgentProfile:
             max_depth = parent.max_depth
             compact_threshold = parent.compact_threshold
             compact_threshold_source = parent.compact_threshold_source
-            allow_converted_read = parent.allow_converted_read
+            converted_access_mode = parent.converted_access_mode
         else:
             base_dir = Path.cwd()
             model = "hf:moonshotai/Kimi-K2.5"
             max_depth = 3
             compact_threshold = 0.9
             compact_threshold_source = "default"
-            allow_converted_read = False
+            converted_access_mode = "hybrid"
 
         if "path" in config:
             path = Path(config["path"])
@@ -151,11 +162,21 @@ class AgentProfile:
         if "compact_threshold" in config:
             compact_threshold = cls._validate_compact_threshold(config["compact_threshold"])
             compact_threshold_source = "config"
+        if "converted_access_mode" in config:
+            converted_access_mode = cls._validate_converted_access_mode(
+                config["converted_access_mode"]
+            )
         if "allow_converted_read" in config:
             value = config["allow_converted_read"]
             if not isinstance(value, bool):
                 raise ValueError("allow_converted_read must be true or false")
-            allow_converted_read = value
+            legacy_mode = "open" if value else "strict"
+            if "converted_access_mode" in config and converted_access_mode != legacy_mode:
+                raise ValueError(
+                    "allow_converted_read conflicts with converted_access_mode. "
+                    "Use only converted_access_mode or keep both consistent."
+                )
+            converted_access_mode = legacy_mode
 
         # Parse permissions with inheritance
         if "permissions" in config:
@@ -177,7 +198,7 @@ class AgentProfile:
             max_depth=max_depth,
             compact_threshold=compact_threshold,
             compact_threshold_source=compact_threshold_source,
-            allow_converted_read=allow_converted_read,
+            converted_access_mode=converted_access_mode,
             permissions=permissions,
         )
 
@@ -203,6 +224,9 @@ class AgentProfile:
             "max_depth": self.max_depth,
             "compact_threshold": self.compact_threshold,
         }
+        if self.converted_access_mode != "hybrid":
+            result["converted_access_mode"] = self.converted_access_mode
+        # Legacy compatibility for existing configs/tools that still read this key.
         if self.allow_converted_read:
             result["allow_converted_read"] = True
         perm_dict = self.permissions.to_dict(self.base_dir)
@@ -223,3 +247,16 @@ class AgentProfile:
                 f"compact_threshold must be between 0.0 and 1.0 (got {threshold})"
             )
         return threshold
+
+    @staticmethod
+    def _validate_converted_access_mode(value: Any) -> str:
+        """Validate converted access mode."""
+        if not isinstance(value, str):
+            raise ValueError("converted_access_mode must be one of: strict, hybrid, open")
+
+        mode = value.strip().lower()
+        if mode not in CONVERTED_ACCESS_MODES:
+            raise ValueError(
+                f"converted_access_mode must be one of: strict, hybrid, open (got {value!r})"
+            )
+        return mode

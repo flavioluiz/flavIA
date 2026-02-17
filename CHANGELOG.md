@@ -129,10 +129,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
-- **RAG-first converted-content access policy**:
-  - `read_file` now blocks direct reads from `.converted/` by default
-  - Agents are guided to use `search_chunks` + `/index update` for semantic retrieval workflows
-  - New per-agent override in `agents.yaml`: `allow_converted_read: true` (useful for specialized reader/debug agents)
+- **Hybrid converted-content access policy**:
+  - New per-agent `converted_access_mode` in `agents.yaml`: `strict`, `hybrid`, `open`
+  - `hybrid` is the default: agents must call `search_chunks` first, then can fallback to direct `.converted/` reads
+  - `.converted` policy is now enforced centrally in `check_read_permission`, covering `read_file`, `search_files`, `list_files`, `get_file_info`, and `analyze_image`
+  - Legacy `allow_converted_read` remains supported for backward compatibility (`true` -> `open`, `false` -> `strict`)
 - **Parallel CLI status display compaction**:
   - Per-agent recent activity window now defaults to 5 entries (was 8)
   - Window shrinks automatically when many sub-agents are active (`3` when >3 agents, `2` when >5)

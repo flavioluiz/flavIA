@@ -1,5 +1,7 @@
 """Tests for agent permissions parsing and inheritance."""
 
+import pytest
+
 from flavia.agent.profile import AgentPermissions, AgentProfile
 
 
@@ -55,6 +57,7 @@ def test_allow_converted_read_defaults_to_false(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     profile = AgentProfile.from_config({"context": "main"})
     assert profile.allow_converted_read is False
+    assert profile.converted_access_mode == "hybrid"
 
 
 def test_allow_converted_read_inheritance_and_override(tmp_path, monkeypatch):
@@ -83,3 +86,53 @@ def test_allow_converted_read_inheritance_and_override(tmp_path, monkeypatch):
     assert strict_child is not None
     assert child.allow_converted_read is True
     assert strict_child.allow_converted_read is False
+    assert child.converted_access_mode == "open"
+    assert strict_child.converted_access_mode == "strict"
+
+
+def test_converted_access_mode_inheritance_and_override(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    profile = AgentProfile.from_config(
+        {
+            "context": "main",
+            "converted_access_mode": "hybrid",
+            "subagents": {
+                "child": {
+                    "context": "child",
+                    "tools": ["read_file"],
+                },
+                "reader": {
+                    "context": "reader",
+                    "converted_access_mode": "open",
+                    "tools": ["read_file"],
+                },
+            },
+        }
+    )
+
+    child = profile.create_subagent_profile("child")
+    reader = profile.create_subagent_profile("reader")
+    assert child is not None
+    assert reader is not None
+    assert child.converted_access_mode == "hybrid"
+    assert reader.converted_access_mode == "open"
+    assert child.allow_converted_read is False
+    assert reader.allow_converted_read is True
+
+
+def test_converted_access_mode_rejects_invalid_value(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError, match="converted_access_mode"):
+        AgentProfile.from_config({"context": "main", "converted_access_mode": "invalid"})
+
+
+def test_converted_access_mode_conflict_with_legacy_flag(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError, match="conflicts with converted_access_mode"):
+        AgentProfile.from_config(
+            {
+                "context": "main",
+                "converted_access_mode": "strict",
+                "allow_converted_read": True,
+            }
+        )

@@ -117,6 +117,7 @@ def test_spawn_dynamic_inherits_parent_permissions(monkeypatch, tmp_path):
     assert spawned_permissions.write_paths == parent_permissions.write_paths
     assert spawned_permissions is not parent_permissions
     assert captured["profile"].allow_converted_read is True
+    assert captured["profile"].converted_access_mode == "open"
 
 
 def test_spawn_dynamic_assigns_consistent_id_and_profile_name_under_concurrency(

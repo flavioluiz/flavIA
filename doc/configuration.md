@@ -117,7 +117,7 @@ Agent configuration lives in `agents.yaml`. It can be generated automatically by
 ```yaml
 main:
   model: "synthetic:hf:moonshotai/Kimi-K2.5"
-  allow_converted_read: false   # default; block direct read_file on .converted/
+  converted_access_mode: "hybrid"  # strict | hybrid | open
   context: |
     You are a research assistant specializing in machine learning and NLP.
     The documents cover transformer architectures, attention mechanisms,
@@ -160,9 +160,12 @@ main:
 
 The `{base_dir}` placeholder in the context is replaced with the base directory at runtime.
 
-`allow_converted_read` controls direct `read_file` access to `.converted/` markdown files:
-- `false` (default): direct reads in `.converted/` are blocked; prefer `search_chunks` + `/index update`.
-- `true`: allow direct reads from `.converted/` (useful for specialized "reader"/debug agents).
+`converted_access_mode` controls direct access to `.converted/` files for read tools (`read_file`, `search_files`, `list_files`, `get_file_info`, `analyze_image`):
+- `strict`: block direct `.converted/` reads; use `search_chunks` (RAG-only).
+- `hybrid` (default): require a `search_chunks` call first, then allow direct fallback reads.
+- `open`: always allow direct `.converted/` reads.
+
+Legacy key (still accepted): `allow_converted_read: true|false` maps to `open|strict`.
 
 ### Available tools
 

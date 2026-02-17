@@ -31,6 +31,7 @@ class AgentContext:
     dry_run: bool = False
     max_context_tokens: int = 128_000
     current_context_tokens: int = 0
+    converted_access_mode: str = "hybrid"
     allow_converted_read: bool = False
 
     @classmethod
@@ -54,6 +55,7 @@ class AgentContext:
             subagents=profile.subagents.copy(),
             model_id=resolved_model or str(profile.model),
             permissions=profile.permissions.copy(),
+            converted_access_mode=profile.converted_access_mode,
             allow_converted_read=profile.allow_converted_read,
         )
 
@@ -81,6 +83,7 @@ class AgentContext:
             permissions=profile.permissions.copy(),
             write_confirmation=self.write_confirmation,
             dry_run=self.dry_run,
+            converted_access_mode=profile.converted_access_mode,
             allow_converted_read=profile.allow_converted_read,
         )
 
@@ -109,6 +112,7 @@ def _build_catalog_first_guidance(context: AgentContext) -> str:
     has_summary = "get_catalog_summary" in tools
     has_read = "read_file" in tools
     has_spawn = "spawn_predefined_agent" in tools or "spawn_agent" in tools
+    converted_mode = getattr(context, "converted_access_mode", "hybrid")
 
     if not (has_query or has_summary):
         return ""
@@ -138,6 +142,27 @@ def _build_catalog_first_guidance(context: AgentContext) -> str:
         )
 
     if has_read:
+        if converted_mode == "strict":
+            lines.append(
+                "- Direct reads from `.converted/` are disabled (`converted_access_mode: strict`). "
+                "Use `search_chunks` for transcript/slide content."
+            )
+        elif converted_mode == "hybrid":
+            if has_search_chunks:
+                lines.append(
+                    "- Use `search_chunks` first; use direct `.converted/` reads only as fallback "
+                    "when retrieval is insufficient."
+                )
+            else:
+                lines.append(
+                    "- `converted_access_mode` is `hybrid`, but `search_chunks` is currently "
+                    "unavailable (index missing). Direct `.converted/` fallback reads are allowed."
+                )
+        else:
+            lines.append(
+                "- Direct `.converted/` reads are enabled (`converted_access_mode: open`), but "
+                "prefer `search_chunks` first for speed and citations."
+            )
         lines.append(
             "- Only use `read_file` after shortlisting; avoid scanning many `.md` files blindly."
         )
@@ -162,13 +187,22 @@ def _build_catalog_first_guidance(context: AgentContext) -> str:
             "2. For each candidate, check catalog metadata first: `summary`, `converted_to`, and "
             "`frame_descriptions`."
         )
-        lines.append(
-            "3. Read the audio transcript from `converted_to` for narrative/order of content."
-        )
-        lines.append(
-            "4. Read frame description markdown files from `frame_descriptions` for visual details "
-            "(figures, equations, board content)."
-        )
+        if converted_mode == "strict":
+            lines.append(
+                "3. Use `search_chunks(query=...)` to retrieve transcript/frame evidence with citations."
+            )
+            lines.append(
+                "4. If evidence is still insufficient, report the gap and suggest enabling `hybrid` "
+                "or `open` mode for a reader agent."
+            )
+        else:
+            lines.append(
+                "3. Start with `search_chunks(query=...)` for transcript/frame evidence with citations."
+            )
+            lines.append(
+                "4. If evidence is insufficient, fallback to `converted_to` transcript and "
+                "`frame_descriptions` files."
+            )
         lines.append(
             "5. Only expand to additional files/videos when the shortlist evidence is insufficient."
         )

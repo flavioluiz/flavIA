@@ -224,7 +224,10 @@ From a fresh project setup (`flavia --init`) to retrieval-ready chat:
 Notes:
 - `search_chunks` is only available when `.index/index.db` exists.
 - `query_catalog` remains the best tool for file discovery/metadata filtering.
-- By default, `read_file` direct access to `.converted/` is blocked to enforce RAG-first behavior. Enable per-agent with `allow_converted_read: true` in `agents.yaml` when needed.
+- Converted-content policy is per-agent via `converted_access_mode` in `agents.yaml`:
+  - `strict`: no direct `.converted/` reads.
+  - `hybrid` (default): call `search_chunks` first, then allow direct fallback reads.
+  - `open`: direct `.converted/` reads always allowed.
 
 ### Help System Details
 

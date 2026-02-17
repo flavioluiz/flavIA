@@ -12,6 +12,7 @@ from flavia.content.catalog import ContentCatalog
 from flavia.tools.content.get_summary import GetSummaryTool
 from flavia.tools.content.query_catalog import QueryCatalogTool
 from flavia.tools.content.refresh_catalog import RefreshCatalogTool
+from flavia.tools.permissions import check_read_permission
 from flavia.tools.read.search_files import SearchFilesTool
 from flavia.tools.setup.convert_pdfs import ConvertPdfsTool
 
@@ -160,3 +161,51 @@ def test_get_catalog_summary_respects_read_permissions(tmp_path):
 
     result = tool.execute({}, ctx)
     assert "Access denied" in result
+
+
+def test_converted_access_mode_strict_blocks_direct_reads(tmp_path):
+    converted = tmp_path / ".converted"
+    converted.mkdir()
+    target = converted / "video.md"
+    target.write_text("content", encoding="utf-8")
+
+    ctx = make_context(tmp_path)
+    ctx.converted_access_mode = "strict"
+
+    allowed, error = check_read_permission(target, ctx)
+    assert not allowed
+    assert "converted_access_mode: strict" in error
+
+
+def test_converted_access_mode_hybrid_requires_search_chunks(tmp_path):
+    converted = tmp_path / ".converted"
+    converted.mkdir()
+    target = converted / "video.md"
+    target.write_text("content", encoding="utf-8")
+    index_dir = tmp_path / ".index"
+    index_dir.mkdir()
+    (index_dir / "index.db").write_text("", encoding="utf-8")
+
+    ctx = make_context(tmp_path)
+    ctx.converted_access_mode = "hybrid"
+    ctx.available_tools = ["search_chunks"]
+    ctx.messages = []
+
+    allowed, error = check_read_permission(target, ctx)
+    assert not allowed
+    assert "search_chunks" in error
+
+    ctx.messages = [
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "1",
+                    "type": "function",
+                    "function": {"name": "search_chunks", "arguments": '{"query":"laplace"}'},
+                }
+            ],
+        }
+    ]
+    allowed_after, _ = check_read_permission(target, ctx)
+    assert allowed_after

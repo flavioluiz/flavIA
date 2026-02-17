@@ -200,6 +200,9 @@ class BaseAgent(ABC):
             tools_desc,
         )
         self.messages = [{"role": "system", "content": system_prompt}]
+        # Keep runtime context aware of current message history so tools can
+        # enforce history-dependent policies.
+        self.context.messages = self.messages
 
     def reset(self) -> None:
         """Reset agent state for new conversation."""

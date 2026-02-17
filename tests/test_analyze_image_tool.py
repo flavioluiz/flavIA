@@ -398,3 +398,25 @@ class TestSecurity:
 
         # Should return an error for files outside base dir
         assert "Error" in result
+
+    def test_blocks_converted_image_without_search_chunks_in_hybrid_mode(self, tmp_path: Path):
+        """Hybrid mode requires a prior search_chunks call before .converted access."""
+        converted_dir = tmp_path / ".converted"
+        converted_dir.mkdir()
+        image_file = converted_dir / "frame.png"
+        image_file.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+        index_dir = tmp_path / ".index"
+        index_dir.mkdir()
+        (index_dir / "index.db").write_text("", encoding="utf-8")
+
+        context = AgentContext(
+            base_dir=tmp_path,
+            converted_access_mode="hybrid",
+            available_tools=["search_chunks"],
+            messages=[],
+        )
+        tool = AnalyzeImageTool()
+        result = tool.execute({"file_path": ".converted/frame.png"}, context)
+
+        assert "Error" in result
+        assert "search_chunks" in result

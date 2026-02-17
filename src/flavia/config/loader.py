@@ -194,9 +194,14 @@ main:
   #   write:
   #     - "./output"       # Write access (also grants read)
   #
-  # Allow direct reads from .converted/ markdown files.
-  # Default false keeps semantic retrieval via search_chunks as primary path.
-  # allow_converted_read: false
+  # Converted-content access policy:
+  # strict: block direct .converted reads (RAG only)
+  # hybrid: require search_chunks first, then allow direct fallback reads
+  # open: allow direct .converted reads without RAG-first gating
+  # converted_access_mode: hybrid
+  #
+  # Legacy compatibility (deprecated):
+  # allow_converted_read: true   # maps to converted_access_mode: open
 
   # Tools available to this agent
   # Keep write-capable tools (write_* and compile_latex) disabled unless
