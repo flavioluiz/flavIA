@@ -89,11 +89,20 @@ def _merge_chunk_data(
     v_data = next((r for r in vector_results if r["chunk_id"] == chunk_id), None)
     f_data = next((r for r in fts_results if r["chunk_id"] == chunk_id), None)
 
+    # Always return a stable schema, even for FTS-only or vector-only hits.
     result: dict[str, Any] = {
         "chunk_id": chunk_id,
+        "doc_id": "",
+        "text": "",
         "score": rrf_score,
         "vector_rank": vector_rank,
         "fts_rank": fts_rank,
+        "modality": "",
+        "heading_path": [],
+        "doc_name": "",
+        "file_type": "",
+        "locator": {},
+        "converted_path": "",
     }
 
     # Add metadata from vector result if available
@@ -112,14 +121,10 @@ def _merge_chunk_data(
     if f_data:
         result["text"] = f_data["text"]
         # Fill in missing metadata from FTS if vector result missing
-        if "doc_id" not in result:
+        if not result["doc_id"]:
             result["doc_id"] = f_data["doc_id"]
             result["modality"] = f_data["modality"]
             result["heading_path"] = f_data["heading_path"]
-
-    # Fallback: if no text from FTS, provide empty string (caller can populate if needed)
-    if "text" not in result:
-        result["text"] = ""
 
     return result
 
@@ -137,7 +142,7 @@ def retrieve(
 ) -> list[dict[str, Any]]:
     """Hybrid retrieval combining vector and FTS search with RRF fusion.
 
-    Performs parallel semantic (vector) and full-text (FTS) searches, then
+    Performs semantic (vector) and full-text (FTS) searches, then
     combines results using Reciprocal Rank Fusion (RRF). Applies diversity
     filtering to limit chunks per document.
 
@@ -174,21 +179,30 @@ def retrieve(
         RuntimeError: If query embedding fails.
         ValueError: If embedding client cannot be initialized.
     """
+    # Handle invalid/empty inputs early
+    if top_k <= 0:
+        return []
+    if not question or not question.strip():
+        return []
+
     # Handle empty filter case
     if doc_ids_filter is not None and len(doc_ids_filter) == 0:
         return []
 
-    # Get embedding client and embed query
-    client, model = get_embedding_client(settings)
-    query_vec = embed_query(question, client, model)
+    vector_results: list[dict[str, Any]] = []
+    fts_results: list[dict[str, Any]] = []
 
-    # Run vector search
-    with VectorStore(base_dir) as vs:
-        vector_results = vs.knn_search(query_vec, k=vector_k, doc_ids_filter=doc_ids_filter)
+    # Run vector search only when requested
+    if vector_k > 0:
+        client, model = get_embedding_client(settings)
+        query_vec = embed_query(question, client, model)
+        with VectorStore(base_dir) as vs:
+            vector_results = vs.knn_search(query_vec, k=vector_k, doc_ids_filter=doc_ids_filter)
 
-    # Run FTS search
-    with FTSIndex(base_dir) as fts:
-        fts_results = fts.search(question, k=fts_k, doc_ids_filter=doc_ids_filter)
+    # Run FTS search only when requested
+    if fts_k > 0:
+        with FTSIndex(base_dir) as fts:
+            fts_results = fts.search(question, k=fts_k, doc_ids_filter=doc_ids_filter)
 
     # Build rank maps (1-indexed positions)
     vector_ranks = {r["chunk_id"]: i + 1 for i, r in enumerate(vector_results)}
@@ -205,8 +219,15 @@ def retrieve(
         rrf = _rrf_score([v_rank, f_rank], k=rrf_k)
         scored_chunks.append((chunk_id, rrf, v_rank, f_rank))
 
-    # Sort by RRF score (descending)
-    scored_chunks.sort(key=lambda x: x[1], reverse=True)
+    # Sort by RRF score (descending) with deterministic tie-breaking.
+    # Tie-break by best available rank, then chunk_id for stable output.
+    scored_chunks.sort(
+        key=lambda x: (
+            -x[1],
+            min((r for r in (x[2], x[3]) if r is not None), default=10**9),
+            x[0],
+        )
+    )
 
     # Apply diversity filter (max chunks per doc) and build final results
     doc_counts: dict[str, int] = {}
@@ -215,6 +236,9 @@ def retrieve(
     for chunk_id, rrf, v_rank, f_rank in scored_chunks:
         # Get doc_id to apply diversity filter
         doc_id = _get_doc_id(chunk_id, vector_results, fts_results)
+        if not doc_id:
+            # Defensive fallback: avoid collapsing unrelated chunks into same bucket.
+            doc_id = f"__unknown__:{chunk_id}"
 
         # Check if we've hit the limit for this document
         if doc_counts.get(doc_id, 0) < max_chunks_per_doc:

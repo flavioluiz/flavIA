@@ -3,7 +3,7 @@
 Public API (grows as tasks are completed):
   build_index(base_dir, settings)   — Task 11.7+ (not yet implemented)
   update_index(base_dir, settings)  — Task 11.7+ (not yet implemented)
-  retrieve(question, base_dir, ...) — Task 11.4+ (not yet implemented)
+  retrieve(question, base_dir, ...) — Task 11.4 ✓
 
 Currently implemented:
   chunker.chunk_document(entry, base_dir) — Task 11.1 ✓

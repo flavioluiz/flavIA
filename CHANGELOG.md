@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Hybrid Retrieval Engine with RRF fusion (Task 11.4)**: New `retrieval.py` module in `content/indexer/`:
+  - `retrieve(question, base_dir, settings, ...)` combines vector kNN + FTS BM25 via Reciprocal Rank Fusion (`k=60`)
+  - Diversity policy enforcement (`max_chunks_per_doc`, default 3)
+  - Unified result contract with source ranks (`vector_rank`, `fts_rank`) and merged chunk metadata
+  - `doc_ids_filter` semantics aligned at retrieval boundary (`None` = unfiltered, `[]` = explicit empty scope)
+  - `retrieve` exported in `content/indexer/__init__.py`
 - **FTS Index with SQLite FTS5 (Task 11.3)**: New `fts.py` module in `content/indexer/` for exact-term full-text search:
   - `FTSIndex` class with `upsert()`, `search()`, `get_existing_chunk_ids()`, `delete_chunks()`, `get_stats()`
   - FTS5 virtual table `chunks_fts` with BM25 ranking

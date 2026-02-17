@@ -188,6 +188,30 @@ class TestEmptyFilterReturnsEmpty:
         mock_get_client.assert_not_called()
 
 
+class TestInputValidation:
+    """Test retrieval input validation edge cases."""
+
+    @patch("flavia.content.indexer.retrieval.get_embedding_client")
+    def test_blank_question_returns_empty_without_queries(self, mock_get_client):
+        """Empty/whitespace question should return [] and skip expensive calls."""
+        settings = Settings()
+        base_dir = Path("/tmp")
+
+        assert retrieve("", base_dir, settings) == []
+        assert retrieve("   ", base_dir, settings) == []
+        mock_get_client.assert_not_called()
+
+    @patch("flavia.content.indexer.retrieval.get_embedding_client")
+    def test_non_positive_top_k_returns_empty(self, mock_get_client):
+        """top_k <= 0 should return [] and skip all searches."""
+        settings = Settings()
+        base_dir = Path("/tmp")
+
+        assert retrieve("question", base_dir, settings, top_k=0) == []
+        assert retrieve("question", base_dir, settings, top_k=-5) == []
+        mock_get_client.assert_not_called()
+
+
 class TestDiversityFilter:
     """Test diversity filtering (max chunks per doc)."""
 
@@ -305,6 +329,54 @@ class TestRRFFusionOrdering:
         # Verify scores: c1 should have higher score
         assert results[0]["score"] > results[1]["score"]
 
+    @patch("flavia.content.indexer.retrieval.FTSIndex")
+    @patch("flavia.content.indexer.retrieval.VectorStore")
+    @patch("flavia.content.indexer.retrieval.get_embedding_client")
+    def test_tie_break_is_deterministic(self, mock_get_client, mock_vs, mock_fts):
+        """Equal-score ties should have deterministic ordering."""
+        mock_client = MagicMock()
+        mock_get_client.return_value = (mock_client, "model")
+
+        # b_chunk appears only in vector rank1; a_chunk appears only in fts rank1.
+        # Both receive the same RRF score and require tie-breaking.
+        vector_results = [{
+            "chunk_id": "b_chunk",
+            "doc_id": "doc_b",
+            "modality": "text",
+            "heading_path": [],
+            "doc_name": "doc_b",
+            "file_type": "txt",
+            "locator": {},
+            "converted_path": "",
+            "distance": 0.1,
+        }]
+        fts_results = [{
+            "chunk_id": "a_chunk",
+            "doc_id": "doc_a",
+            "modality": "text",
+            "heading_path": [],
+            "text": "text_a",
+        }]
+
+        mock_vs_instance = MagicMock()
+        mock_vs_instance.__enter__ = MagicMock(return_value=mock_vs_instance)
+        mock_vs_instance.__exit__ = MagicMock(return_value=None)
+        mock_vs_instance.knn_search.return_value = vector_results
+
+        mock_fts_instance = MagicMock()
+        mock_fts_instance.__enter__ = MagicMock(return_value=mock_fts_instance)
+        mock_fts_instance.__exit__ = MagicMock(return_value=None)
+        mock_fts_instance.search.return_value = fts_results
+
+        mock_vs.return_value = mock_vs_instance
+        mock_fts.return_value = mock_fts_instance
+
+        with patch("flavia.content.indexer.retrieval.embed_query", return_value=[0.0] * 768):
+            settings = Settings()
+            results = retrieve("question", Path("/tmp"), settings, top_k=10)
+
+        assert [r["chunk_id"] for r in results[:2]] == ["a_chunk", "b_chunk"]
+
 
 class TestRetrieveIntegration:
     """Integration tests with real index structures."""
@@ -376,6 +448,50 @@ class TestRetrieveIntegration:
         assert result["file_type"] == "pdf"
         assert result["locator"] == {"line_start": 10, "line_end": 20}
         assert result["converted_path"] == ".converted/example.md"
+
+    @patch("flavia.content.indexer.retrieval.FTSIndex")
+    @patch("flavia.content.indexer.retrieval.VectorStore")
+    @patch("flavia.content.indexer.retrieval.get_embedding_client")
+    def test_fts_only_result_keeps_full_schema(self, mock_get_client, mock_vs, mock_fts):
+        """FTS-only hits should still expose all documented result keys."""
+        mock_client = MagicMock()
+        mock_get_client.return_value = (mock_client, "model")
+
+        mock_vs_instance = MagicMock()
+        mock_vs_instance.__enter__ = MagicMock(return_value=mock_vs_instance)
+        mock_vs_instance.__exit__ = MagicMock(return_value=None)
+        mock_vs_instance.knn_search.return_value = []
+
+        mock_fts_instance = MagicMock()
+        mock_fts_instance.__enter__ = MagicMock(return_value=mock_fts_instance)
+        mock_fts_instance.__exit__ = MagicMock(return_value=None)
+        mock_fts_instance.search.return_value = [{
+            "chunk_id": "chunk_fts_only",
+            "doc_id": "doc_fts",
+            "modality": "text",
+            "heading_path": ["Section A"],
+            "text": "fts-only text",
+            "bm25_score": -1.0,
+        }]
+
+        mock_vs.return_value = mock_vs_instance
+        mock_fts.return_value = mock_fts_instance
+
+        with patch("flavia.content.indexer.retrieval.embed_query", return_value=[0.0] * 768):
+            settings = Settings()
+            results = retrieve("question", Path("/tmp"), settings, top_k=5)
+
+        assert len(results) == 1
+        result = results[0]
+        assert result["chunk_id"] == "chunk_fts_only"
+        assert result["doc_id"] == "doc_fts"
+        assert result["text"] == "fts-only text"
+        assert result["modality"] == "text"
+        assert result["heading_path"] == ["Section A"]
+        assert result["doc_name"] == ""
+        assert result["file_type"] == ""
+        assert result["locator"] == {}
+        assert result["converted_path"] == ""
 
 
 class TestFilterSemantics:

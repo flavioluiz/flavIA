@@ -204,6 +204,16 @@ class TestKnnSearch:
             assert results[0]["chunk_id"] == "far_filtered"
             assert results[0]["doc_id"] == "doc_filtered"
 
+    def test_empty_doc_ids_filter_returns_empty(self, tmp_path: Path):
+        """Explicit empty doc_ids_filter should return no results."""
+        with VectorStore(tmp_path) as store:
+            store.upsert([
+                ("c1", [1.0] + [0.0] * 767, {"doc_id": "doc_a", "modality": "text"}),
+            ])
+
+            query_vec = [1.0] + [0.0] * 767
+            assert store.knn_search(query_vec, k=5, doc_ids_filter=[]) == []
+
     def test_returns_metadata(self, tmp_path: Path):
         """Should include all metadata fields in results."""
         with VectorStore(tmp_path) as store:
