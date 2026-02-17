@@ -40,6 +40,7 @@ src/flavia/
 │   ├── scanner.py            # File scanning and metadata extraction
 │   ├── catalog.py            # Persistent content index (.flavia/content_catalog.json)
 │   ├── summarizer.py         # LLM summarization for files/directories
+│   ├── indexer/              # RAG indexing/retrieval (chunker, embedder, FTS, hybrid)
 │   └── converters/           # Document conversion (PDF -> text/markdown)
 │
 ├── tools/                    # Tool system
@@ -68,6 +69,7 @@ src/flavia/
 │   │   ├── query_catalog.py
 │   │   ├── get_summary.py
 │   │   ├── refresh_catalog.py
+│   │   ├── search_chunks.py
 │   │   └── analyze_image.py
 │   ├── academic/             # Academic workflow tools
 │   │   └── compile_latex.py
@@ -158,6 +160,8 @@ The content catalog indexes project files and stores metadata (type, timestamps,
 - Built during setup (`flavia --init`)
 - Updated incrementally via CLI (`--update`, `--update-convert`, `--update-summarize`)
 - Queried at runtime through tools (`query_catalog`, `get_catalog_summary`, `refresh_catalog`)
+- Retrieval index lives in `.index/index.db` and is managed with `/index build|update|stats`
+- Semantic content lookup is exposed to agents via `search_chunks` (hybrid vector + FTS retrieval)
 - Injected into the top-level system prompt as compact project context
 
 ## Configuration system

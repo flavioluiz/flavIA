@@ -171,4 +171,12 @@ nano .flavia/.env    # add your API key
 flavia               # start chatting
 ```
 
+If you installed the RAG extras (`.[rag]`), build the retrieval index once inside the chat:
+
+```text
+/index build
+```
+
+After future file changes, use `/index update` to keep semantic retrieval current.
+
 If you run `flavia` in an interactive terminal without any existing local or user configuration and without an API key, the setup wizard is offered automatically.

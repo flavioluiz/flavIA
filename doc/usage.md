@@ -211,6 +211,20 @@ Inside a chat session, the following commands are available:
 | `/config` | Show configuration paths and active settings |
 | `/quit` | Exit session (aliases: `/exit`, `/q`) |
 
+### Semantic Retrieval (RAG) workflow
+
+From a fresh project setup (`flavia --init`) to retrieval-ready chat:
+
+1. Convert source materials to `.converted/` content (`flavia --init` or `flavia --update-convert`).
+2. Build the retrieval index once with `/index build`.
+3. Start chatting; the agent can use `search_chunks` for semantic/content questions.
+4. After adding/modifying files, run `/index update` to keep vectors/FTS in sync.
+5. Use `/index stats` to verify chunk counts, index size, and last indexed timestamp.
+
+Notes:
+- `search_chunks` is only available when `.index/index.db` exists.
+- `query_catalog` remains the best tool for file discovery/metadata filtering.
+
 ### Help System Details
 
 The unified help system organizes commands into logical categories:

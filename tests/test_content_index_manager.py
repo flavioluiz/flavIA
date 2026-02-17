@@ -12,6 +12,91 @@ def _console() -> Console:
     return Console(file=StringIO(), force_terminal=False, color_system=None)
 
 
+def test_process_document_handles_embedding_tuples_and_partial_failures(monkeypatch, tmp_path: Path):
+    entry = SimpleNamespace(name="doc.pdf")
+    chunks = [
+        {
+            "chunk_id": "chunk_ok",
+            "doc_id": "doc_1",
+            "modality": "text",
+            "heading_path": ["Section 1"],
+            "text": "chunk content ok",
+            "source": {
+                "converted_path": ".converted/doc.md",
+                "name": "doc.pdf",
+                "file_type": "pdf",
+                "locator": {"line_start": 1, "line_end": 3},
+            },
+        },
+        {
+            "chunk_id": "chunk_fail",
+            "doc_id": "doc_1",
+            "modality": "text",
+            "heading_path": ["Section 2"],
+            "text": "chunk content fail",
+            "source": {
+                "converted_path": ".converted/doc.md",
+                "name": "doc.pdf",
+                "file_type": "pdf",
+                "locator": {"line_start": 4, "line_end": 6},
+            },
+        },
+    ]
+
+    monkeypatch.setattr(index_manager.chunker, "chunk_document", lambda *_args, **_kwargs: chunks)
+    monkeypatch.setattr(
+        index_manager.embedder,
+        "get_embedding_client",
+        lambda _settings: (object(), "model"),
+    )
+
+    embed_input = {}
+
+    def _fake_embed_chunks(input_chunks, _client, _model):
+        embed_input["chunks"] = input_chunks
+        yield ("chunk_ok", [0.1, 0.2, 0.3], None)
+        yield ("chunk_fail", None, "rate limited")
+
+    monkeypatch.setattr(index_manager.embedder, "embed_chunks", _fake_embed_chunks)
+
+    class _FakeVectorStore:
+        def __init__(self):
+            self.items = []
+
+        def upsert(self, items):
+            self.items = items
+            return len(items), 0
+
+    class _FakeFTSIndex:
+        def __init__(self):
+            self.chunks = []
+
+        def upsert(self, chunks_):
+            self.chunks = chunks_
+            return len(chunks_), 0
+
+    fake_vs = _FakeVectorStore()
+    fake_fts = _FakeFTSIndex()
+    existing_chunk_ids: set[str] = set()
+
+    stats = index_manager.process_document(
+        entry=entry,
+        base_dir=tmp_path,
+        settings=Settings(base_dir=tmp_path),
+        vector_store=fake_vs,
+        fts_index=fake_fts,
+        existing_chunk_ids=existing_chunk_ids,
+        console=_console(),
+        show_progress=False,
+    )
+
+    assert [c["chunk_id"] for c in embed_input["chunks"]] == ["chunk_ok", "chunk_fail"]
+    assert [item[0] for item in fake_vs.items] == ["chunk_ok"]
+    assert [item["chunk_id"] for item in fake_fts.chunks] == ["chunk_ok"]
+    assert stats == {"added": 1, "updated": 0, "skipped": 1}
+    assert existing_chunk_ids == {"chunk_ok"}
+
+
 def test_get_entries_to_index_resolves_paths_and_filters(tmp_path: Path):
     converted_dir = tmp_path / ".converted"
     converted_dir.mkdir()

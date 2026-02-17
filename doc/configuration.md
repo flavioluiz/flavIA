@@ -168,8 +168,9 @@ The `{base_dir}` placeholder in the context is replaced with the base directory 
 | `search_files` | read | Search for patterns in files |
 | `get_file_info` | read | Get file metadata |
 | `query_catalog` | content | Query indexed files by filters (name, type, extension, summary text) |
-| `get_summary` | content | Retrieve stored summaries from the content catalog |
+| `get_catalog_summary` | content | Retrieve a high-level project/content catalog summary |
 | `refresh_catalog` | content | Rescan project files and update the content catalog |
+| `search_chunks` | content | Hybrid semantic retrieval (vector + FTS) over indexed chunks with citations |
 | `analyze_image` | content | Analyze an image with a vision-capable model and return a detailed description |
 | `compile_latex` | academic | Compile `.tex` into PDF with log parsing and configurable passes |
 | `write_file` | write | Create or overwrite a file |

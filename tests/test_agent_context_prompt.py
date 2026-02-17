@@ -7,6 +7,10 @@ from flavia.agent.profile import AgentProfile
 
 
 def test_build_system_prompt_includes_catalog_first_guidance(tmp_path: Path):
+    index_dir = tmp_path / ".index"
+    index_dir.mkdir()
+    (index_dir / "index.db").write_text("", encoding="utf-8")
+
     profile = AgentProfile(
         context="You are a research assistant.",
         base_dir=tmp_path,
@@ -39,6 +43,21 @@ def test_build_system_prompt_omits_search_chunks_rule_when_tool_unavailable(tmp_
         context="You are a research assistant.",
         base_dir=tmp_path,
         tools=["read_file", "query_catalog", "get_catalog_summary"],
+    )
+    context = AgentContext.from_profile(profile, depth=0)
+
+    prompt = build_system_prompt(profile, context, tools_description="")
+
+    assert "Workflow policy for content discovery:" in prompt
+    assert "`query_catalog`" in prompt
+    assert "Use search_chunks when answering questions about document content" not in prompt
+
+
+def test_build_system_prompt_omits_search_chunks_rule_without_index(tmp_path: Path):
+    profile = AgentProfile(
+        context="You are a research assistant.",
+        base_dir=tmp_path,
+        tools=["read_file", "query_catalog", "search_chunks", "get_catalog_summary"],
     )
     context = AgentContext.from_profile(profile, depth=0)
 

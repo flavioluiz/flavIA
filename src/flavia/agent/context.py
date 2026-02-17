@@ -100,7 +100,9 @@ def _build_catalog_first_guidance(context: AgentContext) -> str:
     """Build workflow guidance that prioritizes catalog usage before file reads."""
     tools = set(context.available_tools or [])
     has_query = "query_catalog" in tools
-    has_search_chunks = "search_chunks" in tools
+    has_search_chunks = "search_chunks" in tools and (
+        context.base_dir / ".index" / "index.db"
+    ).exists()
     has_summary = "get_catalog_summary" in tools
     has_read = "read_file" in tools
     has_spawn = "spawn_predefined_agent" in tools or "spawn_agent" in tools

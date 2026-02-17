@@ -189,33 +189,46 @@ def process_document(
 
     client, model = embedder.get_embedding_client(settings)
 
-    new_chunks = []
-    chunks_to_embed = []
+    new_chunks: list[dict[str, Any]] = []
+    seen_new_chunk_ids: set[str] = set()
 
     for chunk in chunks:
         chunk_id = chunk.get("chunk_id", "")
 
-        if chunk_id in existing_chunk_ids:
+        if not chunk_id:
+            stats["skipped"] += 1
+            continue
+        if chunk_id in existing_chunk_ids or chunk_id in seen_new_chunk_ids:
             stats["skipped"] += 1
         else:
             new_chunks.append(chunk)
-            chunks_to_embed.append(chunk.get("text", ""))
-            existing_chunk_ids.add(chunk_id)
+            seen_new_chunk_ids.add(chunk_id)
 
-    if not chunks_to_embed:
+    if not new_chunks:
         return stats
 
     if show_progress:
-        console.print(f"  [dim]Embedding {len(chunks_to_embed)} chunks...[/dim]")
+        console.print(f"  [dim]Embedding {len(new_chunks)} chunks...[/dim]")
 
-    embeddings = embedder.embed_chunks(chunks_to_embed, client, model)
+    embeddings = embedder.embed_chunks(new_chunks, client, model)
+    chunks_by_id = {chunk["chunk_id"]: chunk for chunk in new_chunks}
 
     vector_items = []
     fts_chunks = []
+    failed_chunk_ids: list[str] = []
+    successful_chunk_ids: list[str] = []
 
-    for chunk, vector in zip(new_chunks, embeddings):
-        chunk_id = chunk["chunk_id"]
+    for chunk_id, vector, error in embeddings:
+        chunk = chunks_by_id.get(chunk_id)
+        if chunk is None:
+            failed_chunk_ids.append(chunk_id)
+            continue
+        if error or vector is None:
+            failed_chunk_ids.append(chunk_id)
+            continue
+
         source = chunk.get("source", {})
+        successful_chunk_ids.append(chunk_id)
 
         vector_items.append(
             (
@@ -243,8 +256,22 @@ def process_document(
             }
         )
 
+    if failed_chunk_ids:
+        stats["skipped"] += len(failed_chunk_ids)
+        preview = ", ".join(failed_chunk_ids[:5])
+        if len(failed_chunk_ids) > 5:
+            preview += f", ... (+{len(failed_chunk_ids) - 5} more)"
+        console.print(
+            "[yellow]Warning: failed to embed "
+            f"{len(failed_chunk_ids)} chunk(s) for {entry.name}: {preview}[/yellow]"
+        )
+
+    if not vector_items:
+        return stats
+
     vector_inserted, vector_updated = vector_store.upsert(vector_items)
     fts_inserted, fts_updated = fts_index.upsert(fts_chunks)
+    existing_chunk_ids.update(successful_chunk_ids)
 
     if vector_inserted != fts_inserted or vector_updated != fts_updated:
         console.print(
@@ -351,7 +378,7 @@ def build_index(
                     show_progress=False,
                 )
 
-                total_chunks += sum(stats.values())
+                total_chunks += stats["added"] + stats["updated"] + stats["skipped"]
                 total_added += stats["added"]
                 total_updated += stats["updated"]
 
@@ -456,7 +483,6 @@ def update_index(base_dir: Path, settings: Settings, console: Console) -> dict[s
         ) as progress:
             task = progress.add_task("[cyan]Processing documents...", total=len(entries))
 
-            total_chunks = 0
             total_added = 0
             total_updated = 0
 
@@ -474,7 +500,6 @@ def update_index(base_dir: Path, settings: Settings, console: Console) -> dict[s
                     show_progress=False,
                 )
 
-                total_chunks += sum(stats.values())
                 total_added += stats["added"]
                 total_updated += stats["updated"]
 

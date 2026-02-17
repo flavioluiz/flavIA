@@ -11,6 +11,7 @@ from flavia.content.indexer.retrieval import (
     _catalog_doc_id,
     _get_doc_id,
     _merge_chunk_data,
+    _route_doc_ids_from_catalog,
     _rrf_score,
     retrieve,
 )
@@ -25,6 +26,7 @@ def _make_catalog_entry(
     checksum_sha256: str,
     file_type: str = "text",
     category: str = "markdown",
+    converted_to: str | None = ".converted/default.md",
 ) -> FileEntry:
     now = datetime.now(timezone.utc).isoformat()
     return FileEntry(
@@ -40,6 +42,7 @@ def _make_catalog_entry(
         checksum_sha256=checksum_sha256,
         summary=summary,
         status="current",
+        converted_to=converted_to,
     )
 
 
@@ -295,6 +298,32 @@ class TestVectorStoreLifecycle:
 
 class TestCatalogRouterStageA:
     """Tests for Stage A catalog routing behavior."""
+
+    def test_catalog_router_ignores_entries_without_converted_content(self, tmp_path: Path):
+        """Stage A should only route documents that can produce indexed chunks."""
+        converted_entry = _make_catalog_entry(
+            path="docs/converted.md",
+            summary="quantum entanglement notes",
+            checksum_sha256="sha_converted",
+            converted_to=".converted/converted.md",
+        )
+        non_converted_entry = _make_catalog_entry(
+            path="docs/raw.md",
+            summary="quantum entanglement raw source",
+            checksum_sha256="sha_raw",
+            converted_to=None,
+        )
+        _write_catalog(tmp_path, [converted_entry, non_converted_entry])
+
+        converted_doc_id = _catalog_doc_id(
+            tmp_path,
+            converted_entry.path,
+            converted_entry.checksum_sha256,
+        )
+
+        routed = _route_doc_ids_from_catalog("quantum entanglement", tmp_path)
+
+        assert routed == [converted_doc_id]
 
     @patch("flavia.content.indexer.retrieval.FTSIndex")
     @patch("flavia.content.indexer.retrieval.VectorStore")

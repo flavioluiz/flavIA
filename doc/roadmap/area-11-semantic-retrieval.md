@@ -2,7 +2,7 @@
 
 Transform flavIA's current keyword-based catalog search into a full RAG pipeline that embeds converted documents, stores vectors in SQLite, and provides hybrid retrieval (vector + full-text) to the agent.
 
-**Status**: 6 / 8 tasks complete
+**Status**: 8 / 8 tasks complete
 **Dependencies**: Area 1 complete (all converters done ✓)
 
 ---
@@ -116,7 +116,7 @@ BM25 ranking via `bm25(chunks_fts)` in query ordering.
 
 ---
 
-### 11.4 Hybrid Retrieval Engine
+### 11.4 Hybrid Retrieval Engine ✓ DONE
 **Difficulty**: Medium
 **Dependencies**: 11.2, 11.3
 
@@ -198,7 +198,7 @@ Agent-accessible tool that calls `retrieve()` and formats results as annotated c
 
 ---
 
-### 11.7 Index CLI Commands (`/index`)
+### 11.7 Index CLI Commands (`/index`) ✓ DONE
 **Difficulty**: Easy
 **Dependencies**: 11.1, 11.2, 11.3
 
@@ -347,4 +347,4 @@ vault/
 - Python's built-in `sqlite3` supports `load_extension` when the CPython build includes `SQLITE_ENABLE_LOAD_EXTENSION`. On macOS system Python this may be disabled; a workaround is `pysqlite3-binary` as a fallback.
 - The `chunks.jsonl` file is the source of truth; `index.db` is a derived index and can be rebuilt from it.
 - Embeddings are only generated for chunks not already present in `chunks_meta` (incremental mode uses `chunk_id` as idempotency key).
-- For the initial implementation, video temporal expansion (11.5) can be deferred — `search_chunks` will still return the anchor chunk with its timecode.
+- Video temporal expansion (11.5) is implemented and enabled by default in `retrieve()` via `expand_video_temporal=True`.

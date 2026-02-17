@@ -58,6 +58,10 @@ def _route_doc_ids_from_catalog(
     for entry in catalog.files.values():
         if entry.status == "missing":
             continue
+        # Retrieval indexes only converted sources. Skip catalog entries that
+        # cannot produce chunks to avoid over-filtering Stage B to empty scopes.
+        if not getattr(entry, "converted_to", None):
+            continue
 
         doc_id = _catalog_doc_id(base_dir, entry.path, entry.checksum_sha256)
         if scope is not None and doc_id not in scope:

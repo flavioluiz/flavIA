@@ -101,6 +101,20 @@ class TestFileScanner:
         assert "paper.pdf" in paths
         assert ".converted/paper.md" not in paths
 
+    def test_scan_ignores_index_directory(self, tmp_path):
+        """Retrieval index artifacts under .index/ should not enter catalog."""
+        (tmp_path / "notes.md").write_text("hello")
+        index_dir = tmp_path / ".index"
+        index_dir.mkdir()
+        (index_dir / "index.db").write_bytes(b"sqlite")
+
+        scanner = FileScanner(tmp_path)
+        files, _ = scanner.scan()
+        paths = {f.path for f in files}
+
+        assert "notes.md" in paths
+        assert ".index/index.db" not in paths
+
     def test_file_entry_metadata(self, tmp_path):
         """Verify file entry contains correct metadata."""
         test_file = tmp_path / "test.txt"
