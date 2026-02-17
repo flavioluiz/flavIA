@@ -274,6 +274,7 @@ def retrieve(
     rrf_k: int = 60,
     max_chunks_per_doc: int = 3,
     expand_video_temporal: bool = True,
+    retrieval_mode: str = "balanced",
     debug_info: Optional[dict[str, Any]] = None,
 ) -> list[dict[str, Any]]:
     """Hybrid retrieval combining vector and FTS search with RRF fusion.
@@ -299,6 +300,9 @@ def retrieve(
         max_chunks_per_doc: Maximum chunks from same document (default 3).
         expand_video_temporal: Whether to expand video chunks with temporal
                                evidence bundles (default True).
+        retrieval_mode: Retrieval behavior profile.
+            - "balanced": default precision/coverage tradeoff
+            - "exhaustive": maximize coverage for checklist extraction
 
     Returns:
         List of result dicts with keys:
@@ -333,6 +337,7 @@ def retrieve(
             "rrf_k": rrf_k,
             "max_chunks_per_doc": max_chunks_per_doc,
             "expand_video_temporal": expand_video_temporal,
+            "retrieval_mode": retrieval_mode,
         },
         "filters": {
             "input_doc_ids_filter_count": len(doc_ids_filter) if doc_ids_filter is not None else None
@@ -381,6 +386,13 @@ def retrieve(
     trace["filters"]["effective_doc_ids_filter_count"] = (
         len(effective_doc_ids_filter) if effective_doc_ids_filter is not None else None
     )
+    effective_max_chunks_per_doc = max_chunks_per_doc
+    if effective_doc_ids_filter is not None and len(effective_doc_ids_filter) == 1:
+        # Single-document scope should prioritize coverage over cross-doc diversity.
+        effective_max_chunks_per_doc = max(effective_max_chunks_per_doc, top_k)
+    if retrieval_mode == "exhaustive":
+        effective_max_chunks_per_doc = max(effective_max_chunks_per_doc, top_k)
+    trace["params"]["effective_max_chunks_per_doc"] = effective_max_chunks_per_doc
 
     vector_results: list[dict[str, Any]] = []
     fts_results: list[dict[str, Any]] = []
@@ -455,7 +467,7 @@ def retrieve(
                 doc_id = f"__unknown__:{chunk_id}"
 
             # Check if we've hit the limit for this document
-            if doc_counts.get(doc_id, 0) < max_chunks_per_doc:
+            if doc_counts.get(doc_id, 0) < effective_max_chunks_per_doc:
                 doc_counts[doc_id] = doc_counts.get(doc_id, 0) + 1
 
                 # Build result with merged metadata

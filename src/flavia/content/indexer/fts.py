@@ -5,6 +5,7 @@ using SQLite FTS5 with BM25 ranking. Shares the same index.db as VectorStore.
 """
 
 import sqlite3
+import re
 from pathlib import Path
 from typing import Any, Optional
 
@@ -128,40 +129,58 @@ class FTSIndex:
         conn.commit()
         return inserted, updated
 
-    def search(
+    @staticmethod
+    def _tokenize_query(query: str) -> list[str]:
+        """Tokenize query terms for resilient FTS matching."""
+        tokens = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9_-]{2,}", query.lower())
+        # Preserve order while deduplicating
+        return list(dict.fromkeys(tokens))
+
+    @staticmethod
+    def _build_query_variants(query: str) -> list[str]:
+        """Build FTS query variants from stricter to broader recall."""
+        escaped_full = query.replace('"', '""')
+        tokens = FTSIndex._tokenize_query(query)
+
+        variants: list[str] = []
+        seen: set[str] = set()
+
+        def _add(value: str) -> None:
+            if value and value not in seen:
+                seen.add(value)
+                variants.append(value)
+
+        if len(tokens) <= 1:
+            # Single-term queries keep exact-token semantics.
+            if tokens:
+                token = tokens[0].replace('"', '""')
+                _add(f'"{token}"')
+            else:
+                _add(f'"{escaped_full}"')
+            return variants
+
+        # Multi-term query strategy:
+        # 1) token OR for higher recall
+        # 2) token AND for stricter lexical overlap
+        # 3) full quoted phrase as final strict fallback
+        quoted_tokens = []
+        for token in tokens[:24]:
+            escaped_token = token.replace('"', '""')
+            quoted_tokens.append(f'"{escaped_token}"')
+        _add(" OR ".join(quoted_tokens))
+        _add(" ".join(quoted_tokens))
+        _add(f'"{escaped_full}"')
+        return variants
+
+    def _execute_search_query(
         self,
-        query: str,
-        k: int = 10,
-        doc_ids_filter: Optional[list[str]] = None,
+        *,
+        conn: sqlite3.Connection,
+        fts_query: str,
+        k: int,
+        doc_ids_filter: Optional[list[str]],
     ) -> list[dict[str, Any]]:
-        """Search for chunks matching the query using FTS5 BM25 ranking.
-
-        Wraps the query in double quotes for exact-term matching. This ensures
-        codes, IDs, and acronyms like RFC-2616 or ATP-123 are matched exactly.
-
-        Args:
-            query: Search query string.
-            k: Maximum number of results to return.
-            doc_ids_filter: Optional list of doc_ids to restrict search to.
-
-        Returns:
-            List of dicts with keys: chunk_id, doc_id, modality, text,
-            heading_path (list[str]), bm25_score (float, negative, lower = better).
-        """
-        if not query or not query.strip():
-            return []
-        if k <= 0:
-            return []
-        if doc_ids_filter is not None and len(doc_ids_filter) == 0:
-            return []
-
-        conn = self._get_connection()
-
-        # Wrap in double quotes for exact-term matching, escaping any
-        # internal double quotes by doubling them (FTS5 quoting convention)
-        escaped = query.replace('"', '""')
-        fts_query = f'"{escaped}"'
-
+        """Execute one FTS query variant and normalize rows."""
         if doc_ids_filter:
             placeholders = ",".join("?" * len(doc_ids_filter))
             cursor = conn.execute(
@@ -193,7 +212,6 @@ class FTSIndex:
         for row in cursor:
             heading_str = row["heading_path"] or ""
             heading_path = [h for h in heading_str.split(" > ") if h] if heading_str else []
-
             results.append(
                 {
                     "chunk_id": row["chunk_id"],
@@ -204,8 +222,52 @@ class FTSIndex:
                     "bm25_score": row["bm25_score"],
                 }
             )
-
         return results
+
+    def search(
+        self,
+        query: str,
+        k: int = 10,
+        doc_ids_filter: Optional[list[str]] = None,
+    ) -> list[dict[str, Any]]:
+        """Search for chunks matching the query using FTS5 BM25 ranking.
+
+        Wraps the query in double quotes for exact-term matching. This ensures
+        codes, IDs, and acronyms like RFC-2616 or ATP-123 are matched exactly.
+
+        Args:
+            query: Search query string.
+            k: Maximum number of results to return.
+            doc_ids_filter: Optional list of doc_ids to restrict search to.
+
+        Returns:
+            List of dicts with keys: chunk_id, doc_id, modality, text,
+            heading_path (list[str]), bm25_score (float, negative, lower = better).
+        """
+        if not query or not query.strip():
+            return []
+        if k <= 0:
+            return []
+        if doc_ids_filter is not None and len(doc_ids_filter) == 0:
+            return []
+
+        conn = self._get_connection()
+
+        # Retry broader lexical variants when strict matching yields no hits.
+        variants = self._build_query_variants(query)
+        for fts_query in variants:
+            try:
+                results = self._execute_search_query(
+                    conn=conn,
+                    fts_query=fts_query,
+                    k=k,
+                    doc_ids_filter=doc_ids_filter,
+                )
+            except sqlite3.Error:
+                continue
+            if results:
+                return results
+        return []
 
     def get_existing_chunk_ids(self) -> set[str]:
         """Get all chunk IDs currently in the index.

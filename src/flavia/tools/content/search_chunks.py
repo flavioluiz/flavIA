@@ -16,6 +16,18 @@ if TYPE_CHECKING:
 _DOC_MENTION_QUOTED_PATTERN = re.compile(r'(?<![A-Za-z0-9])@(?:"([^"]+)"|\'([^\']+)\')')
 _DOC_MENTION_BARE_PATTERN = re.compile(r'(?<![A-Za-z0-9])@([^\s@"\']+)')
 _MENTION_TRAILING_PUNCT = ".,;:!?)]}"
+_EXHAUSTIVE_QUERY_PATTERNS = (
+    "todos os itens",
+    "todos os subitens",
+    "item por item",
+    "subitem por subitem",
+    "sem descrições",
+    "lista completa",
+    "all items",
+    "all subitems",
+    "item by item",
+    "subitem by subitem",
+)
 
 
 def _catalog_doc_id(base_dir: Path, path: str, checksum: str) -> str:
@@ -148,6 +160,12 @@ def _resolve_doc_ids_from_mentions(
     return resolved_doc_ids, unresolved, unindexed
 
 
+def _looks_exhaustive_query(query: str) -> bool:
+    """Heuristic for checklist-style extraction requests."""
+    normalized = query.lower()
+    return any(pattern in normalized for pattern in _EXHAUSTIVE_QUERY_PATTERNS)
+
+
 class SearchChunksTool(BaseTool):
     """Perform semantic search across indexed document chunks using hybrid RAG retrieval."""
 
@@ -206,6 +224,16 @@ class SearchChunksTool(BaseTool):
                     ),
                     required=False,
                 ),
+                ToolParameter(
+                    name="retrieval_mode",
+                    type="string",
+                    description=(
+                        "Retrieval profile: 'balanced' (default) or 'exhaustive' "
+                        "(higher recall and per-document coverage)."
+                    ),
+                    required=False,
+                    enum=["balanced", "exhaustive"],
+                ),
             ],
         )
 
@@ -256,6 +284,19 @@ class SearchChunksTool(BaseTool):
             debug_mode = debug_raw
         else:
             return "Error: debug must be true or false."
+
+        retrieval_mode_raw = args.get("retrieval_mode")
+        retrieval_mode = "balanced"
+        if retrieval_mode_raw is not None:
+            if not isinstance(retrieval_mode_raw, str):
+                return "Error: retrieval_mode must be 'balanced' or 'exhaustive'."
+            normalized_mode = retrieval_mode_raw.strip().lower()
+            if normalized_mode not in {"balanced", "exhaustive"}:
+                return "Error: retrieval_mode must be 'balanced' or 'exhaustive'."
+            retrieval_mode = normalized_mode
+
+        if retrieval_mode == "balanced" and _looks_exhaustive_query(query):
+            retrieval_mode = "exhaustive"
 
         allowed_config, config_error = check_read_permission(config_dir, agent_context)
         if not allowed_config:
@@ -345,6 +386,18 @@ class SearchChunksTool(BaseTool):
                     )
 
         settings = get_settings()
+        effective_top_k = top_k
+        effective_router_k = settings.rag_catalog_router_k
+        effective_vector_k = settings.rag_vector_k
+        effective_fts_k = settings.rag_fts_k
+        effective_max_chunks_per_doc = settings.rag_max_chunks_per_doc
+
+        if retrieval_mode == "exhaustive":
+            effective_top_k = max(effective_top_k, 30)
+            effective_router_k = max(effective_router_k, 50)
+            effective_vector_k = max(effective_vector_k, min(120, effective_top_k * 4))
+            effective_fts_k = max(effective_fts_k, min(120, effective_top_k * 4))
+            effective_max_chunks_per_doc = max(effective_max_chunks_per_doc, effective_top_k)
 
         trace: dict[str, Any] = {}
         if debug_mode and mentions:
@@ -360,13 +413,14 @@ class SearchChunksTool(BaseTool):
                 base_dir=base_dir,
                 settings=settings,
                 doc_ids_filter=doc_ids_filter,
-                top_k=top_k,
-                catalog_router_k=settings.rag_catalog_router_k,
-                vector_k=settings.rag_vector_k,
-                fts_k=settings.rag_fts_k,
+                top_k=effective_top_k,
+                catalog_router_k=effective_router_k,
+                vector_k=effective_vector_k,
+                fts_k=effective_fts_k,
                 rrf_k=settings.rag_rrf_k,
-                max_chunks_per_doc=settings.rag_max_chunks_per_doc,
+                max_chunks_per_doc=effective_max_chunks_per_doc,
                 expand_video_temporal=settings.rag_expand_video_temporal,
+                retrieval_mode=retrieval_mode,
                 debug_info=trace if debug_mode else None,
             )
         except Exception as e:
@@ -381,6 +435,12 @@ class SearchChunksTool(BaseTool):
                     "top_k": top_k,
                     "file_type_filter": file_type_filter,
                     "doc_name_filter": doc_name_filter,
+                    "retrieval_mode": retrieval_mode,
+                    "effective_top_k": effective_top_k,
+                    "effective_router_k": effective_router_k,
+                    "effective_vector_k": effective_vector_k,
+                    "effective_fts_k": effective_fts_k,
+                    "effective_max_chunks_per_doc": effective_max_chunks_per_doc,
                     "mentions": [f"@{item}" for item in mentions],
                     "unresolved_mentions": [f"@{item}" for item in unresolved_mentions],
                     "unindexed_mentions": [f"@{item}" for item in unindexed_mentions],

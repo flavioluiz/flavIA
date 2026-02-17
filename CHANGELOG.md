@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Mentions are resolved against original catalog entries (`entry.path` / `entry.name`) and mapped to indexed converted chunks
   - Mention scope combines with existing filters: union of mentions, then intersection with `file_type_filter` / `doc_name_filter`
   - Unknown or unindexed mentions now return explicit feedback instead of silently broadening retrieval
+  - Recursive agent loop now enforces a `search_chunks` grounding attempt before final answer when the user prompt includes `@mentions` and index/tool are available
   - Added regression tests in `tests/test_search_chunks_tool.py` for mention scoping and filter intersection
 - **RAG diagnostics mode and tuning controls**:
   - Runtime command `/rag-debug [on|off|status|last [N]]` to toggle diagnostics capture and inspect recent traces
@@ -160,6 +161,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **RAG debug context hardening**:
   - Detailed retrieval traces are no longer appended to `search_chunks` tool output
   - This avoids inflating model context during diagnostics and keeps debug inspection outside agent memory via `/rag-debug last`
+- **Retrieval recall/coverage hardening**:
+  - FTS search now retries broader lexical variants (token OR/AND + exact phrase fallback) to reduce `fts_hits=0` cases in natural-language queries
+  - Retrieval diversity cap now adapts for single-document scopes to avoid clipping coverage in item/subitem extraction tasks
+  - `search_chunks` supports `retrieval_mode=exhaustive` and auto-switches to exhaustive profile for checklist-like prompts ("todos os itens/subitens")
 - **Hybrid converted-content access policy**:
   - New per-agent `converted_access_mode` in `agents.yaml`: `strict`, `hybrid`, `open`
   - `hybrid` is the default: agents must call `search_chunks` first, then can fallback to direct `.converted/` reads

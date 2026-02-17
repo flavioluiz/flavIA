@@ -559,6 +559,56 @@ class TestDiversityFilter:
         assert len(doc2_chunks) <= 2
         assert len(results) <= 4
 
+    @patch("flavia.content.indexer.retrieval.FTSIndex")
+    @patch("flavia.content.indexer.retrieval.VectorStore")
+    @patch("flavia.content.indexer.retrieval.get_embedding_client")
+    def test_single_doc_scope_adapts_diversity_cap(self, mock_get_client, mock_vs, mock_fts):
+        """Single-doc scoped retrieval should expand per-doc cap for coverage."""
+        mock_client = MagicMock()
+        mock_get_client.return_value = (mock_client, "model")
+
+        vector_results = [
+            {
+                "chunk_id": f"c{i}",
+                "doc_id": "doc_single",
+                "modality": "text",
+                "heading_path": [],
+                "doc_name": "doc",
+                "file_type": "txt",
+                "locator": {},
+                "converted_path": "",
+                "distance": i,
+            }
+            for i in range(1, 7)
+        ]
+
+        mock_vs_instance = MagicMock()
+        mock_vs_instance.__enter__ = MagicMock(return_value=mock_vs_instance)
+        mock_vs_instance.__exit__ = MagicMock(return_value=None)
+        mock_vs_instance.knn_search.return_value = vector_results
+
+        mock_fts_instance = MagicMock()
+        mock_fts_instance.__enter__ = MagicMock(return_value=mock_fts_instance)
+        mock_fts_instance.__exit__ = MagicMock(return_value=None)
+        mock_fts_instance.search.return_value = []
+
+        mock_vs.return_value = mock_vs_instance
+        mock_fts.return_value = mock_fts_instance
+
+        with patch("flavia.content.indexer.retrieval.embed_query", return_value=[0.0] * 768):
+            settings = Settings()
+            results = retrieve(
+                "question",
+                Path("/tmp"),
+                settings,
+                doc_ids_filter=["doc_single"],
+                top_k=5,
+                max_chunks_per_doc=2,
+            )
+
+        assert len(results) == 5
+        assert all(r["doc_id"] == "doc_single" for r in results)
+
 
 class TestRRFFusionOrdering:
     """Test that RRF fusion produces correct ordering."""

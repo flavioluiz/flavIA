@@ -235,6 +235,8 @@ Notes:
   - Users should reference original files (PDF/video/audio/etc.), not `.converted/*.md`.
   - Multiple mentions are supported; retrieval scope is the union of mentioned files, then intersected with explicit filters (`file_type_filter`, `doc_name_filter`) when provided.
   - Unknown/unindexed mentions return an explicit message so the agent can correct scope (instead of silently searching everything).
+  - Checklist-like requests (ex.: "todos os itens/subitens") automatically switch retrieval to an exhaustive profile for higher recall/coverage.
+  - You can force this behavior explicitly with `retrieval_mode="exhaustive"` in `search_chunks`.
 - Runtime retrieval diagnostics:
   - `/rag-debug on`: captures retrieval traces to `.flavia/rag_debug.jsonl` (no verbose trace injection into model context).
   - `/rag-debug last` (or `/rag-debug last N`): inspect the most recent persisted diagnostics traces.

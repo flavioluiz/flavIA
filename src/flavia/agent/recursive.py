@@ -55,6 +55,7 @@ class RecursiveAgent(BaseAgent):
 
     MAX_ITERATIONS = 20
     MAX_ITERATIONS_MESSAGE_RE = re.compile(r"^Maximum iterations reached \((\d+)\)\.")
+    DOC_MENTION_RE = re.compile(r'(?<![A-Za-z0-9])@(?:"[^"]+"|\'[^\']+\'|[^\s@"\']+)')
     WRITE_TOOL_NAMES = {
         "write_file",
         "edit_file",
@@ -126,6 +127,9 @@ class RecursiveAgent(BaseAgent):
         had_write_tool_call = False
         had_successful_write = False
         write_failures: list[str] = []
+        requires_mention_scoped_search = self._requires_mention_scoped_search(user_message)
+        mention_enforcement_injected = False
+        had_search_chunks_call = False
 
         while iterations < iteration_limit:
             iterations += 1
@@ -143,6 +147,23 @@ class RecursiveAgent(BaseAgent):
                 )
 
             if not response.tool_calls:
+                if (
+                    requires_mention_scoped_search
+                    and not had_search_chunks_call
+                    and not mention_enforcement_injected
+                ):
+                    mention_enforcement_injected = True
+                    self.messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "[System notice] The user referenced files using @mentions. "
+                                "Before answering, call search_chunks with the user query (including "
+                                "@mentions) to ground the response in indexed evidence."
+                            ),
+                        }
+                    )
+                    continue
                 fallback = (
                     "I could not produce a textual response. Please try rephrasing your question."
                 )
@@ -173,6 +194,8 @@ class RecursiveAgent(BaseAgent):
 
             for tool_call, tool_result in zip(response.tool_calls, tool_results):
                 tool_name = getattr(getattr(tool_call, "function", None), "name", "")
+                if tool_name == "search_chunks":
+                    had_search_chunks_call = True
                 if tool_name not in self.WRITE_TOOL_NAMES:
                     continue
                 had_write_tool_call = True
@@ -184,6 +207,22 @@ class RecursiveAgent(BaseAgent):
 
             self.messages.extend(tool_results)
             pending_spawns.extend(spawns)
+
+            if (
+                requires_mention_scoped_search
+                and not had_search_chunks_call
+                and not mention_enforcement_injected
+            ):
+                mention_enforcement_injected = True
+                self.messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "[System notice] You still need to call search_chunks for the @mentioned files "
+                            "before producing the final answer."
+                        ),
+                    }
+                )
 
             if pending_spawns:
                 spawn_results = self._execute_spawns_parallel(pending_spawns)
@@ -199,6 +238,26 @@ class RecursiveAgent(BaseAgent):
 
         self.log(f"Max iterations reached ({iteration_limit})")
         return self.format_max_iterations_message(iteration_limit)
+
+    def _requires_mention_scoped_search(self, user_message: str) -> bool:
+        """Return True when @mentions should trigger mandatory search_chunks grounding."""
+        if not isinstance(user_message, str) or not user_message.strip():
+            return False
+        if not self.DOC_MENTION_RE.search(user_message):
+            return False
+
+        context = getattr(self, "context", None)
+        if context is None:
+            return False
+
+        available_tools = set(getattr(context, "available_tools", []) or [])
+        if "search_chunks" not in available_tools:
+            return False
+
+        base_dir = getattr(context, "base_dir", None)
+        if base_dir is None:
+            return False
+        return (base_dir / ".index" / "index.db").exists()
 
     @staticmethod
     def _is_error_result(result_text: str) -> bool:

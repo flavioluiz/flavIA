@@ -297,3 +297,45 @@ def test_search_chunks_reports_unknown_at_file_reference(tmp_path: Path, monkeyp
 
     result = tool.execute({"query": "@missing_document.pdf details"}, ctx)
     assert "No indexed documents match the @file references" in result
+
+
+def test_search_chunks_auto_enables_exhaustive_mode_for_checklist_queries(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _create_catalog_and_index(tmp_path)
+    tool = SearchChunksTool()
+    ctx = _make_context(tmp_path)
+    monkeypatch.setattr("flavia.config.settings.get_settings", _make_settings_stub)
+
+    captured: dict[str, object] = {}
+
+    def _fake_retrieve(*, question, base_dir, settings, doc_ids_filter, top_k, **kwargs):
+        captured["top_k"] = top_k
+        captured["kwargs"] = kwargs
+        return [
+            {
+                "doc_name": "paper.pdf",
+                "modality": "text",
+                "heading_path": ["Checklist"],
+                "locator": {"line_start": 1, "line_end": 2},
+                "text": "Item list.",
+            }
+        ]
+
+    monkeypatch.setattr("flavia.content.indexer.retrieve", _fake_retrieve)
+    output = tool.execute({"query": "procure todos os itens e subitens, sem descrições"}, ctx)
+
+    assert captured["top_k"] >= 30
+    assert captured["kwargs"]["retrieval_mode"] == "exhaustive"
+    assert captured["kwargs"]["vector_k"] >= 30
+    assert captured["kwargs"]["fts_k"] >= 30
+    assert "Checklist" in output
+
+
+def test_search_chunks_rejects_invalid_retrieval_mode(tmp_path: Path) -> None:
+    _create_catalog_and_index(tmp_path)
+    tool = SearchChunksTool()
+    ctx = _make_context(tmp_path)
+
+    result = tool.execute({"query": "x", "retrieval_mode": "invalid"}, ctx)
+    assert "retrieval_mode must be 'balanced' or 'exhaustive'" in result

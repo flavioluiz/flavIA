@@ -250,6 +250,18 @@ class TestSearch:
             assert len(results) == 1
             assert results[0]["heading_path"] == ["Part I", "Chapter 2"]
 
+    def test_multi_term_query_falls_back_from_exact_phrase(self, tmp_path: Path):
+        """Multi-term queries should still match when words are not a strict phrase."""
+        with FTSIndex(tmp_path) as idx:
+            idx.upsert([
+                _make_chunk("c1", text="impacto econômico social e cultural foi avaliado"),
+                _make_chunk("c2", text="conteúdo sem relação"),
+            ])
+
+            results = idx.search("impacto social econômico")
+            assert len(results) >= 1
+            assert results[0]["chunk_id"] == "c1"
+
 
 class TestGetExistingChunkIds:
     """Tests for FTSIndex.get_existing_chunk_ids method."""

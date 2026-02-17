@@ -187,6 +187,7 @@ Agent-accessible tool that calls `retrieve()` and formats results as annotated c
 | `top_k` | integer | 10 | Number of chunks to return |
 | `file_type_filter` | string | — | Restrict to file type (pdf, video, audio, …) |
 | `doc_name_filter` | string | — | Restrict to docs matching this name substring |
+| `retrieval_mode` | string | balanced | `balanced` or `exhaustive` (higher recall/coverage for checklist extraction) |
 
 **Output format**:
 ```
@@ -366,6 +367,9 @@ vault/
 | H-11-03 | weak observability of retrieval decisions | difficult to tune router/vector/FTS behavior | added `/rag-debug`, `/index diagnose`, and persisted trace logging in `.flavia/rag_debug.jsonl` | Fixed |
 | H-11-04 | strict `.converted/` blocking sometimes reduced answer completeness | agent over-corrected with complex fallback paths | introduced `converted_access_mode` (`strict|hybrid|open`) with `hybrid` default | Fixed |
 | H-11-05 | debug traces inflated model context and could bias later turns | unnecessary token usage and behavior drift during diagnostics | removed verbose trace injection from `search_chunks` output; diagnostics now inspected via `/rag-debug last` | Fixed |
+| H-11-06 | lexical recall collapse for long natural-language queries (`fts_hits=0`) | keyword evidence often lost despite relevant chunks existing | FTS now retries multiple query variants (token OR/AND + exact phrase fallback) | Fixed |
+| H-11-07 | low coverage in single-document extraction due diversity cap | checklist queries returned partial item/subitem sets | adaptive per-doc diversity cap (single-doc scope + exhaustive mode) and exhaustive retrieval profile in `search_chunks` | Fixed |
+| H-11-08 | agent sometimes skipped retrieval even when user used `@arquivo` | final responses could be produced without RAG grounding | recursive loop now injects a one-shot enforcement notice to call `search_chunks` before final answer when `@` mentions are present | Fixed |
 
 ### Current behavior for explicit file targeting (`@arquivo`)
 

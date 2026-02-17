@@ -180,7 +180,7 @@ Legacy key (still accepted): `allow_converted_read: true|false` maps to `open|st
 | `query_catalog` | content | Query indexed files by filters (name, type, extension, summary text) |
 | `get_catalog_summary` | content | Retrieve a high-level project/content catalog summary |
 | `refresh_catalog` | content | Rescan project files and update the content catalog |
-| `search_chunks` | content | Hybrid semantic retrieval (vector + FTS) over indexed chunks with citations; supports `@arquivo` scoping |
+| `search_chunks` | content | Hybrid semantic retrieval (vector + FTS) over indexed chunks with citations; supports `@arquivo` scoping and `retrieval_mode=exhaustive` |
 | `analyze_image` | content | Analyze an image with a vision-capable model and return a detailed description |
 | `compile_latex` | academic | Compile `.tex` into PDF with log parsing and configurable passes |
 | `write_file` | write | Create or overwrite a file |
