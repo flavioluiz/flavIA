@@ -1,5 +1,6 @@
 """Setup wizard for initializing flavIA configuration."""
 
+from collections import Counter
 import shutil
 import sys
 from pathlib import Path
@@ -55,6 +56,109 @@ def _default_main_tools(main_agent_can_write: bool) -> list[str]:
         tools.extend(WRITE_CAPABLE_RUNTIME_TOOLS)
     tools.extend(SPAWN_TOOLS)
     return tools
+
+
+def _count_converted_pdfs(
+    base_dir: Path,
+    converted_dir: Path,
+    pdf_files: List[Path],
+    catalog: Optional[Any],
+) -> int:
+    """Count how many discovered PDFs already have converted markdown."""
+    converted_count = 0
+    catalog_entries = getattr(catalog, "files", {}) if catalog else {}
+
+    for pdf_path in pdf_files:
+        try:
+            rel_pdf = pdf_path.relative_to(base_dir)
+        except ValueError:
+            rel_pdf = Path(pdf_path.name)
+
+        catalog_entry = catalog_entries.get(str(rel_pdf))
+        if catalog_entry is not None and getattr(catalog_entry, "converted_to", None):
+            converted_count += 1
+            continue
+
+        converted_candidates = [
+            converted_dir / rel_pdf.with_suffix(".md"),
+            converted_dir / rel_pdf.with_suffix(".md").name,
+        ]
+        if any(path.exists() for path in converted_candidates):
+            converted_count += 1
+
+    return converted_count
+
+
+def _build_documents_preparation_status(
+    base_dir: Path,
+    converted_dir: Path,
+    pdf_files: List[Path],
+    catalog: Optional[Any],
+) -> tuple[str, str, int]:
+    """
+    Build icon/text status for the preparation "Documents" step.
+
+    Returns:
+        Tuple of (icon_markup, status_text, converted_pdf_count)
+    """
+    has_pdfs = bool(pdf_files)
+    converted_pdf_count = _count_converted_pdfs(base_dir, converted_dir, pdf_files, catalog)
+
+    non_pdf_converted = 0
+    non_pdf_by_type: Counter[str] = Counter()
+    frame_descriptions = 0
+
+    catalog_entries = getattr(catalog, "files", {}) if catalog else {}
+    if catalog_entries:
+        for entry in catalog_entries.values():
+            if getattr(entry, "status", "current") == "missing":
+                continue
+            if getattr(entry, "converted_to", None):
+                if getattr(entry, "extension", "").lower() != ".pdf":
+                    non_pdf_converted += 1
+                    non_pdf_by_type[getattr(entry, "file_type", "other")] += 1
+            frame_descriptions += len(getattr(entry, "frame_descriptions", []) or [])
+    elif converted_dir.exists():
+        converted_md_count = len(list(converted_dir.rglob("*.md")))
+        non_pdf_converted = max(converted_md_count - converted_pdf_count, 0)
+
+    non_pdf_detail = ""
+    if non_pdf_converted > 0:
+        if non_pdf_by_type:
+            ordered_types = ["video", "audio", "image", "binary_document", "other"]
+            type_parts = [
+                f"{non_pdf_by_type[t]} {t}"
+                for t in ordered_types
+                if non_pdf_by_type.get(t, 0) > 0
+            ]
+            non_pdf_detail = (
+                f"{non_pdf_converted} non-PDF file(s) converted/transcribed "
+                f"({', '.join(type_parts)})"
+            )
+        else:
+            non_pdf_detail = f"{non_pdf_converted} non-PDF converted file(s)"
+
+    extras = []
+    if non_pdf_detail:
+        extras.append(non_pdf_detail)
+    if frame_descriptions > 0:
+        extras.append(f"{frame_descriptions} frame description(s)")
+
+    if has_pdfs:
+        doc_icon = (
+            "[green]\u2713[/green]"
+            if converted_pdf_count >= len(pdf_files)
+            else "[yellow]\u2717[/yellow]"
+        )
+        doc_status = f"{converted_pdf_count}/{len(pdf_files)} PDFs converted"
+        if extras:
+            doc_status += " | " + "; ".join(extras)
+        return doc_icon, doc_status, converted_pdf_count
+
+    if extras:
+        return "[green]\u2713[/green]", "; ".join(extras), converted_pdf_count
+
+    return "[dim]-[/dim]", "no PDFs found", converted_pdf_count
 
 
 # System prompt for the setup agent
@@ -1884,7 +1988,6 @@ def _run_full_reconfiguration_inner(
 
     # Detect current state of each preparation step
     converted_dir = base_dir / CONVERTED_DIR_NAME
-    has_converted_docs = converted_dir.exists() and bool(list(converted_dir.rglob("*.md")))
     has_pdfs = bool(pdf_files)
 
     catalog_file = config_dir / "content_catalog.json"
@@ -1904,15 +2007,12 @@ def _run_full_reconfiguration_inner(
             catalog = existing_catalog
 
     # Show preparation status
-    doc_status = "no PDFs found"
-    doc_icon = "[dim]-[/dim]"
-    if has_pdfs and has_converted_docs:
-        converted_count = len(list(converted_dir.rglob("*.md")))
-        doc_status = f"{converted_count} PDFs converted"
-        doc_icon = "[green]\u2713[/green]"
-    elif has_pdfs:
-        doc_status = f"{len(pdf_files)} PDFs found, not converted"
-        doc_icon = "[yellow]\u2717[/yellow]"
+    doc_icon, doc_status, converted_pdf_count = _build_documents_preparation_status(
+        base_dir=base_dir,
+        converted_dir=converted_dir,
+        pdf_files=pdf_files,
+        catalog=catalog,
+    )
 
     catalog_status = "not built"
     catalog_icon = "[yellow]\u2717[/yellow]"
@@ -1937,7 +2037,7 @@ def _run_full_reconfiguration_inner(
     console.print()
 
     # Determine what needs to be done
-    needs_conversion = has_pdfs and not has_converted_docs
+    needs_conversion = has_pdfs and converted_pdf_count < len(pdf_files)
     needs_catalog = not has_catalog or catalog_file_count == 0
     needs_summaries = has_catalog and catalog_files_needing_summary > 0
     run_catalog_build = False

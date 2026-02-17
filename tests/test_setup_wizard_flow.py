@@ -8,6 +8,7 @@ from flavia.config.settings import Settings
 from flavia.setup_wizard import (
     create_setup_agent,
     _approve_subagents,
+    _build_documents_preparation_status,
     _build_revision_task,
     _build_setup_task,
     _build_content_catalog,
@@ -310,6 +311,73 @@ def test_setup_and_revision_tasks_enforce_compile_latex_only_with_write_authoriz
     )
     assert "does NOT include write-capable tools" in revision_task
     assert "compile_latex" in revision_task
+
+
+def test_documents_preparation_status_shows_non_pdf_conversions_from_catalog(tmp_path):
+    class _Entry:
+        def __init__(
+            self,
+            extension,
+            file_type,
+            converted_to=None,
+            frame_descriptions=None,
+            status="current",
+        ):
+            self.extension = extension
+            self.file_type = file_type
+            self.converted_to = converted_to
+            self.frame_descriptions = frame_descriptions or []
+            self.status = status
+
+    class _Catalog:
+        def __init__(self):
+            self.files = {
+                f"video_{i}.mp4": _Entry(
+                    extension=".mp4",
+                    file_type="video",
+                    converted_to=f".converted/video_{i}.md",
+                    frame_descriptions=[
+                        f".converted/video_{i}_frame_{j}.md" for j in range(6)
+                    ],
+                )
+                for i in range(9)
+            }
+
+    doc_icon, doc_status, converted_pdf_count = _build_documents_preparation_status(
+        base_dir=tmp_path,
+        converted_dir=tmp_path / ".converted",
+        pdf_files=[],
+        catalog=_Catalog(),
+    )
+
+    assert doc_icon == "[green]\u2713[/green]"
+    assert converted_pdf_count == 0
+    assert "9 non-PDF file(s) converted/transcribed" in doc_status
+    assert "54 frame description(s)" in doc_status
+    assert "PDFs converted" not in doc_status
+
+
+def test_documents_preparation_status_counts_only_pdf_conversions_for_pdf_progress(tmp_path):
+    pdf_a = tmp_path / "a.pdf"
+    pdf_b = tmp_path / "nested" / "b.pdf"
+    pdf_b.parent.mkdir(parents=True)
+    pdf_a.write_bytes(b"%PDF-1.4")
+    pdf_b.write_bytes(b"%PDF-1.4")
+
+    converted_dir = tmp_path / ".converted"
+    (converted_dir / "nested").mkdir(parents=True)
+    (converted_dir / "nested" / "b.md").write_text("converted", encoding="utf-8")
+
+    doc_icon, doc_status, converted_pdf_count = _build_documents_preparation_status(
+        base_dir=tmp_path,
+        converted_dir=converted_dir,
+        pdf_files=[pdf_a, pdf_b],
+        catalog=None,
+    )
+
+    assert doc_icon == "[yellow]\u2717[/yellow]"
+    assert converted_pdf_count == 1
+    assert doc_status.startswith("1/2 PDFs converted")
 
 
 def test_run_setup_wizard_passes_selected_model_to_basic_setup(monkeypatch, tmp_path):
