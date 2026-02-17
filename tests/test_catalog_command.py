@@ -1,24 +1,22 @@
 """Tests for the catalog command interface."""
 
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from flavia.content.catalog import ContentCatalog
+from flavia.content.scanner import FileEntry
 from flavia.interfaces.catalog_command import (
-    _format_size,
-    _show_overview,
+    _extract_youtube_frames,
     _browse_files,
+    _format_size,
     _manage_media_files,
     _manage_office_files,
     _manage_online_sources,
     _manage_pdf_files,
     _offer_resummarization_with_quality,
+    _show_overview,
     run_catalog_command,
 )
-from flavia.content.scanner import FileEntry
 
 
 class TestFormatSize:
@@ -88,6 +86,91 @@ class TestCatalogCommandFunctions:
             _manage_online_sources(catalog, tmp_path / ".flavia", settings)
             # Should print a message about no sources
             mock_console.print.assert_called()
+
+    def test_extract_youtube_frames_updates_catalog_entry(self, tmp_path, monkeypatch):
+        """YouTube frame extraction stores frame description paths in entry metadata."""
+        config_dir = tmp_path / ".flavia"
+        config_dir.mkdir()
+        converted_dir = tmp_path / ".converted"
+        converted_dir.mkdir()
+        transcript_path = converted_dir / "_online" / "youtube" / "svd.md"
+        transcript_path.parent.mkdir(parents=True, exist_ok=True)
+        transcript_path.write_text(
+            "# Transcript\n\n[00:00 - 00:02] Intro",
+            encoding="utf-8",
+        )
+        frame_md = converted_dir / "_online" / "youtube" / "video_frames" / "frame_00m00s.md"
+        frame_md.parent.mkdir(parents=True, exist_ok=True)
+        frame_md.write_text("Frame description", encoding="utf-8")
+
+        now = "2026-02-17T00:00:00+00:00"
+        entry = FileEntry(
+            path="_online/youtube/hash123",
+            name="SVD Overview",
+            extension="",
+            file_type="online",
+            category="youtube",
+            size_bytes=0,
+            created_at=now,
+            modified_at=now,
+            indexed_at=now,
+            checksum_sha256="",
+            source_type="youtube",
+            source_url="https://www.youtube.com/watch?v=gXbThCXjZFM",
+            converted_to=".converted/_online/youtube/svd.md",
+            fetch_status="completed",
+        )
+
+        catalog = ContentCatalog(tmp_path)
+        catalog.files[entry.path] = entry
+        settings = MagicMock()
+
+        class _FakeYouTubeConverter:
+            def check_dependencies(self):
+                return True, []
+
+            def _has_yt_dlp(self):
+                return True
+
+            def extract_and_describe_frames(
+                self,
+                source_url,
+                transcript,
+                base_output_dir,
+                settings,
+            ):
+                assert source_url == entry.source_url
+                assert "[00:00 - 00:02]" in transcript
+                assert base_output_dir == converted_dir / "_online" / "youtube"
+                return [frame_md], [0.0]
+
+        monkeypatch.setattr(
+            "flavia.content.converters.online.youtube.YouTubeConverter",
+            _FakeYouTubeConverter,
+        )
+
+        with (
+            patch("flavia.interfaces.catalog_command.console") as mock_console,
+            patch("flavia.interfaces.catalog_command._prompt_yes_no", return_value=False),
+        ):
+            _extract_youtube_frames(
+                entry,
+                catalog,
+                config_dir,
+                tmp_path,
+                converted_dir,
+                settings,
+            )
+
+        assert len(entry.frame_descriptions) == 1
+        assert (
+            entry.frame_descriptions[0]
+            == ".converted/_online/youtube/video_frames/frame_00m00s.md"
+        )
+        printed = " ".join(
+            " ".join(str(arg) for arg in call.args) for call in mock_console.print.call_args_list
+        )
+        assert "Generated 1 frame descriptions" in printed
 
 
 class TestRunCatalogCommand:

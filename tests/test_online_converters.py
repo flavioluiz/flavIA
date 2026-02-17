@@ -164,6 +164,55 @@ Second line
         assert "transcript_source: yt-dlp subtitle track" in content
         assert "Caption transcript" in content
 
+    def test_extract_and_describe_frames_uses_video_converter(self, tmp_path, monkeypatch):
+        """YouTube frame extraction should delegate to VideoConverter and cleanup temp video."""
+        converter = YouTubeConverter()
+        source_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        temp_video = tmp_path / "video_dQw4w9WgXcQ.mp4"
+        temp_video.write_bytes(b"video-bytes")
+        desc_file = tmp_path / "frame_00m00s.md"
+        desc_file.write_text("frame description")
+
+        monkeypatch.setattr(
+            converter,
+            "download_video",
+            lambda _source_url, _output_dir: temp_video,
+        )
+
+        class _FakeVideoConverter:
+            def __init__(self, _settings=None):
+                pass
+
+            def extract_and_describe_frames(
+                self,
+                transcript,
+                video_path,
+                base_output_dir,
+                interval,
+                max_frames,
+            ):
+                assert transcript == "[00:00 - 00:02] test"
+                assert video_path == temp_video
+                assert base_output_dir == tmp_path
+                assert interval > 0
+                assert max_frames > 0
+                return [desc_file], [0.0]
+
+        monkeypatch.setattr(
+            "flavia.content.converters.video_converter.VideoConverter",
+            _FakeVideoConverter,
+        )
+
+        result_paths, result_timestamps = converter.extract_and_describe_frames(
+            source_url=source_url,
+            transcript="[00:00 - 00:02] test",
+            base_output_dir=tmp_path,
+        )
+
+        assert result_paths == [desc_file]
+        assert result_timestamps == [0.0]
+        assert not temp_video.exists()
+
 
 class TestWebPageConverter:
     """Tests for the WebPageConverter."""

@@ -468,6 +468,14 @@ def _online_source_action_menu(
             action_choices.append(
                 _q.Choice(title="Download & describe thumbnail", value="thumbnail")
             )
+            if has_content:
+                action_choices.append(
+                    _q.Choice(title="Extract & describe visual frames", value="extract_frames")
+                )
+                if entry.frame_descriptions:
+                    action_choices.append(
+                        _q.Choice(title="View frame descriptions", value="view_frames")
+                    )
         action_choices.append(_q.Choice(title="View metadata", value="metadata"))
         action_choices.append(_q.Choice(title="Refresh metadata", value="refresh_meta"))
         action_choices.append(_q.Choice(title="Delete source", value="delete"))
@@ -483,6 +491,10 @@ def _online_source_action_menu(
                 action_choices.append("Re-fetch content")
         if is_youtube:
             action_choices.append("Download & describe thumbnail")
+            if has_content:
+                action_choices.append("Extract & describe visual frames")
+                if entry.frame_descriptions:
+                    action_choices.append("View frame descriptions")
         action_choices.extend(["View metadata", "Refresh metadata", "Delete source", "Back"])
 
     action = q_select("Action:", choices=action_choices)
@@ -510,6 +522,13 @@ def _online_source_action_menu(
     # --- Thumbnail (YouTube only) -----------------------------------------
     elif action in ("thumbnail", "Download & describe thumbnail"):
         _fetch_youtube_thumbnail(entry, catalog, config_dir, base_dir, converted_dir, settings)
+
+    # --- YouTube frame extraction ------------------------------------------
+    elif action in ("extract_frames", "Extract & describe visual frames"):
+        _extract_youtube_frames(entry, catalog, config_dir, base_dir, converted_dir, settings)
+
+    elif action in ("view_frames", "View frame descriptions"):
+        _view_frame_descriptions(entry, base_dir)
 
     # --- View metadata ----------------------------------------------------
     elif action in ("metadata", "View metadata"):
@@ -674,6 +693,100 @@ def _fetch_youtube_thumbnail(
     except ValueError:
         thumb_rel = str(md_path)
     entry.source_metadata["thumbnail_description_file"] = thumb_rel
+
+    catalog.save(config_dir)
+    console.print("[dim]Catalog saved.[/dim]")
+
+
+def _extract_youtube_frames(
+    entry,
+    catalog: ContentCatalog,
+    config_dir: Path,
+    base_dir: Path,
+    converted_dir: Path,
+    settings: Settings,
+) -> None:
+    """Download YouTube video and extract/describe sampled visual frames."""
+    from flavia.content.converters.online.youtube import YouTubeConverter
+
+    source_url = entry.source_url
+    if not source_url:
+        console.print("[red]No URL available.[/red]")
+        return
+
+    if not entry.converted_to:
+        console.print("[yellow]No transcript/content found. Fetch content first.[/yellow]")
+        return
+
+    transcript_path = (base_dir / entry.converted_to).resolve()
+    try:
+        transcript_path.relative_to(base_dir.resolve())
+    except ValueError:
+        console.print("[red]Blocked unsafe path outside project directory.[/red]")
+        return
+
+    if not transcript_path.exists():
+        console.print("[yellow]Transcript/content file not found. Re-fetch first.[/yellow]")
+        return
+
+    transcript = transcript_path.read_text(encoding="utf-8")
+
+    converter = YouTubeConverter()
+    deps_ok, missing = converter.check_dependencies()
+    if not deps_ok:
+        console.print(
+            f"[red]Missing dependencies: {', '.join(missing)}.[/red]\n"
+            "[dim]Install with: pip install 'flavia[online]'[/dim]"
+        )
+        return
+
+    if not converter._has_yt_dlp():
+        console.print(
+            "[red]Missing dependency: yt-dlp.[/red]\n"
+            "[dim]Install with: pip install 'flavia[online]'[/dim]"
+        )
+        return
+
+    output_dir = converted_dir / "_online" / "youtube"
+    console.print(
+        "[dim]Downloading video and extracting/describing visual frames "
+        "(uses vision LLM and can consume tokens)...[/dim]"
+    )
+    description_files, description_timestamps = converter.extract_and_describe_frames(
+        source_url=source_url,
+        transcript=transcript,
+        base_output_dir=output_dir,
+        settings=settings,
+    )
+
+    if not description_files:
+        console.print(
+            "[yellow]No frame descriptions generated. "
+            "Video may be too short, transcript may lack timestamps, or download failed.[/yellow]"
+        )
+        return
+
+    for i, (desc_file_path, timestamp) in enumerate(
+        zip(description_files, description_timestamps), 1
+    ):
+        console.print(
+            f"  [dim]Frame {i}/{len(description_files)} at timestamp "
+            f"{timestamp:.1f}s: {desc_file_path.name}[/dim]"
+        )
+
+    console.print(f"[green]Generated {len(description_files)} frame descriptions[/green]")
+
+    frame_description_paths = []
+    for desc_path in description_files:
+        try:
+            frame_description_paths.append(str(desc_path.relative_to(base_dir)))
+        except ValueError:
+            frame_description_paths.append(str(desc_path))
+
+    entry.frame_descriptions = frame_description_paths
+
+    if _prompt_yes_no("View frame descriptions now?", "Yes", "No"):
+        _view_frame_descriptions(entry, base_dir)
 
     catalog.save(config_dir)
     console.print("[dim]Catalog saved.[/dim]")

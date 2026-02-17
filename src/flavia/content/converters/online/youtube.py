@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
+from ..video_frame_extractor import DEFAULT_FRAME_SAMPLE_INTERVAL, DEFAULT_MAX_FRAMES
 from .base import OnlineSourceConverter
 
 logger = logging.getLogger(__name__)
@@ -374,6 +375,7 @@ class YouTubeConverter(OnlineSourceConverter):
                     "Transcript retrieval via youtube-transcript-api (free, fast)",
                     "Caption track retrieval via yt-dlp metadata",
                     "Audio download + Mistral transcription fallback",
+                    "Video download + visual frame extraction/description",
                     "Metadata extraction (title, channel, duration)",
                     "Thumbnail download and vision LLM description",
                     "Markdown output with timestamps",
@@ -668,6 +670,111 @@ class YouTubeConverter(OnlineSourceConverter):
     # ------------------------------------------------------------------
     # Thumbnail download + description
     # ------------------------------------------------------------------
+
+    def download_video(
+        self,
+        source_url: str,
+        output_dir: Path,
+    ) -> Optional[Path]:
+        """Download a YouTube video file for frame extraction."""
+        try:
+            import yt_dlp
+        except ImportError:
+            logger.error("yt-dlp not installed for video download.")
+            return None
+
+        video_id = self.parse_video_id(source_url)
+        if not video_id:
+            return None
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        ydl_opts = {
+            "format": (
+                "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/"
+                "best[height<=720][ext=mp4]/best"
+            ),
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "merge_output_format": "mp4",
+            "outtmpl": str(output_dir / f"video_{video_id}.%(ext)s"),
+            "extractor_args": _YT_DLP_EXTRACTOR_ARGS,
+        }
+        self._apply_ytdlp_cookie_options(ydl_opts)
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([source_url])
+
+            candidates: list[Path] = []
+            for file_path in output_dir.glob(f"video_{video_id}.*"):
+                if (
+                    file_path.is_file()
+                    and file_path.suffix.lower() in {".mp4", ".mkv", ".webm", ".mov", ".m4v"}
+                    and file_path.stat().st_size > 0
+                ):
+                    candidates.append(file_path)
+
+            if not candidates:
+                logger.error("yt-dlp produced no downloadable video file")
+                return None
+
+            candidates.sort(key=lambda p: p.stat().st_size, reverse=True)
+            return candidates[0]
+
+        except Exception as e:
+            logger.error(f"Video download failed: {e}")
+            error_text = str(e).lower()
+            if "403" in error_text or "forbidden" in error_text:
+                logger.error(
+                    "YouTube blocked media download (HTTP 403). "
+                    "Try setting FLAVIA_YTDLP_COOKIES_FROM_BROWSER=chrome "
+                    "(or firefox/safari) before running flavia."
+                )
+            return None
+
+    def extract_and_describe_frames(
+        self,
+        source_url: str,
+        transcript: str,
+        base_output_dir: Path,
+        settings=None,
+        interval: int = DEFAULT_FRAME_SAMPLE_INTERVAL,
+        max_frames: int = DEFAULT_MAX_FRAMES,
+    ) -> Tuple[list[Path], list[float]]:
+        """
+        Download a YouTube video and run frame extraction + vision description.
+
+        Returns:
+            Tuple of (description_paths, timestamps). Empty lists on failure.
+        """
+        tmp_video_dir = Path.cwd() / ".flavia" / ".tmp_video"
+        downloaded_video = self.download_video(source_url, tmp_video_dir)
+        if downloaded_video is None:
+            return [], []
+
+        try:
+            from flavia.content.converters.video_converter import VideoConverter
+
+            converter = VideoConverter(settings)
+            return converter.extract_and_describe_frames(
+                transcript=transcript,
+                video_path=downloaded_video,
+                base_output_dir=base_output_dir,
+                interval=interval,
+                max_frames=max_frames,
+            )
+        except Exception as e:
+            logger.error(f"YouTube frame extraction failed: {e}")
+            return [], []
+        finally:
+            try:
+                downloaded_video.unlink(missing_ok=True)
+                if tmp_video_dir.exists() and not any(tmp_video_dir.iterdir()):
+                    tmp_video_dir.rmdir()
+            except OSError:
+                pass
 
     def download_thumbnail(
         self,
