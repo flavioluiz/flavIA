@@ -89,6 +89,7 @@ CATEGORY_ORDER = [
     "Agents",
     "Models & Providers",
     "Information",
+    "Index",
 ]
 
 
@@ -896,5 +897,62 @@ def cmd_compact(ctx: CommandContext, args: str) -> bool:
             ctx.console.print(f"[red]Compaction failed: {e}[/red]")
     else:
         ctx.console.print("[yellow]Compaction cancelled.[/yellow]")
+
+    return True
+
+
+@register_command(
+    name="/index-build",
+    category="Index",
+    short_desc="Rebuild entire index",
+    long_desc="Full rebuild: rechunk and re-embed all converted documents. "
+    "This clears existing chunks and vectors and rebuilds from scratch.",
+    usage="/index-build",
+    related=["/index-update", "/index-stats"],
+)
+def cmd_index_build(ctx: CommandContext, args: str) -> bool:
+    """Full rebuild: rechunk + re-embed all converted docs."""
+    from flavia.content.indexer.index_manager import build_index, display_build_results
+
+    results = build_index(ctx.settings.base_dir, ctx.settings, ctx.console)
+    if not results.get("cancelled"):
+        display_build_results(results, ctx.console)
+
+    return True
+
+
+@register_command(
+    name="/index-update",
+    category="Index",
+    short_desc="Update index incrementally",
+    long_desc="Incremental update: only process new/modified files detected by checksum. "
+    "Much faster than full rebuild for small changes.",
+    usage="/index-update",
+    related=["/index-build", "/index-stats"],
+)
+def cmd_index_update(ctx: CommandContext, args: str) -> bool:
+    """Incremental: only new/modified docs (by checksum)."""
+    from flavia.content.indexer.index_manager import update_index, display_build_results
+
+    results = update_index(ctx.settings.base_dir, ctx.settings, ctx.console)
+    display_build_results(results, ctx.console)
+
+    return True
+
+
+@register_command(
+    name="/index-stats",
+    category="Index",
+    short_desc="Show index statistics",
+    long_desc="Display index statistics: chunk count, vector count, document count, "
+    "index DB size, last indexed timestamp, and modalities present.",
+    usage="/index-stats",
+    related=["/index-build", "/index-update"],
+)
+def cmd_index_stats(ctx: CommandContext, args: str) -> bool:
+    """Show chunk count, vector count, index DB size, last updated."""
+    from flavia.content.indexer.index_manager import show_index_stats
+
+    show_index_stats(ctx.settings.base_dir, ctx.console)
 
     return True
