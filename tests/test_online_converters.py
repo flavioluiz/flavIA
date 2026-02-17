@@ -47,6 +47,10 @@ class TestYouTubeConverter:
         converter = YouTubeConverter()
         assert not converter.can_handle_source("https://vimeo.com/123")
         assert not converter.can_handle_source("https://example.com/video")
+        assert not converter.can_handle_source("https://notyoutube.com/watch?v=dQw4w9WgXcQ")
+        assert not converter.can_handle_source(
+            "https://example.com/path/youtube.com/watch?v=dQw4w9WgXcQ"
+        )
 
     def test_get_metadata_returns_source_info(self):
         """Get metadata returns source type and URL."""
@@ -174,23 +178,41 @@ class TestOnlineSourceConverterBase:
         assert not converter.can_handle_source("https://other.com/page")
 
     def test_check_dependencies(self):
-        """Check dependencies reports missing packages."""
+        """YouTube converter accepts at least one transcript backend."""
         converter = YouTubeConverter()
-        # yt_dlp and whisper are likely not installed in test env
         ok, missing = converter.check_dependencies()
-        # At least one should be missing
-        assert not ok or len(missing) == 0
+        assert ok is True or missing == ["youtube_transcript_api", "yt_dlp"]
 
     def test_check_dependencies_uses_import_map(self, monkeypatch):
-        """Package-to-module mapping is honored for dependency checking."""
-        converter = WebPageConverter()
+        """YouTube dependency check passes when either backend is present."""
+        converter = YouTubeConverter()
 
         def fake_find_spec(module_name):
-            if module_name == "trafilatura":
+            if module_name == "youtube_transcript_api":
                 return object()
             return None
 
         monkeypatch.setattr(importlib.util, "find_spec", fake_find_spec)
+        ok, missing = converter.check_dependencies()
+
+        assert ok is True
+        assert missing == []
+
+    def test_youtube_check_dependencies_fails_when_none_available(self, monkeypatch):
+        """YouTube dependency check fails when both backends are unavailable."""
+        converter = YouTubeConverter()
+
+        monkeypatch.setattr(importlib.util, "find_spec", lambda _module_name: None)
+        ok, missing = converter.check_dependencies()
+
+        assert ok is False
+        assert missing == ["youtube_transcript_api", "yt_dlp"]
+
+    def test_webpage_check_dependencies_is_optional(self, monkeypatch):
+        """WebPage converter remains usable without trafilatura."""
+        converter = WebPageConverter()
+
+        monkeypatch.setattr(importlib.util, "find_spec", lambda _module_name: None)
         ok, missing = converter.check_dependencies()
 
         assert ok is True

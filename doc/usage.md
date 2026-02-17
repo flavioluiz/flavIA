@@ -305,7 +305,9 @@ Inside the interactive CLI:
 3. Press Esc/Ctrl+C (or choose "Back to chat") to return.
 
 Notes:
-- Online source converters are currently placeholders (URLs are cataloged, but content fetching/conversion is not implemented yet).
+- Online source converters are implemented. `/catalog` can fetch/re-fetch, view content/metadata, summarize, and delete YouTube/webpage sources.
+- YouTube sources support transcript retrieval (youtube-transcript-api), audio fallback transcription via Mistral (yt-dlp + `MISTRAL_API_KEY`), and thumbnail download/description.
+- Web pages are fetched with `httpx`, extracted with `trafilatura` when available, and fall back to basic HTML text extraction when `trafilatura` is missing.
 - Online sources are persisted in `.flavia/content_catalog.json`.
 - `PDF Files` menu in `/catalog` supports per-file quality display, local text extraction, and explicit Mistral OCR execution.
 - `Office Documents` menu in `/catalog` supports per-file conversion to markdown and summary/quality refresh.
@@ -316,6 +318,7 @@ Notes:
 - Office conversion requires installing the `office` extra; legacy/OpenDocument formats also require LibreOffice CLI.
 - Mistral OCR requires installing the `ocr` extra and exporting `MISTRAL_API_KEY`.
 - Audio/video transcription requires installing the `transcription` extra and exporting `MISTRAL_API_KEY` (shared with OCR).
+- Online source processing requires installing the `online` extra. Use `.venv/bin/pip install -e ".[online]"`.
 - Visual frame extraction from videos also requires a vision-capable model configured via `IMAGE_VISION_MODEL` or `providers.yaml` (uses existing vision API infrastructure).
 - Extracted frames are downscaled/compressed and visually similar consecutive frames are deduplicated (keeping the latest frame) to reduce token usage and processing time.
 - Frame descriptions are generated as individual markdown files in `.converted/video_name_frames/` subdirectories and can be viewed from `/catalog`.

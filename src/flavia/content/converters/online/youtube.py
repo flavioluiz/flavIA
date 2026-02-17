@@ -12,17 +12,24 @@ Dependencies (optional extras -- ``pip install 'flavia[online]'``):
 """
 
 import hashlib
+import importlib.util
 import logging
 import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
 from .base import OnlineSourceConverter
 
 logger = logging.getLogger(__name__)
+_YOUTUBE_HOSTS = {
+    "youtube.com",
+    "m.youtube.com",
+    "music.youtube.com",
+    "youtu.be",
+}
 
 
 class YouTubeConverter(OnlineSourceConverter):
@@ -47,6 +54,35 @@ class YouTubeConverter(OnlineSourceConverter):
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _module_available(module_name: str) -> bool:
+        """Return True if an importable module is available."""
+        try:
+            return importlib.util.find_spec(module_name) is not None
+        except (ImportError, ModuleNotFoundError, ValueError):
+            return False
+
+    @classmethod
+    def _has_yt_dlp(cls) -> bool:
+        return cls._module_available("yt_dlp")
+
+    @classmethod
+    def _has_transcript_api(cls) -> bool:
+        return cls._module_available("youtube_transcript_api")
+
+    def can_handle_source(self, source_url: str) -> bool:
+        """Check if URL is a valid YouTube host and has a parseable video id."""
+        url = source_url.strip()
+        if not url:
+            return False
+
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower().replace("www.", "")
+        if host not in _YOUTUBE_HOSTS:
+            return False
+
+        return self.parse_video_id(url) is not None
+
+    @staticmethod
     def parse_video_id(url: str) -> Optional[str]:
         """Extract the YouTube video ID from a URL.
 
@@ -67,7 +103,7 @@ class YouTubeConverter(OnlineSourceConverter):
         parsed = urlparse(url)
         hostname = (parsed.hostname or "").lower().replace("www.", "")
 
-        if hostname in ("youtube.com", "m.youtube.com"):
+        if hostname in ("youtube.com", "m.youtube.com", "music.youtube.com"):
             # /watch?v=ID
             if parsed.path == "/watch":
                 qs = parse_qs(parsed.query)
@@ -91,6 +127,18 @@ class YouTubeConverter(OnlineSourceConverter):
             return match.group(1)
 
         return None
+
+    def check_dependencies(self) -> tuple[bool, list[str]]:
+        """
+        Check availability for at least one transcript backend.
+
+        Fetch can succeed with either:
+        - youtube-transcript-api (captions already available), or
+        - yt-dlp (plus Mistral key) fallback path.
+        """
+        if self._has_transcript_api() or self._has_yt_dlp():
+            return True, []
+        return False, ["youtube_transcript_api", "yt_dlp"]
 
     # ------------------------------------------------------------------
     # Core interface
@@ -561,7 +609,7 @@ class YouTubeConverter(OnlineSourceConverter):
         lines.append(f"# {title}")
         lines.append("")
         lines.append("---")
-        lines.append(f"source_type: youtube")
+        lines.append("source_type: youtube")
         lines.append(f"source_url: `{source_url}`")
         lines.append(f"video_id: `{video_id}`")
 

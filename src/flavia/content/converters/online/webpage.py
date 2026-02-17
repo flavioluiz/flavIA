@@ -51,6 +51,15 @@ class WebPageConverter(OnlineSourceConverter):
     requires_dependencies = ["trafilatura"]
     dependency_import_map: dict[str, str] = {}
 
+    def check_dependencies(self) -> tuple[bool, list[str]]:
+        """
+        Web page conversion can run without optional extractor deps.
+
+        ``trafilatura`` improves quality, but fallback extraction keeps the
+        feature usable when it is not installed.
+        """
+        return True, []
+
     # ------------------------------------------------------------------
     # URL helpers
     # ------------------------------------------------------------------

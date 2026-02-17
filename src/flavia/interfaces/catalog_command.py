@@ -648,7 +648,14 @@ def _fetch_youtube_thumbnail(
         )
         return
 
-    console.print(f"[dim]Downloading and describing thumbnail...[/dim]")
+    if not converter._has_yt_dlp():
+        console.print(
+            "[red]Missing dependency: yt-dlp.[/red]\n"
+            "[dim]Install with: pip install 'flavia[online]'[/dim]"
+        )
+        return
+
+    console.print("[dim]Downloading and describing thumbnail...[/dim]")
 
     output_dir = converted_dir / "_online" / "youtube"
     result = converter.download_and_describe_thumbnail(source_url, output_dir)

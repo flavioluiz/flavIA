@@ -106,6 +106,23 @@ Notes:
 - Legacy formats (`.doc`, `.xls`, `.ppt`) and OpenDocument files (`.odt`, `.ods`, `.odp`) use a LibreOffice CLI conversion step.
 - Ensure `libreoffice`/`soffice` is available in your PATH when working with these formats.
 
+## Online source converters (optional)
+
+To enable YouTube and web page conversion in `/catalog`:
+
+```bash
+.venv/bin/pip install -e ".[online]"
+```
+
+This installs:
+- `yt-dlp` (YouTube metadata/audio/thumbnail)
+- `youtube-transcript-api` (free subtitle transcript retrieval when available)
+- `trafilatura` (high-quality web article extraction)
+
+Notes:
+- Web page conversion still works with a basic fallback extractor if `trafilatura` is unavailable.
+- YouTube audio transcription fallback uses the same `MISTRAL_API_KEY` as OCR/transcription features.
+
 ## Development dependencies
 
 ```bash
