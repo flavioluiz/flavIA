@@ -253,6 +253,7 @@ def test_run_basic_setup_keeps_main_tools_read_only_when_write_not_authorized(tm
         "search_files",
         "get_file_info",
         "query_catalog",
+        "search_chunks",
         "get_catalog_summary",
         "analyze_image",
         "compact_context",

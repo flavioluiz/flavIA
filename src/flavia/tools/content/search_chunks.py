@@ -66,16 +66,34 @@ class SearchChunksTool(BaseTool):
         config_dir = base_dir / ".flavia"
         index_dir = base_dir / ".index"
 
-        query = args.get("query", "")
-        if not query or not query.strip():
+        query = args.get("query")
+        if not isinstance(query, str) or not query.strip():
             return "Error: query parameter is required and cannot be empty."
+        query = query.strip()
 
-        top_k = args.get("top_k", 10)
+        top_k_raw = args.get("top_k", 10)
+        if isinstance(top_k_raw, bool):
+            return "Error: top_k must be an integer between 1 and 100."
+        if isinstance(top_k_raw, int):
+            top_k = top_k_raw
+        elif isinstance(top_k_raw, str) and top_k_raw.strip().isdigit():
+            top_k = int(top_k_raw.strip())
+        else:
+            return "Error: top_k must be an integer between 1 and 100."
         if top_k <= 0 or top_k > 100:
             return "Error: top_k must be between 1 and 100."
 
         file_type_filter = args.get("file_type_filter")
+        if file_type_filter is not None:
+            if not isinstance(file_type_filter, str):
+                return "Error: file_type_filter must be a string."
+            file_type_filter = file_type_filter.strip().lower() or None
+
         doc_name_filter = args.get("doc_name_filter")
+        if doc_name_filter is not None:
+            if not isinstance(doc_name_filter, str):
+                return "Error: doc_name_filter must be a string."
+            doc_name_filter = doc_name_filter.strip().lower() or None
 
         allowed_config, config_error = check_read_permission(config_dir, agent_context)
         if not allowed_config:
@@ -107,11 +125,16 @@ class SearchChunksTool(BaseTool):
                 matches_filter = True
 
                 if file_type_filter:
-                    if entry.file_type != file_type_filter:
+                    file_type_candidates = {
+                        (entry.file_type or "").lower(),
+                        (entry.category or "").lower(),
+                        (entry.extension or "").lower().lstrip("."),
+                    }
+                    if file_type_filter not in file_type_candidates:
                         matches_filter = False
 
                 if doc_name_filter:
-                    if doc_name_filter.lower() not in entry.name.lower():
+                    if doc_name_filter not in entry.name.lower():
                         matches_filter = False
 
                 if matches_filter:
@@ -159,22 +182,25 @@ class SearchChunksTool(BaseTool):
             citation_parts.append(doc_name)
 
             if modality in ("video_transcript", "video_frame"):
-                citation_parts.append("video transcript")
+                citation_parts.append("video transcript" if modality == "video_transcript" else "video frame")
             elif heading_path:
                 hierarchy = " > ".join(heading_path)
                 citation_parts.append(hierarchy)
 
             line_start = locator.get("line_start")
             line_end = locator.get("line_end")
-
+            line_annotation = ""
             if line_start is not None or line_end is not None:
-                if line_end is None:
-                    line_str = f"line {line_start}"
+                if line_start is not None and line_end is not None:
+                    line_annotation = f"lines {line_start}–{line_end}"
+                elif line_start is not None:
+                    line_annotation = f"line {line_start}"
                 else:
-                    line_str = f"lines {line_start}-{line_end}"
-                citation_parts.append(f"({line_str})")
+                    line_annotation = f"line {line_end}"
 
             citation = " — ".join(citation_parts)
+            if line_annotation:
+                citation = f"{citation} ({line_annotation})"
             parts.append(f"[{idx}] {citation}")
 
             temporal_bundle = result.get("temporal_bundle")
@@ -184,11 +210,13 @@ class SearchChunksTool(BaseTool):
                     time_display = item.get("time_display", "")
                     modality_label = item.get("modality_label", "")
                     text = item.get("text", "").strip()
-
-                    if time_display:
-                        parts.append(f'    {time_display} {modality_label}: "{text}"')
+                    context_label = " ".join(
+                        part for part in (time_display, modality_label) if part
+                    ).strip()
+                    if context_label:
+                        parts.append(f'    {context_label}: "{text}"')
                     else:
-                        parts.append(f'    {modality_label}: "{text}"')
+                        parts.append(f'    "{text}"')
             else:
                 text = result.get("text", "").strip()
                 parts.append(f'    "{text}"')

@@ -203,6 +203,7 @@ main:
     - search_files
     - get_file_info
     - query_catalog
+    - search_chunks
     - get_catalog_summary
     - analyze_image
     - compact_context

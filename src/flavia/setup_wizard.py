@@ -41,6 +41,7 @@ RUNTIME_CORE_TOOLS = [
     "search_files",
     "get_file_info",
     "query_catalog",
+    "search_chunks",
     "get_catalog_summary",
     "analyze_image",
     "compact_context",
@@ -201,6 +202,7 @@ Available tools:
 - search_files: Search for patterns in files
 - get_file_info: Get file metadata
 - query_catalog: Search the content catalog for files by name, type, or content
+- search_chunks: Semantic search over indexed document chunks with citations
 - get_catalog_summary: Get a high-level overview of the project content
 - analyze_image: Describe images with a vision-capable model
 - compact_context: Compact long conversations and keep key context
@@ -211,7 +213,7 @@ Available tools:
 
 When generating agents.yaml:
 - Default `main.tools` should include all read/runtime tools:
-  read_file, list_files, search_files, get_file_info, query_catalog, get_catalog_summary,
+  read_file, list_files, search_files, get_file_info, query_catalog, search_chunks, get_catalog_summary,
   analyze_image, compact_context, spawn_agent, spawn_predefined_agent
 - Only include write-capable tools when write access is explicitly requested:
   write_file, edit_file, insert_text, append_file, delete_file, create_directory,
@@ -278,7 +280,7 @@ When generating agents.yaml, valid runtime write tools are:
 - write_file, edit_file, insert_text, append_file, delete_file, create_directory,
   remove_directory, compile_latex, refresh_catalog
 - Also include these read/runtime tools by default:
-  read_file, list_files, search_files, get_file_info, query_catalog, get_catalog_summary,
+  read_file, list_files, search_files, get_file_info, query_catalog, search_chunks, get_catalog_summary,
   analyze_image, compact_context, spawn_agent, spawn_predefined_agent
 
 Include a project_description that captures the academic subject.

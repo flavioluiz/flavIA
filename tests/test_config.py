@@ -135,5 +135,6 @@ def test_init_local_config_uses_broad_read_only_toolset(tmp_path):
     agents_data = (tmp_path / ".flavia" / "agents.yaml").read_text(encoding="utf-8")
     assert "- analyze_image" in agents_data
     assert "- compact_context" in agents_data
+    assert "- search_chunks" in agents_data
     assert "- refresh_catalog" not in agents_data
     assert "- compile_latex" not in agents_data
