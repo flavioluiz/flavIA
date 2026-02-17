@@ -17,7 +17,7 @@ Split every `.converted/*.md` file into retrievable fragments (300–800 tokens)
 
 - **text/ocr/audio/image** — split by heading hierarchy and paragraph blocks; merge short paragraphs, split oversized ones at sentence boundaries.
 - **video_transcript** — group timed transcript segments into ~60-second windows; parse `[HH:MM:SS]` or `MM:SS` timecodes.
-- **video_frame** — one chunk per `## Frame at HH:MM:SS` section in frame description files.
+- **video_frame** — one chunk per frame section, supporting both `## Frame at HH:MM:SS` and converter output `# Visual Frame at HH:MM:SS`.
 
 **Output** (`chunk` dict):
 ```json
@@ -217,6 +217,91 @@ Update `_build_catalog_first_guidance()` in `src/flavia/agent/context.py`:
 - Keep `query_catalog` for **metadata/file-discovery** questions.
 - Guidance text:
   > "Use `search_chunks` when answering questions about document content (what, how, why). Use `query_catalog` to discover which files exist or filter by type/name."
+
+---
+
+## Acceptance Metrics (Definition of Done)
+
+These metrics define when each task is considered complete in a production-ready way.
+
+### Shared evaluation protocol
+
+- **Eval corpus**: at least 200 converted documents, including at least 20 videos with transcript + frame descriptions.
+- **Query set**: at least 120 labeled queries (metadata-discovery, semantic content, exact-term lookup, and video temporal questions).
+- **Execution cadence**: run on every PR that touches `src/flavia/content/indexer/*`, `src/flavia/tools/content/*`, or `/index` commands.
+
+### 11.1 Chunk Pipeline
+
+| Metric | Target | Verification |
+|--------|--------|--------------|
+| Chunk coverage | 100% of valid `converted_to` files generate >=1 chunk | Integration test over catalog fixtures |
+| Chunk size quality | >=90% of text chunks in 300-800 token band (char proxy) | Offline chunk stats report |
+| Determinism | Same input -> identical `chunk_id` set and order | Snapshot test (double run) |
+| Video parsing support | 100% parse for `[start-end]`, `[start]`, and `# Visual Frame at` formats | Unit tests |
+| Path safety | 0 reads outside vault base dir | Security regression tests |
+
+### 11.2 Embedding Index (sqlite-vec)
+
+| Metric | Target | Verification |
+|--------|--------|--------------|
+| Vector coverage | 100% of chunks in `chunks_meta` have vector row | DB consistency check |
+| Dimensionality | 100% vectors with dim=768 | DB validator |
+| Normalization quality | L2 norm in [0.99, 1.01] for >=99.9% vectors | Offline audit script |
+| Incremental idempotency | Re-run with unchanged corpus inserts 0 new vectors | `/index update` dry run/check |
+| Partial failure handling | Index job continues and reports failed chunk IDs | Integration test with injected failures |
+
+### 11.3 FTS Index (SQLite FTS5)
+
+| Metric | Target | Verification |
+|--------|--------|--------------|
+| FTS coverage | 100% of chunks present in `chunks_fts` | DB consistency check |
+| Exact-term recall@10 | >=0.95 on exact-term subset (codes, IDs, acronyms) | Eval query set |
+| Incremental sync | No stale/deleted chunk IDs after update | Rebuild-vs-update parity check |
+| Query latency | p95 <= 200 ms on 50k chunks (local benchmark) | Benchmark job |
+
+### 11.4 Hybrid Retrieval Engine
+
+| Metric | Target | Verification |
+|--------|--------|--------------|
+| Ranking quality | nDCG@10 >= max(vector-only, fts-only) + 10% | Eval benchmark |
+| Retrieval latency | p95 <= 1.5 s for `top_k=10` on 50k chunks | Benchmark job |
+| Diversity policy | 100% responses enforce max 3 chunks/doc | Unit + integration tests |
+| Filter correctness | 100% respect `file_type_filter` and `doc_name_filter` | Tool-level tests |
+
+### 11.5 Video Temporal Expansion
+
+| Metric | Target | Verification |
+|--------|--------|--------------|
+| Window correctness | Transcript anchor ±15s, frame anchor ±10s (bounded by media edges) | Deterministic unit tests |
+| Chronological order | 100% output sorted by time | Unit tests |
+| Evidence completeness | Anchor chunk always included in expanded bundle | Integration test |
+| Temporal recall@5 | >=0.90 on labeled video temporal queries | Eval subset |
+
+### 11.6 `search_chunks` Tool
+
+| Metric | Target | Verification |
+|--------|--------|--------------|
+| Citation completeness | 100% results include doc name + locator (line/time) | Schema/format tests |
+| Output validity | 100% tool responses pass JSON/schema validation | Tool contract tests |
+| Tool latency | p95 <= 2.0 s for `top_k=10` on benchmark corpus | End-to-end benchmark |
+| Empty-result behavior | 100% return explicit "no results" structure (no crash) | Negative tests |
+
+### 11.7 Index CLI Commands (`/index`)
+
+| Metric | Target | Verification |
+|--------|--------|--------------|
+| Command coverage | `/index build`, `/index update`, `/index stats` all smoke-tested | CLI integration tests |
+| Update efficiency | Unchanged corpus update <= 5% of full build runtime | Benchmark comparison |
+| Stats accuracy | Reported counts match DB counts exactly | Consistency test |
+| Rebuild reproducibility | Two full builds on same corpus produce identical IDs/counts | Snapshot parity test |
+
+### 11.8 Agent Guidance Update
+
+| Metric | Target | Verification |
+|--------|--------|--------------|
+| Prompt completeness | Guidance explicitly differentiates `search_chunks` vs `query_catalog` | Prompt unit test |
+| Routing behavior | >=90% correct tool choice on labeled routing prompts | Behavior test with fixed stubs |
+| Regression guard | Existing metadata/file-discovery flows remain unchanged | Agent prompt regression tests |
 
 ---
 
