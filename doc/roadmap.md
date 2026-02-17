@@ -12,9 +12,9 @@ This roadmap outlines **53 tasks** across **11 major areas** to extend flavIA fr
 
 ### Quick Stats
 - **13 Easy tasks** (< 1 day each) — Quick wins for immediate value — **7 completed** ✓
-- **30 Medium tasks** (1-2 days each) — Core feature development — **11 completed** ✓
+- **30 Medium tasks** (1-2 days each) — Core feature development — **12 completed** ✓
 - **10 Hard tasks** (3+ days each) — Complex integrations requiring careful design — **1 completed** ✓
-- **Total completed so far**: **19 / 53 tasks** ✓
+- **Total completed so far**: **20 / 53 tasks** ✓
 
 ### Strategic Priorities
 1. **Immediate value** (Tasks 4.1-4.8, 8.1): Improve CLI UX and add token tracking
@@ -120,7 +120,7 @@ Enable the agent to send files directly through the Telegram chat, with structur
 Transform keyword-based catalog search into a full RAG pipeline: chunk converted documents, embed with `hf:nomic-ai/nomic-embed-text-v1.5`, store vectors in **sqlite-vec**, add **SQLite FTS5** for exact-term search, and expose hybrid retrieval to the agent.
 
 - ~~**11.1** Chunk Pipeline (Medium)~~ — **DONE** ✓ Split `.converted/*.md` files into 300–800 token chunks by heading/paragraph; two streams for video (transcript + frames with timecodes)
-- **11.2** Embedding Index — sqlite-vec (Medium) — Embed chunks via Synthetic provider; store L2-normalised 768-dim vectors in `vec0` table
+- ~~**11.2** Embedding Index — sqlite-vec (Medium)~~ — **DONE** ✓ Embed chunks via Synthetic provider; store L2-normalised 768-dim vectors in `vec0` table
 - **11.3** FTS Index — SQLite FTS5 (Easy) — BM25 full-text search for exact-term matching (numbers, codes, siglas)
 - **11.4** Hybrid Retrieval Engine (Medium) — `retrieve(question, filters, top_k)`: Stage A catalog router + Stage B vector+FTS merge via RRF
 - **11.5** Video Temporal Expansion (Medium) — Expand anchor timecode ±15s (transcript) / ±10s (frames); return chronological evidence bundle
@@ -302,12 +302,12 @@ Task 10.3 benefits from ── Task 3.4 (Abstract Messaging Interface)
 Task 10.3 benefits from ── Task 3.1 (YAML Bot Config, for per-bot file size limits)
 
 Area 11 -- Semantic Retrieval & RAG Pipeline:
-~~Task 11.1 (Chunk Pipeline)~~ ✓ ──┬── Task 11.2 (Embedder + sqlite-vec) ──┐
-                                    └── Task 11.3 (FTS5 Index) ──────────────┴── Task 11.4 (Hybrid Retrieval)
+~~Task 11.1 (Chunk Pipeline)~~ ✓ ──┬── ~~Task 11.2 (Embedder + sqlite-vec)~~ ✓ ──┐
+                                    └── Task 11.3 (FTS5 Index) ────────────────────┴── Task 11.4 (Hybrid Retrieval)
                                                                                         ├── Task 11.5 (Video Temporal Expansion)
                                                                                         └── Task 11.6 (search_chunks Tool)
                                                                                                     └── Task 11.8 (Agent Guidance)
-~~Task 11.1~~ + Task 11.2 + Task 11.3 ──────────────────────────────────────────────── Task 11.7 (Index CLI)
+~~Task 11.1~~ ✓ + ~~Task 11.2~~ ✓ + Task 11.3 ────────────────────────────────────────── Task 11.7 (Index CLI)
 
 Cross-area dependencies for Area 11:
 Task 11.1 depends on ── Area 1 (converters produce .converted/ files)
@@ -371,7 +371,7 @@ Tasks ordered by a pragmatic implementation sequence that balances dependency re
 | 47 | ~~**11.1** Chunk pipeline~~ ✓ | ~~Medium~~ | ~~Semantic Retrieval~~ |
 | 48 | **11.3** FTS index (SQLite FTS5) | Easy | Semantic Retrieval |
 | 49 | **11.7** Index CLI commands `/index` | Easy | Semantic Retrieval |
-| 50 | **11.2** Embedding index (sqlite-vec) | Medium | Semantic Retrieval |
+| 50 | ~~**11.2** Embedding index (sqlite-vec)~~ ✓ | ~~Medium~~ | ~~Semantic Retrieval~~ |
 | 51 | **11.4** Hybrid retrieval engine | Medium | Semantic Retrieval |
 | 52 | **11.6** `search_chunks` tool | Easy | Semantic Retrieval |
 | 53 | **11.8** Agent guidance update | Easy | Semantic Retrieval |

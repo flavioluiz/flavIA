@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Embedding Index with sqlite-vec (Task 11.2)**: New `embedder.py` and `vector_store.py` modules in `content/indexer/` for semantic search:
+  - `embed_chunks(chunks, client)` — Batch embed chunks with retry and progress reporting
+  - `embed_query(query, client)` — Embed search queries for retrieval
+  - `get_embedding_client(settings)` — Resolve Synthetic provider for embeddings
+  - `VectorStore` class with `upsert()`, `knn_search()`, `get_existing_chunk_ids()`, `get_stats()`
+  - SQLite schema: `chunks_vec` (vec0 virtual table) + `chunks_meta` (metadata join table)
+  - L2 normalization of all vectors for cosine similarity via dot product
+  - New optional dependency extra: `rag` (`sqlite-vec`)
 - **Audio/Video Transcription Converter (Task 1.1)**: New `AudioConverter` and `VideoConverter` in `content/converters/` supporting audio and video file transcription:
   - Audio formats: `.mp3`, `.wav`, `.flac`, `.ogg`, `.m4a`, `.aac`, `.wma`, `.opus`, `.aiff`, `.ape`, `.alac`, `.amr`
   - Video formats: `.mp4`, `.avi`, `.mkv`, `.mov`, `.wmv`, `.flv`, `.webm`, `.mpeg`, `.mpg`, `.3gp`, `.m4v`, `.ts`, `.vob`, `.ogv`
