@@ -200,6 +200,12 @@ Inside a chat session, the following commands are available:
 | `/provider-setup` | Run interactive provider configuration wizard |
 | `/provider-manage [id]` | Manage provider models and settings |
 | `/provider-test [id]` | Test connection to a provider |
+| `/index build` | Full index rebuild: clears and reindexes all converted docs |
+| `/index update` | Incremental index update: new/modified docs + stale cleanup |
+| `/index stats` | Show index statistics (chunks, docs, size, last indexed) |
+| `/index-build` | Legacy alias for `/index build` |
+| `/index-update` | Legacy alias for `/index update` |
+| `/index-stats` | Legacy alias for `/index stats` |
 | `/tools` | List available tools by category |
 | `/tools <name>` | Show tool schema and parameters |
 | `/config` | Show configuration paths and active settings |
@@ -212,6 +218,7 @@ The unified help system organizes commands into logical categories:
 - **Session**: `/quit`, `/reset`, `/help`, `/compact`
 - **Agents**: `/agent`, `/agent_setup`
 - **Models & Providers**: `/model`, `/providers`, `/provider-setup`, `/provider-manage`, `/provider-test`
+- **Index**: `/index <build\|update\|stats>` (plus legacy aliases `/index-build`, `/index-update`, `/index-stats`)
 - **Information**: `/tools`, `/config`, `/catalog`
 
 Use `/help` without arguments to see all commands with one-line descriptions grouped by category. Use `/help <command>` for detailed help including usage patterns, examples, and related commands:

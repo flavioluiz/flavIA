@@ -22,9 +22,22 @@ from rich.progress import (
 )
 from rich.table import Table
 
+from ..indexer import chunker, embedder, fts, vector_store
 from flavia.config import Settings
 from flavia.content.catalog import ContentCatalog
-from ..indexer import chunker, embedder, fts, vector_store
+
+
+def _safe_resolve(base_dir: Path, path_value: str | Path) -> Path | None:
+    """Resolve path_value under base_dir, rejecting traversal/outside paths."""
+    candidate = path_value if isinstance(path_value, Path) else Path(path_value)
+    if not candidate.is_absolute():
+        candidate = base_dir / candidate
+    try:
+        resolved = candidate.resolve()
+        resolved.relative_to(base_dir.resolve())
+    except (OSError, ValueError):
+        return None
+    return resolved
 
 
 def load_catalog(base_dir: Path) -> ContentCatalog:
@@ -47,7 +60,9 @@ def load_catalog(base_dir: Path) -> ContentCatalog:
     return catalog
 
 
-def get_entries_to_index(catalog: ContentCatalog, incremental: bool = False) -> list[Any]:
+def get_entries_to_index(
+    catalog: ContentCatalog, base_dir: Path, incremental: bool = False
+) -> list[Any]:
     """Get catalog entries that have converted_to files.
 
     Args:
@@ -70,17 +85,45 @@ def get_entries_to_index(catalog: ContentCatalog, incremental: bool = False) -> 
         if incremental and entry.status not in ("new", "modified"):
             continue
 
-        converted_path = base_dir = Path(entry.converted_to)
-        if isinstance(entry.converted_to, str):
-            converted_path = base_dir = entry.converted_to
-
-        entry_path = base_dir / entry.converted_to
-        if not entry_path.exists():
+        converted_path = _safe_resolve(base_dir, entry.converted_to)
+        if converted_path is None or not converted_path.exists():
             continue
 
         entries.append(entry)
 
     return entries
+
+
+def _stale_converted_paths(catalog: ContentCatalog, base_dir: Path) -> list[str]:
+    """List converted paths whose old chunks must be purged on incremental updates."""
+    base_resolved = base_dir.resolve()
+    stale_paths: set[str] = set()
+
+    for entry in catalog.files.values():
+        if entry.status not in ("modified", "missing"):
+            continue
+        if not entry.converted_to:
+            continue
+
+        converted_path = _safe_resolve(base_dir, entry.converted_to)
+        if converted_path is None:
+            continue
+
+        try:
+            stale_paths.add(str(converted_path.relative_to(base_resolved)))
+        except ValueError:
+            stale_paths.add(str(converted_path))
+
+    return sorted(stale_paths)
+
+
+def _save_catalog_after_update(catalog: ContentCatalog, base_dir: Path, console: Console) -> None:
+    """Persist catalog state after index update to keep statuses in sync."""
+    try:
+        catalog.mark_all_current()
+        catalog.save(base_dir / ".flavia")
+    except Exception as e:
+        console.print(f"[yellow]Warning: failed to save updated catalog state: {e}[/yellow]")
 
 
 def clear_index(base_dir: Path, console: Console) -> tuple[int, int]:
@@ -203,6 +246,13 @@ def process_document(
     vector_inserted, vector_updated = vector_store.upsert(vector_items)
     fts_inserted, fts_updated = fts_index.upsert(fts_chunks)
 
+    if vector_inserted != fts_inserted or vector_updated != fts_updated:
+        console.print(
+            "[yellow]Warning: vector/FTS upsert counts diverged; "
+            f"vector=({vector_inserted} added, {vector_updated} updated), "
+            f"fts=({fts_inserted} added, {fts_updated} updated)[/yellow]"
+        )
+
     stats["added"] = vector_inserted
     stats["updated"] = vector_updated
 
@@ -227,7 +277,8 @@ def build_index(
 
     if not force:
         console.print(
-            "[yellow]This will clear the existing index and rebuild from all converted documents.[/yellow]"
+            "[yellow]This will clear the existing index and rebuild from all converted "
+            "documents.[/yellow]"
         )
         console.print("Continue? [y/N] ", end="")
         try:
@@ -251,7 +302,7 @@ def build_index(
             "duration_seconds": time.time() - start_time,
         }
 
-    entries = get_entries_to_index(catalog, incremental=False)
+    entries = get_entries_to_index(catalog, base_dir, incremental=False)
 
     if not entries:
         console.print("[yellow]No files with converted content found.[/yellow]")
@@ -345,8 +396,6 @@ def update_index(base_dir: Path, settings: Settings, console: Console) -> dict[s
         }
 
     console.print("[cyan]Checking for new or modified files...[/cyan]")
-    catalog.update()
-
     update_summary = catalog.update()
 
     new_count = update_summary["counts"]["new"]
@@ -360,46 +409,56 @@ def update_index(base_dir: Path, settings: Settings, console: Console) -> dict[s
     if missing_count > 0:
         console.print(f"[red]Missing documents: {missing_count}[/red]")
 
-    entries = get_entries_to_index(catalog, incremental=True)
+    entries = get_entries_to_index(catalog, base_dir, incremental=True)
 
-    if not entries:
-        console.print("[green]No new or modified documents to index.[/green]")
+    chunks_removed = 0
 
-        with vector_store.VectorStore(base_dir) as vs:
+    with vector_store.VectorStore(base_dir) as vs, fts.FTSIndex(base_dir) as fts_idx:
+        existing_chunk_ids = vs.get_existing_chunk_ids()
+
+        stale_paths = _stale_converted_paths(catalog, base_dir)
+        if stale_paths:
+            stale_chunk_ids = vs.get_chunk_ids_by_converted_paths(stale_paths)
+            if stale_chunk_ids:
+                deleted_vector = vs.delete_chunks(list(stale_chunk_ids))
+                deleted_fts = fts_idx.delete_chunks(list(stale_chunk_ids))
+                chunks_removed = max(deleted_vector, deleted_fts)
+                existing_chunk_ids.difference_update(stale_chunk_ids)
+                console.print(
+                    f"[yellow]Removed {chunks_removed} stale chunks for modified/missing "
+                    "files[/yellow]"
+                )
+
+        if not entries:
+            console.print("[green]No new or modified documents to index.[/green]")
             vs_stats = vs.get_stats()
-        with fts.FTSIndex(base_dir) as fts_idx:
-            fts_stats = fts_idx.get_stats()
+            _save_catalog_after_update(catalog, base_dir, console)
+            return {
+                "documents_processed": 0,
+                "chunks_added": 0,
+                "chunks_updated": 0,
+                "chunks_removed": chunks_removed,
+                "chunk_count": vs_stats["chunk_count"],
+                "duration_seconds": time.time() - start_time,
+            }
 
-        return {
-            "documents_processed": 0,
-            "chunks_added": 0,
-            "chunks_updated": 0,
-            "chunks_removed": 0,
-            "chunk_count": vs_stats["chunk_count"],
-            "duration_seconds": time.time() - start_time,
-        }
+        console.print(f"[cyan]Found {len(entries)} documents to process[/cyan]")
+        console.print("[cyan]Updating index...[/cyan]")
 
-    console.print(f"[cyan]Found {len(entries)} documents to process[/cyan]")
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            MofNCompleteColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("[cyan]Processing documents...", total=len(entries))
 
-    console.print("[cyan]Updating index...[/cyan]")
-
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        TimeElapsedColumn(),
-        MofNCompleteColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task("[cyan]Processing documents...", total=len(entries))
-
-        total_chunks = 0
-        total_added = 0
-        total_updated = 0
-
-        with vector_store.VectorStore(base_dir) as vs, fts.FTSIndex(base_dir) as fts_idx:
-            existing_chunk_ids = vs.get_existing_chunk_ids()
+            total_chunks = 0
+            total_added = 0
+            total_updated = 0
 
             for entry in entries:
                 progress.update(task, description=f"[cyan]Processing: {entry.name}")
@@ -421,7 +480,7 @@ def update_index(base_dir: Path, settings: Settings, console: Console) -> dict[s
 
                 progress.update(task, advance=1)
 
-    chunks_removed = 0
+    _save_catalog_after_update(catalog, base_dir, console)
 
     return {
         "documents_processed": len(entries),
@@ -443,7 +502,9 @@ def show_index_stats(base_dir: Path, console: Console) -> None:
     index_db_path = index_dir / "index.db"
 
     if not index_db_path.exists():
-        console.print("[red]No index found. Run /index-build to create one.[/red]")
+        console.print(
+            "[red]No index found. Run /index build (or /index-build) to create one.[/red]"
+        )
         return
 
     try:
@@ -454,9 +515,6 @@ def show_index_stats(base_dir: Path, console: Console) -> None:
         table = Table(title="[bold]Index Statistics[/bold]", show_header=False)
         table.add_column("", justify="left")
         table.add_column("", justify="right")
-
-        vs_modalities = ", ".join(sorted(vs_stats["modalities"]))
-        fts_modalities = ", ".join(sorted(fts_stats["modalities"]))
 
         table.add_row("Vector chunks:", f"[cyan]{vs_stats['chunk_count']:,}[/cyan]")
         table.add_row("FTS chunks:", f"[cyan]{fts_stats['chunk_count']:,}[/cyan]")
@@ -530,10 +588,9 @@ def display_build_results(results: dict[str, Any], console: Console) -> None:
             f"Duration: [cyan]{duration_str}[/cyan]",
         ]
 
-    panel = Panel(
-        "\n".join(content),
-        title="[bold]Index Build[/bold]",
-        border_style="green",
+    panel_title = (
+        "[bold]Index Build[/bold]" if "chunks_indexed" in results else "[bold]Index Update[/bold]"
     )
+    panel = Panel("\n".join(content), title=panel_title, border_style="green")
 
     console.print(panel)

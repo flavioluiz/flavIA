@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Index CLI Commands (Task 11.7)**: New index lifecycle commands for retrieval data maintenance:
+  - `/index build` (and legacy alias `/index-build`) for full rebuild (clear + rechunk + re-embed)
+  - `/index update` (and legacy alias `/index-update`) for incremental updates of new/modified docs
+  - `/index stats` (and legacy alias `/index-stats`) for chunk/doc counts, index size, modalities, and last indexed timestamp
+  - New `content/indexer/index_manager.py` utilities for build/update/stats workflows
 - **search_chunks Tool (Task 11.6)**: New agent-accessible tool for semantic search across indexed document chunks using hybrid RAG retrieval:
   - `SearchChunksTool` in `tools/content/search_chunks.py` calls `retrieve()` and formats results as annotated context blocks with citations
   - Parameters: `query` (required), `top_k` (default: 10), `file_type_filter`, `doc_name_filter`

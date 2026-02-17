@@ -902,13 +902,39 @@ def cmd_compact(ctx: CommandContext, args: str) -> bool:
 
 
 @register_command(
+    name="/index",
+    category="Index",
+    short_desc="Manage retrieval index",
+    long_desc="Index subcommands: build (full rebuild), update (incremental), "
+    "stats (current index statistics).",
+    usage="/index <build|update|stats>",
+    examples=["/index build", "/index update", "/index stats"],
+    related=["/index-build", "/index-update", "/index-stats"],
+    accepts_args=True,
+)
+def cmd_index(ctx: CommandContext, args: str) -> bool:
+    """Dispatch /index subcommands for index lifecycle actions."""
+    subcommand = args.strip().split(maxsplit=1)[0].lower() if args.strip() else ""
+
+    if subcommand == "build":
+        return cmd_index_build(ctx, "")
+    if subcommand == "update":
+        return cmd_index_update(ctx, "")
+    if subcommand == "stats":
+        return cmd_index_stats(ctx, "")
+
+    ctx.console.print("[red]Usage: /index <build|update|stats>[/red]")
+    return True
+
+
+@register_command(
     name="/index-build",
     category="Index",
-    short_desc="Rebuild entire index",
+    short_desc="Rebuild entire index (legacy alias)",
     long_desc="Full rebuild: rechunk and re-embed all converted documents. "
     "This clears existing chunks and vectors and rebuilds from scratch.",
     usage="/index-build",
-    related=["/index-update", "/index-stats"],
+    related=["/index", "/index-update", "/index-stats"],
 )
 def cmd_index_build(ctx: CommandContext, args: str) -> bool:
     """Full rebuild: rechunk + re-embed all converted docs."""
@@ -924,11 +950,11 @@ def cmd_index_build(ctx: CommandContext, args: str) -> bool:
 @register_command(
     name="/index-update",
     category="Index",
-    short_desc="Update index incrementally",
+    short_desc="Update index incrementally (legacy alias)",
     long_desc="Incremental update: only process new/modified files detected by checksum. "
     "Much faster than full rebuild for small changes.",
     usage="/index-update",
-    related=["/index-build", "/index-stats"],
+    related=["/index", "/index-build", "/index-stats"],
 )
 def cmd_index_update(ctx: CommandContext, args: str) -> bool:
     """Incremental: only new/modified docs (by checksum)."""
@@ -943,11 +969,11 @@ def cmd_index_update(ctx: CommandContext, args: str) -> bool:
 @register_command(
     name="/index-stats",
     category="Index",
-    short_desc="Show index statistics",
+    short_desc="Show index statistics (legacy alias)",
     long_desc="Display index statistics: chunk count, vector count, document count, "
     "index DB size, last indexed timestamp, and modalities present.",
     usage="/index-stats",
-    related=["/index-build", "/index-update"],
+    related=["/index", "/index-build", "/index-update"],
 )
 def cmd_index_stats(ctx: CommandContext, args: str) -> bool:
     """Show chunk count, vector count, index DB size, last updated."""

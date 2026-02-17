@@ -345,6 +345,19 @@ class VectorStore:
         cursor = conn.execute("SELECT chunk_id FROM chunks_meta")
         return {row["chunk_id"] for row in cursor}
 
+    def get_chunk_ids_by_converted_paths(self, converted_paths: list[str]) -> set[str]:
+        """Get chunk IDs for one or more converted file paths."""
+        if not converted_paths:
+            return set()
+
+        conn = self._get_connection()
+        placeholders = ",".join("?" * len(converted_paths))
+        cursor = conn.execute(
+            f"SELECT chunk_id FROM chunks_meta WHERE converted_path IN ({placeholders})",
+            tuple(converted_paths),
+        )
+        return {row["chunk_id"] for row in cursor}
+
     def delete_chunks(self, chunk_ids: list[str]) -> int:
         """Delete chunks by their IDs.
 
