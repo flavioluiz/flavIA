@@ -249,6 +249,7 @@ def test_search_chunks_scopes_by_at_file_reference(tmp_path: Path, monkeypatch) 
     def _fake_retrieve(*, question, base_dir, settings, doc_ids_filter, top_k, **kwargs):
         captured["question"] = question
         captured["doc_ids_filter"] = doc_ids_filter
+        captured["kwargs"] = kwargs
         return [
             {
                 "doc_name": "paper.pdf",
@@ -271,6 +272,7 @@ def test_search_chunks_scopes_by_at_file_reference(tmp_path: Path, monkeypatch) 
 
     assert captured["question"] == "transformer backbone"
     assert captured["doc_ids_filter"] == [expected_doc_id]
+    assert captured["kwargs"]["preserve_doc_scope"] is True
     assert "[1] paper.pdf — Section (lines 1–2)" in output
 
 

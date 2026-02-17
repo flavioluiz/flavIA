@@ -171,6 +171,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Mention-scoped grounding is now stricter: when user prompts include `@...`, the loop requires successful `search_chunks` grounding and returns an explicit error if grounding is repeatedly skipped
   - Comparative prompts with multiple `@mentions` now require cross-document mention coverage before final answer
   - Comparative answers now enforce two-stage structure (evidence matrix then conclusions) with inline citations (`[1]`, `[2]`) before finalization
+  - New explicit-scope preservation in retrieval: when scope comes from `@mentions`, Stage-A router no longer narrows that caller-defined multi-document scope
   - Mention-target errors from `search_chunks` (unresolved/unindexed `@file`) are now propagated directly instead of being masked by fallback responses
   - Turn-level exhaustive propagation: checklist intent in the original user prompt now auto-applies `retrieval_mode=exhaustive` to all `search_chunks` calls in that turn (unless explicitly overridden)
   - RAG debug hint quality improved: router-candidate hint is suppressed when retrieval is already explicitly scoped by caller filters

@@ -400,6 +400,7 @@ class SearchChunksTool(BaseTool):
             )
 
         doc_ids_filter: Optional[list[str]] = None
+        preserve_doc_scope = bool(mentions)
 
         if file_type_filter or doc_name_filter:
             doc_ids_filter = []
@@ -503,6 +504,7 @@ class SearchChunksTool(BaseTool):
                 max_chunks_per_doc=effective_max_chunks_per_doc,
                 expand_video_temporal=settings.rag_expand_video_temporal,
                 retrieval_mode=retrieval_mode,
+                preserve_doc_scope=preserve_doc_scope,
                 debug_info=trace if debug_mode else None,
             )
         except Exception as e:
@@ -541,6 +543,7 @@ class SearchChunksTool(BaseTool):
                         max_chunks_per_doc=max(effective_max_chunks_per_doc, per_doc_backfill_k),
                         expand_video_temporal=settings.rag_expand_video_temporal,
                         retrieval_mode="exhaustive",
+                        preserve_doc_scope=True,
                     )
                 except Exception:
                     continue
@@ -589,6 +592,7 @@ class SearchChunksTool(BaseTool):
                     "unresolved_mentions": [f"@{item}" for item in unresolved_mentions],
                     "unindexed_mentions": [f"@{item}" for item in unindexed_mentions],
                     "doc_ids_filter_count": len(doc_ids_filter) if doc_ids_filter is not None else None,
+                    "preserve_doc_scope": preserve_doc_scope,
                     "trace": trace,
                 },
             )

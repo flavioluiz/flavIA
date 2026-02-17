@@ -424,6 +424,60 @@ class TestCatalogRouterStageA:
     @patch("flavia.content.indexer.retrieval.FTSIndex")
     @patch("flavia.content.indexer.retrieval.VectorStore")
     @patch("flavia.content.indexer.retrieval.get_embedding_client")
+    def test_catalog_router_does_not_narrow_explicit_scope_when_preserve_enabled(
+        self, mock_get_client, mock_vs, mock_fts, tmp_path: Path
+    ):
+        """With preserve_doc_scope=True, Stage A must keep caller-provided scope unchanged."""
+        quantum_entry = _make_catalog_entry(
+            path="docs/quantum.md",
+            summary="Quantum mechanics and entanglement notes",
+            checksum_sha256="sha_quantum",
+        )
+        cooking_entry = _make_catalog_entry(
+            path="docs/cooking.md",
+            summary="Italian cooking recipes and sauces",
+            checksum_sha256="sha_cooking",
+        )
+        _write_catalog(tmp_path, [quantum_entry, cooking_entry])
+
+        quantum_doc_id = _catalog_doc_id(tmp_path, quantum_entry.path, quantum_entry.checksum_sha256)
+        cooking_doc_id = _catalog_doc_id(tmp_path, cooking_entry.path, cooking_entry.checksum_sha256)
+        original_scope = [quantum_doc_id, cooking_doc_id]
+
+        mock_client = MagicMock()
+        mock_get_client.return_value = (mock_client, "model")
+
+        mock_vs_instance = MagicMock()
+        mock_vs_instance.__enter__ = MagicMock(return_value=mock_vs_instance)
+        mock_vs_instance.__exit__ = MagicMock(return_value=None)
+        mock_vs_instance.knn_search.return_value = []
+
+        mock_fts_instance = MagicMock()
+        mock_fts_instance.__enter__ = MagicMock(return_value=mock_fts_instance)
+        mock_fts_instance.__exit__ = MagicMock(return_value=None)
+        mock_fts_instance.search.return_value = []
+
+        mock_vs.return_value = mock_vs_instance
+        mock_fts.return_value = mock_fts_instance
+
+        with patch("flavia.content.indexer.retrieval.embed_query", return_value=[0.0] * 768):
+            settings = Settings()
+            retrieve(
+                "cooking pasta",
+                tmp_path,
+                settings,
+                doc_ids_filter=original_scope,
+                preserve_doc_scope=True,
+            )
+
+        vs_filter = mock_vs_instance.knn_search.call_args[1]["doc_ids_filter"]
+        fts_filter = mock_fts_instance.search.call_args[1]["doc_ids_filter"]
+        assert vs_filter == original_scope
+        assert fts_filter == original_scope
+
+    @patch("flavia.content.indexer.retrieval.FTSIndex")
+    @patch("flavia.content.indexer.retrieval.VectorStore")
+    @patch("flavia.content.indexer.retrieval.get_embedding_client")
     def test_missing_catalog_keeps_original_scope(
         self, mock_get_client, mock_vs, mock_fts, tmp_path: Path
     ):

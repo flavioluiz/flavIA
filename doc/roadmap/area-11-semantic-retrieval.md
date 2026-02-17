@@ -375,6 +375,7 @@ vault/
 | H-11-11 | exhaustive auto-detection was too narrow for real-world wording variants | high-coverage mode not always triggered on list/comparison tasks | expanded multilingual exhaustive cues (list-only, compare, sem descrição/sem detalhes variants) in agent and tool heuristics | Fixed |
 | H-11-12 | comparative synthesis could be produced semantically but without explicit grounding citations | hard to audit objective support for each conclusion | recursive loop now enforces two-stage comparative output (evidence matrix -> conclusions) with citation markers before finalizing | Fixed |
 | H-11-13 | diagnostics review after `/reset` could be misleading (showing old traces) | tuning loop could inspect stale retrieval evidence | added current-turn diagnostics command (`/rag-debug turn`) with `turn_id`-scoped filtering persisted from `search_chunks` | Fixed |
+| H-11-14 | Stage-A router could over-narrow explicit multi-file scope (`@mentions`) | comparative retrieval sometimes ignored part of user-declared document set | added `preserve_doc_scope` path: mention-scoped retrieval keeps caller scope intact while still collecting router diagnostics | Fixed |
 
 ### Current behavior for explicit file targeting (`@arquivo`)
 

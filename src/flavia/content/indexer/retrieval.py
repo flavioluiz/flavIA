@@ -275,6 +275,7 @@ def retrieve(
     max_chunks_per_doc: int = 3,
     expand_video_temporal: bool = True,
     retrieval_mode: str = "balanced",
+    preserve_doc_scope: bool = False,
     debug_info: Optional[dict[str, Any]] = None,
 ) -> list[dict[str, Any]]:
     """Hybrid retrieval combining vector and FTS search with RRF fusion.
@@ -303,6 +304,8 @@ def retrieve(
         retrieval_mode: Retrieval behavior profile.
             - "balanced": default precision/coverage tradeoff
             - "exhaustive": maximize coverage for checklist extraction
+        preserve_doc_scope: When True and `doc_ids_filter` is provided, Stage-A
+            router hints do not narrow caller-provided document scope.
 
     Returns:
         List of result dicts with keys:
@@ -338,6 +341,7 @@ def retrieve(
             "max_chunks_per_doc": max_chunks_per_doc,
             "expand_video_temporal": expand_video_temporal,
             "retrieval_mode": retrieval_mode,
+            "preserve_doc_scope": preserve_doc_scope,
         },
         "filters": {
             "input_doc_ids_filter_count": len(doc_ids_filter) if doc_ids_filter is not None else None
@@ -382,7 +386,11 @@ def retrieve(
     trace["timings_ms"]["router"] = round((time.perf_counter() - router_started) * 1000, 2)
     trace["counts"]["routed_doc_ids"] = len(routed_doc_ids) if routed_doc_ids is not None else None
     if routed_doc_ids:
-        effective_doc_ids_filter = routed_doc_ids
+        # Keep explicit caller scope intact when requested (e.g., user @mentions).
+        if doc_ids_filter is not None and preserve_doc_scope:
+            pass
+        else:
+            effective_doc_ids_filter = routed_doc_ids
     trace["filters"]["effective_doc_ids_filter_count"] = (
         len(effective_doc_ids_filter) if effective_doc_ids_filter is not None else None
     )
