@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **search_chunks Tool (Task 11.6)**: New agent-accessible tool for semantic search across indexed document chunks using hybrid RAG retrieval:
+  - `SearchChunksTool` in `tools/content/search_chunks.py` calls `retrieve()` and formats results as annotated context blocks with citations
+  - Parameters: `query` (required), `top_k` (default: 10), `file_type_filter`, `doc_name_filter`
+  - Converts filters to `doc_ids_filter` via catalog lookup using SHA1-based doc_id derivation
+  - Checks read permissions for `.flavia` and `.index` directories
+  - Validates catalog and vector index existence before retrieval
+  - Formats results with citations: document name, heading path, and line numbers
+  - Supports video temporal bundles with annotated timestamps and modality labels
+  - Output format: `[N] doc_name — Section > Subsection (lines 120–170)\n    "text content"`
+  - Registered in `tools/content/__init__.py` for automatic tool registry
+  - Available only when `.index/index.db` exists
 - **Video Temporal Expansion (Task 11.5)**: New `video_retrieval.py` module in `content/indexer/` for expanding retrieved video chunks with chronological evidence bundles:
   - `expand_temporal_window(anchor_chunk, base_dir, vector_store, fts_index)` — Expands video_transcript (±15s) and video_frame (±10s) chunks with surrounding context
   - Temporal bundle format: chronological across modalities (Audio/Screen)

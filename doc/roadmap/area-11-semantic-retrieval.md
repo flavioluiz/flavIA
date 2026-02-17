@@ -2,7 +2,7 @@
 
 Transform flavIA's current keyword-based catalog search into a full RAG pipeline that embeds converted documents, stores vectors in SQLite, and provides hybrid retrieval (vector + full-text) to the agent.
 
-**Status**: 4 / 8 tasks complete
+**Status**: 5 / 8 tasks complete
 **Dependencies**: Area 1 complete (all converters done ✓)
 
 ---
@@ -168,7 +168,7 @@ When any retrieved chunk has `modality in (video_transcript, video_frame)`, expa
 
 ---
 
-### 11.6 `search_chunks` Tool
+### 11.6 `search_chunks` Tool ~~DONE~~ ✓
 **Difficulty**: Easy
 **Dependencies**: 11.4
 

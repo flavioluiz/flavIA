@@ -4,6 +4,7 @@ from .analyze_image import AnalyzeImageTool
 from .query_catalog import QueryCatalogTool
 from .get_summary import GetSummaryTool
 from .refresh_catalog import RefreshCatalogTool
+from .search_chunks import SearchChunksTool
 
 from ..registry import register_tool
 
@@ -12,5 +13,12 @@ register_tool(AnalyzeImageTool())
 register_tool(QueryCatalogTool())
 register_tool(GetSummaryTool())
 register_tool(RefreshCatalogTool())
+register_tool(SearchChunksTool())
 
-__all__ = ["AnalyzeImageTool", "QueryCatalogTool", "GetSummaryTool", "RefreshCatalogTool"]
+__all__ = [
+    "AnalyzeImageTool",
+    "QueryCatalogTool",
+    "GetSummaryTool",
+    "RefreshCatalogTool",
+    "SearchChunksTool",
+]
