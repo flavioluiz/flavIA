@@ -1,20 +1,13 @@
 """Tests for the vector store module."""
 
-import json
+from importlib.util import find_spec
 from pathlib import Path
 
 import pytest
 
-# Check if sqlite-vec is available
-try:
-    import sqlite_vec
-
-    SQLITE_VEC_AVAILABLE = True
-except ImportError:
-    SQLITE_VEC_AVAILABLE = False
-
 from flavia.content.indexer.vector_store import VectorStore
 
+SQLITE_VEC_AVAILABLE = find_spec("sqlite_vec") is not None
 
 # Skip all tests if sqlite-vec is not installed
 pytestmark = pytest.mark.skipif(
@@ -58,6 +51,15 @@ class TestVectorStoreInit:
 
         with VectorStore(tmp_path, db_path=custom_path) as store:
             store.upsert([("test", [0.1] * 768, {"doc_id": "d1", "modality": "text"})])
+
+        assert custom_path.exists()
+
+    def test_creates_parent_for_explicit_db_path(self, tmp_path: Path):
+        """Should create parent directories for explicit db_path automatically."""
+        custom_path = tmp_path / "nested" / "dir" / "vectors.db"
+
+        with VectorStore(tmp_path, db_path=custom_path) as store:
+            store._get_connection()
 
         assert custom_path.exists()
 
@@ -179,6 +181,28 @@ class TestKnnSearch:
 
             assert all(r["doc_id"] == "doc_a" for r in results)
             assert len(results) == 2
+
+    def test_doc_filter_returns_results_even_when_not_in_global_top_k(self, tmp_path: Path):
+        """Should return nearest in filtered docs, not empty due global-top-k truncation."""
+        with VectorStore(tmp_path) as store:
+            items = [
+                ("close_1", [1.0] + [0.0] * 767, {"doc_id": "doc_a", "modality": "text"}),
+                ("close_2", [1.0] + [0.0] * 767, {"doc_id": "doc_b", "modality": "text"}),
+                ("close_3", [1.0] + [0.0] * 767, {"doc_id": "doc_c", "modality": "text"}),
+                (
+                    "far_filtered",
+                    [0.0, 1.0] + [0.0] * 766,
+                    {"doc_id": "doc_filtered", "modality": "text"},
+                ),
+            ]
+            store.upsert(items)
+
+            query_vec = [1.0] + [0.0] * 767
+            results = store.knn_search(query_vec, k=1, doc_ids_filter=["doc_filtered"])
+
+            assert len(results) == 1
+            assert results[0]["chunk_id"] == "far_filtered"
+            assert results[0]["doc_id"] == "doc_filtered"
 
     def test_returns_metadata(self, tmp_path: Path):
         """Should include all metadata fields in results."""

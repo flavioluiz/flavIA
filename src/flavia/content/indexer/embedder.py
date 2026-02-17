@@ -9,16 +9,52 @@ import math
 import time
 from typing import Callable, Iterator, Optional
 
+import httpx
 from openai import OpenAI
 
 from flavia.config import Settings
-
 
 # Constants
 EMBEDDING_MODEL = "hf:nomic-ai/nomic-embed-text-v1.5"
 EMBEDDING_DIMENSION = 768
 DEFAULT_BATCH_SIZE = 64
 MAX_RETRIES = 3
+
+
+def _create_openai_client(
+    api_key: str,
+    base_url: str,
+    headers: Optional[dict[str, str]] = None,
+) -> OpenAI:
+    """Create an OpenAI client with compatibility fallback."""
+    kwargs = {
+        "api_key": api_key,
+        "base_url": base_url,
+        "timeout": httpx.Timeout(120.0, connect=10.0),
+    }
+    if headers:
+        kwargs["default_headers"] = headers
+
+    try:
+        return OpenAI(**kwargs)
+    except TypeError as exc:
+        exc_str = str(exc)
+        if (
+            "proxies" not in exc_str
+            and "default_headers" not in exc_str
+            and "timeout" not in exc_str
+        ):
+            raise
+
+        # Fallback for SDK/httpx incompatibilities.
+        fallback_kwargs = {k: v for k, v in kwargs.items() if k != "default_headers"}
+        return OpenAI(
+            **fallback_kwargs,
+            http_client=httpx.Client(
+                timeout=httpx.Timeout(120.0, connect=10.0),
+                headers=headers if headers else None,
+            ),
+        )
 
 
 def _l2_normalize(vector: list[float]) -> list[float]:
@@ -92,8 +128,19 @@ def _embed_batch_with_retry(
     for attempt in range(max_retries):
         try:
             response = client.embeddings.create(model=model, input=texts)
+            if len(response.data) != len(chunk_ids):
+                raise RuntimeError(
+                    f"Embedding API returned {len(response.data)} embeddings for "
+                    f"{len(chunk_ids)} inputs"
+                )
+
             results = []
             for i, embedding_data in enumerate(response.data):
+                if len(embedding_data.embedding) != EMBEDDING_DIMENSION:
+                    raise RuntimeError(
+                        f"Embedding dimension mismatch for {chunk_ids[i]}: "
+                        f"got {len(embedding_data.embedding)}, expected {EMBEDDING_DIMENSION}"
+                    )
                 vector = _l2_normalize(embedding_data.embedding)
                 results.append((chunk_ids[i], vector, None))
             return results
@@ -138,19 +185,33 @@ def get_embedding_client(settings: Settings) -> tuple[OpenAI, str]:
     Raises:
         ValueError: If no suitable provider is configured for embeddings.
     """
-    # Use the default provider for embeddings
-    provider = settings.providers.get_default_provider()
+    provider = None
+
+    # Prefer a dedicated Synthetic provider when configured.
+    if settings.providers.providers:
+        synthetic_provider = settings.providers.get_provider("synthetic")
+        if synthetic_provider and synthetic_provider.api_key:
+            provider = synthetic_provider
+        else:
+            resolved_provider, _ = settings.providers.resolve_model(EMBEDDING_MODEL)
+            if resolved_provider and resolved_provider.api_key:
+                provider = resolved_provider
+            else:
+                default_provider = settings.providers.get_default_provider()
+                if default_provider and default_provider.api_key:
+                    provider = default_provider
 
     if provider and provider.api_key:
-        client = OpenAI(
+        client = _create_openai_client(
             api_key=provider.api_key,
             base_url=provider.api_base_url,
+            headers=provider.headers if provider.headers else None,
         )
         return client, EMBEDDING_MODEL
 
     # Fall back to legacy settings
     if settings.api_key:
-        client = OpenAI(
+        client = _create_openai_client(
             api_key=settings.api_key,
             base_url=settings.api_base_url,
         )
@@ -220,7 +281,7 @@ def embed_query(
         RuntimeError: If embedding fails after retries.
     """
     results = _embed_batch_with_retry([query], ["query"], client, model)
-    chunk_id, vector, error = results[0]
+    _chunk_id, vector, error = results[0]
 
     if error or vector is None:
         raise RuntimeError(f"Failed to embed query: {error}")

@@ -124,6 +124,18 @@ Notes:
 - YouTube audio transcription fallback uses the same `MISTRAL_API_KEY` as OCR/transcription features.
 - If `yt-dlp` hits HTTP 403 for some videos, you can export `FLAVIA_YTDLP_COOKIES_FROM_BROWSER=chrome` (or `firefox`, `safari`) or set `FLAVIA_YTDLP_COOKIEFILE=/path/to/cookies.txt`.
 
+## Semantic retrieval / RAG index (optional)
+
+To enable the sqlite-vec dependency used by the embedding index (`VectorStore`):
+
+```bash
+.venv/bin/pip install -e ".[rag]"
+```
+
+Notes:
+- This installs `sqlite-vec`, loaded as a SQLite extension at runtime.
+- Some Python builds disable SQLite extension loading (common on macOS system Python). If that happens, use a Python distribution with extension support (for example Homebrew Python or conda).
+
 ## Development dependencies
 
 ```bash

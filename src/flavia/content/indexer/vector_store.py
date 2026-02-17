@@ -41,6 +41,7 @@ class VectorStore:
         self.base_dir = Path(base_dir)
         if db_path:
             self.db_path = Path(db_path)
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
         else:
             self.index_dir = self.base_dir / ".index"
             self.index_dir.mkdir(parents=True, exist_ok=True)
@@ -97,13 +98,6 @@ class VectorStore:
         """Create the database schema if it doesn't exist."""
         conn = self._conn
         if conn is None:
-            return
-
-        # Check if tables exist
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='chunks_meta'"
-        )
-        if cursor.fetchone() is not None:
             return
 
         # Create the vector table using sqlite-vec
@@ -276,10 +270,18 @@ class VectorStore:
             converted_path, locator, heading_path, doc_name, file_type.
         """
         conn = self._get_connection()
+        if k <= 0:
+            return []
 
         # Build the query with optional doc_id filter
         if doc_ids_filter:
-            # First get chunk_ids for the filtered docs
+            # sqlite-vec applies post-filtering with JOIN predicates. To preserve
+            # correctness for doc_id-restricted searches, request full-kNN and then
+            # apply SQL filter + LIMIT.
+            total_chunks = conn.execute("SELECT COUNT(*) AS cnt FROM chunks_meta").fetchone()["cnt"]
+            if total_chunks == 0:
+                return []
+
             placeholders = ",".join("?" * len(doc_ids_filter))
             cursor = conn.execute(
                 f"""
@@ -293,7 +295,7 @@ class VectorStore:
                 ORDER BY v.distance
                 LIMIT ?
                 """,
-                (self._serialize_vector(query_vec), k * 2, *doc_ids_filter, k),
+                (self._serialize_vector(query_vec), total_chunks, *doc_ids_filter, k),
             )
         else:
             cursor = conn.execute(

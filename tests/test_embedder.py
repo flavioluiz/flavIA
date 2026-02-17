@@ -242,6 +242,44 @@ class TestEmbedChunks:
         norm = math.sqrt(sum(x * x for x in vector))
         assert 0.99 <= norm <= 1.01
 
+    def test_returns_error_on_response_size_mismatch(self):
+        """Should fail the whole batch if API returns fewer embeddings than inputs."""
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.data = []
+        mock_client.embeddings.create.return_value = mock_response
+
+        chunks = [
+            {"chunk_id": "c1", "source": {}, "heading_path": [], "text": "T1"},
+        ]
+
+        results = list(embed_chunks(chunks, mock_client, batch_size=1))
+        assert len(results) == 1
+        chunk_id, vector, error = results[0]
+        assert chunk_id == "c1"
+        assert vector is None
+        assert "returned 0 embeddings for 1 inputs" in error
+
+    def test_returns_error_on_dimension_mismatch(self):
+        """Should fail when embedding dimension is not 768."""
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_embedding = MagicMock()
+        mock_embedding.embedding = [0.1] * 512
+        mock_response.data = [mock_embedding]
+        mock_client.embeddings.create.return_value = mock_response
+
+        chunks = [
+            {"chunk_id": "c1", "source": {}, "heading_path": [], "text": "T1"},
+        ]
+
+        results = list(embed_chunks(chunks, mock_client, batch_size=1))
+        assert len(results) == 1
+        chunk_id, vector, error = results[0]
+        assert chunk_id == "c1"
+        assert vector is None
+        assert "dimension mismatch" in error.lower()
+
 
 class TestEmbedQuery:
     """Tests for embed_query function."""
@@ -271,6 +309,20 @@ class TestEmbedQuery:
 
         assert "Failed to embed query" in str(exc_info.value)
 
+    def test_raises_on_dimension_mismatch(self):
+        """Should raise on non-768 query embedding response."""
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_embedding = MagicMock()
+        mock_embedding.embedding = [0.1] * 512
+        mock_response.data = [mock_embedding]
+        mock_client.embeddings.create.return_value = mock_response
+
+        with pytest.raises(RuntimeError) as exc_info:
+            embed_query("test query", mock_client)
+
+        assert "dimension mismatch" in str(exc_info.value).lower()
+
 
 class TestGetEmbeddingClient:
     """Tests for get_embedding_client function."""
@@ -281,20 +333,28 @@ class TestGetEmbeddingClient:
         mock_provider = MagicMock()
         mock_provider.api_key = "test-key"
         mock_provider.api_base_url = "https://api.test.com/v1"
+        mock_provider.headers = {}
+        mock_settings.providers.providers = {"default": mock_provider}
+        mock_settings.providers.get_provider.return_value = None
+        mock_settings.providers.resolve_model.return_value = (None, None)
         mock_settings.providers.get_default_provider.return_value = mock_provider
+        mock_settings.api_key = ""
 
         with patch("flavia.content.indexer.embedder.OpenAI") as MockOpenAI:
             client, model = get_embedding_client(mock_settings)
 
-            MockOpenAI.assert_called_once_with(
-                api_key="test-key",
-                base_url="https://api.test.com/v1",
-            )
+            MockOpenAI.assert_called_once()
+            kwargs = MockOpenAI.call_args.kwargs
+            assert kwargs["api_key"] == "test-key"
+            assert kwargs["base_url"] == "https://api.test.com/v1"
             assert model == EMBEDDING_MODEL
 
     def test_falls_back_to_legacy_settings(self):
         """Should use legacy settings when no provider configured."""
         mock_settings = MagicMock()
+        mock_settings.providers.providers = {}
+        mock_settings.providers.get_provider.return_value = None
+        mock_settings.providers.resolve_model.return_value = (None, None)
         mock_settings.providers.get_default_provider.return_value = None
         mock_settings.api_key = "legacy-key"
         mock_settings.api_base_url = "https://legacy.api.com/v1"
@@ -302,14 +362,17 @@ class TestGetEmbeddingClient:
         with patch("flavia.content.indexer.embedder.OpenAI") as MockOpenAI:
             client, model = get_embedding_client(mock_settings)
 
-            MockOpenAI.assert_called_once_with(
-                api_key="legacy-key",
-                base_url="https://legacy.api.com/v1",
-            )
+            MockOpenAI.assert_called_once()
+            kwargs = MockOpenAI.call_args.kwargs
+            assert kwargs["api_key"] == "legacy-key"
+            assert kwargs["base_url"] == "https://legacy.api.com/v1"
 
     def test_raises_when_no_api_key(self):
         """Should raise ValueError when no API key configured."""
         mock_settings = MagicMock()
+        mock_settings.providers.providers = {}
+        mock_settings.providers.get_provider.return_value = None
+        mock_settings.providers.resolve_model.return_value = (None, None)
         mock_settings.providers.get_default_provider.return_value = None
         mock_settings.api_key = ""
 
@@ -317,6 +380,55 @@ class TestGetEmbeddingClient:
             get_embedding_client(mock_settings)
 
         assert "No API key configured" in str(exc_info.value)
+
+    def test_prefers_synthetic_provider_when_available(self):
+        """Should choose synthetic provider over current default provider."""
+        mock_settings = MagicMock()
+        synthetic_provider = MagicMock()
+        synthetic_provider.api_key = "synthetic-key"
+        synthetic_provider.api_base_url = "https://api.synthetic.new/openai/v1"
+        synthetic_provider.headers = {}
+
+        default_provider = MagicMock()
+        default_provider.api_key = "default-key"
+        default_provider.api_base_url = "https://api.default.com/v1"
+        default_provider.headers = {}
+
+        mock_settings.providers.providers = {
+            "synthetic": synthetic_provider,
+            "default": default_provider,
+        }
+        mock_settings.providers.get_provider.side_effect = (
+            lambda provider_id: synthetic_provider if provider_id == "synthetic" else None
+        )
+        mock_settings.providers.resolve_model.return_value = (default_provider, None)
+        mock_settings.providers.get_default_provider.return_value = default_provider
+
+        with patch("flavia.content.indexer.embedder.OpenAI") as MockOpenAI:
+            get_embedding_client(mock_settings)
+
+            kwargs = MockOpenAI.call_args.kwargs
+            assert kwargs["api_key"] == "synthetic-key"
+            assert kwargs["base_url"] == "https://api.synthetic.new/openai/v1"
+
+    def test_passes_provider_headers(self):
+        """Should pass provider custom headers to OpenAI client."""
+        mock_settings = MagicMock()
+        synthetic_provider = MagicMock()
+        synthetic_provider.api_key = "synthetic-key"
+        synthetic_provider.api_base_url = "https://api.synthetic.new/openai/v1"
+        synthetic_provider.headers = {"X-Test": "1"}
+
+        mock_settings.providers.providers = {"synthetic": synthetic_provider}
+        mock_settings.providers.get_provider.return_value = synthetic_provider
+        mock_settings.providers.resolve_model.return_value = (synthetic_provider, None)
+        mock_settings.providers.get_default_provider.return_value = synthetic_provider
+
+        with patch("flavia.content.indexer.embedder.OpenAI") as MockOpenAI:
+            get_embedding_client(mock_settings)
+
+            kwargs = MockOpenAI.call_args.kwargs
+            assert kwargs["default_headers"] == {"X-Test": "1"}
 
 
 class TestConstants:
