@@ -909,13 +909,15 @@ def cmd_compact(ctx: CommandContext, args: str) -> bool:
     long_desc="Enable/disable RAG diagnostics capture for search_chunks. "
     "When enabled, diagnostics are saved to `.flavia/rag_debug.jsonl` and can be inspected with "
     "`/rag-debug last` without injecting verbose traces into model context.",
-    usage="/rag-debug [on|off|status|last [N]]",
+    usage="/rag-debug [on|off|status|last [N]|turn [N]]",
     examples=[
         "/rag-debug           Show current state",
         "/rag-debug on        Enable detailed RAG diagnostics",
         "/rag-debug off       Disable detailed RAG diagnostics",
         "/rag-debug last      Show the most recent diagnostics trace",
         "/rag-debug last 5    Show the 5 most recent diagnostics traces",
+        "/rag-debug turn      Show traces captured in current turn",
+        "/rag-debug turn 10   Show up to 10 traces from current turn",
     ],
     related=["/index diagnose", "/config"],
     accepts_args=True,
@@ -930,9 +932,11 @@ def cmd_rag_debug(ctx: CommandContext, args: str) -> bool:
     raw = args.strip()
     parts = raw.split() if raw else []
     option = parts[0].lower() if parts else "status"
+    if option == "last-turn":
+        option = "turn"
 
-    if option not in {"on", "off", "status", "last"}:
-        ctx.console.print("[red]Usage: /rag-debug [on|off|status|last [N]][/red]")
+    if option not in {"on", "off", "status", "last", "turn"}:
+        ctx.console.print("[red]Usage: /rag-debug [on|off|status|last [N]|turn [N]][/red]")
         return True
 
     if option == "on":
@@ -986,6 +990,67 @@ def cmd_rag_debug(ctx: CommandContext, args: str) -> bool:
             )
             if query:
                 ctx.console.print(f"query: {query}")
+            turn_id = str(entry.get("turn_id") or "")
+            if turn_id:
+                ctx.console.print(f"turn_id: {turn_id}")
+            if mentions:
+                ctx.console.print("mentions: " + ", ".join(str(m) for m in mentions))
+            formatted = format_rag_debug_trace(entry.get("trace", {}))
+            ctx.console.print(formatted, markup=False)
+            if idx != len(entries):
+                ctx.console.print("")
+        return True
+
+    if option == "turn":
+        if len(parts) > 2:
+            ctx.console.print("[red]Usage: /rag-debug turn [N][/red]")
+            return True
+
+        limit = 50
+        if len(parts) == 2:
+            if not parts[1].isdigit():
+                ctx.console.print("[red]Usage: /rag-debug turn [N][/red]")
+                return True
+            limit = int(parts[1])
+            if limit <= 0 or limit > 200:
+                ctx.console.print("[red]N must be between 1 and 200.[/red]")
+                return True
+
+        turn_id = str(getattr(getattr(ctx.agent, "context", None), "rag_turn_id", "") or "")
+        if not turn_id:
+            ctx.console.print("[yellow]No active turn id found.[/yellow]")
+            ctx.console.print(
+                "[dim]Send a new prompt first, then run /rag-debug turn to inspect retrieval traces for that turn.[/dim]"
+            )
+            return True
+
+        entries = read_recent_rag_debug_traces(
+            ctx.settings.base_dir,
+            limit=limit,
+            turn_id=turn_id,
+        )
+        if not entries:
+            ctx.console.print(
+                f"[yellow]No RAG diagnostics traces found for current turn ({turn_id}).[/yellow]"
+            )
+            ctx.console.print(
+                "[dim]If the turn did not call search_chunks, no retrieval trace is generated.[/dim]"
+            )
+            return True
+
+        for idx, entry in enumerate(entries, start=1):
+            trace_id = str(entry.get("trace_id", "unknown"))
+            timestamp = str(entry.get("timestamp", ""))
+            query = str(entry.get("query_effective") or entry.get("query_raw") or "")
+            mentions = entry.get("mentions") or []
+            ctx.console.print(
+                f"[bold]Trace {idx}/{len(entries)}[/bold] "
+                f"[cyan]{trace_id}[/cyan] "
+                f"[dim]{timestamp}[/dim]"
+            )
+            if query:
+                ctx.console.print(f"query: {query}")
+            ctx.console.print(f"turn_id: {turn_id}")
             if mentions:
                 ctx.console.print("mentions: " + ", ".join(str(m) for m in mentions))
             formatted = format_rag_debug_trace(entry.get("trace", {}))

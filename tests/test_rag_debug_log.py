@@ -57,3 +57,23 @@ def test_format_rag_debug_trace_includes_counts_and_timings():
     assert "[RAG DEBUG]" in rendered
     assert "hits: vector=3 fts=4 unique=5 final=2" in rendered
     assert "timings_ms: router=1.0 vector=2.0 fts=3.0 fusion=1.0 temporal=0 total=7.0" in rendered
+
+
+def test_read_recent_rag_debug_traces_can_filter_by_turn_id(tmp_path: Path):
+    append_rag_debug_trace(
+        tmp_path,
+        {"turn_id": "turn-000001-aa", "query_raw": "q1", "trace": {"counts": {}, "timings_ms": {}}},
+    )
+    keep_id = append_rag_debug_trace(
+        tmp_path,
+        {"turn_id": "turn-000002-bb", "query_raw": "q2", "trace": {"counts": {}, "timings_ms": {}}},
+    )
+    append_rag_debug_trace(
+        tmp_path,
+        {"turn_id": "turn-000001-aa", "query_raw": "q3", "trace": {"counts": {}, "timings_ms": {}}},
+    )
+
+    filtered = read_recent_rag_debug_traces(tmp_path, limit=10, turn_id="turn-000002-bb")
+    assert len(filtered) == 1
+    assert filtered[0]["trace_id"] == keep_id
+    assert filtered[0]["query_raw"] == "q2"

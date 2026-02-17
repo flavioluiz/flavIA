@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+from uuid import uuid4
 
 from rich.console import Console
 from rich.live import Live
@@ -1627,6 +1628,11 @@ def run_cli(settings: Settings) -> None:
             # Regular message: send to agent
             try:
                 active_model = _get_agent_model_ref(ctx.agent)
+                if hasattr(ctx.agent, "context"):
+                    current_counter = int(getattr(ctx.agent.context, "rag_turn_counter", 0) or 0)
+                    new_counter = current_counter + 1
+                    ctx.agent.context.rag_turn_counter = new_counter
+                    ctx.agent.context.rag_turn_id = f"turn-{new_counter:06d}-{uuid4().hex[:6]}"
                 _append_prompt_history(user_input, ctx.history_file, ctx.history_enabled)
                 _append_chat_log(ctx.chat_log_file, "user", user_input, model_ref=active_model)
                 response = _run_agent_with_feedback(

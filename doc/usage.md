@@ -208,7 +208,7 @@ Inside a chat session, the following commands are available:
 | `/index-update` | Legacy alias for `/index update` |
 | `/index-stats` | Legacy alias for `/index stats` |
 | `/index-diagnose` | Legacy alias for `/index diagnose` |
-| `/rag-debug [on\|off\|status\|last [N]]` | Toggle diagnostics capture and inspect recent persisted traces |
+| `/rag-debug [on\|off\|status\|last [N]\|turn [N]]` | Toggle diagnostics capture and inspect recent persisted traces (global or current turn) |
 | `/tools` | List available tools by category |
 | `/tools <name>` | Show tool schema and parameters |
 | `/config` | Show configuration paths and active settings |
@@ -236,11 +236,18 @@ Notes:
   - Multiple mentions are supported; retrieval scope is the union of mentioned files, then intersected with explicit filters (`file_type_filter`, `doc_name_filter`) when provided.
   - Unknown/unindexed mentions return an explicit message so the agent can correct scope (instead of silently searching everything).
   - Checklist-like requests (ex.: "todos os itens/subitens") automatically switch retrieval to an exhaustive profile for higher recall/coverage.
+  - Comparative/list-only requests (ex.: "compare esperado x enviado", "item por item", "sem descrição") also auto-switch to exhaustive retrieval.
+  - In exhaustive mode with multiple `@mentions`, retrieval now backfills missing mentioned documents and rebalances final results to improve cross-document coverage.
   - You can force this behavior explicitly with `retrieval_mode="exhaustive"` in `search_chunks`.
+  - For multi-file comparative prompts with `@mentions`, the agent now enforces mention coverage before final answer (instead of grounding on only a subset of referenced files).
 - Runtime retrieval diagnostics:
   - `/rag-debug on`: captures retrieval traces to `.flavia/rag_debug.jsonl` (no verbose trace injection into model context).
   - `/rag-debug last` (or `/rag-debug last N`): inspect the most recent persisted diagnostics traces.
+  - `/rag-debug turn` (or `/rag-debug turn N`): inspect only traces captured in the current user turn.
   - `/index diagnose`: reports index health, modality distribution, top docs by chunk count, and current RAG tuning parameters.
+ - Comparative analysis workflow (generic):
+  - For multi-file comparison prompts, the agent now enforces a two-stage flow: source-specific evidence extraction first, then synthesis.
+  - Comparative conclusions must be grounded with inline retrieval citations (`[1]`, `[2]`, etc.).
 - Converted-content policy is per-agent via `converted_access_mode` in `agents.yaml`:
   - `strict`: no direct `.converted/` reads.
   - `hybrid` (default): call `search_chunks` first, then allow direct fallback reads.

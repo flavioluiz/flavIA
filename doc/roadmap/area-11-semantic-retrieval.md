@@ -370,6 +370,11 @@ vault/
 | H-11-06 | lexical recall collapse for long natural-language queries (`fts_hits=0`) | keyword evidence often lost despite relevant chunks existing | FTS now retries multiple query variants (token OR/AND + exact phrase fallback) | Fixed |
 | H-11-07 | low coverage in single-document extraction due diversity cap | checklist queries returned partial item/subitem sets | adaptive per-doc diversity cap (single-doc scope + exhaustive mode) and exhaustive retrieval profile in `search_chunks` | Fixed |
 | H-11-08 | agent sometimes skipped retrieval even when user used `@arquivo` | final responses could be produced without RAG grounding | recursive loop now injects a one-shot enforcement notice to call `search_chunks` before final answer when `@` mentions are present | Fixed |
+| H-11-09 | exhaustive retrieval over multiple scoped docs could still return evidence concentrated in a subset of docs | cross-document comparisons missed key evidence from some mentioned files | `search_chunks` now performs scoped backfill for uncovered docs (exhaustive mode) and rebalances final results to prioritize per-doc coverage | Fixed |
+| H-11-10 | comparative prompts with multiple `@mentions` could be finalized after grounding only one referenced file | incomplete grounding and weaker fairness/audit analyses | recursive loop now enforces cross-doc mention coverage for comparative intents and blocks final answer when remaining mentions were not grounded | Fixed |
+| H-11-11 | exhaustive auto-detection was too narrow for real-world wording variants | high-coverage mode not always triggered on list/comparison tasks | expanded multilingual exhaustive cues (list-only, compare, sem descrição/sem detalhes variants) in agent and tool heuristics | Fixed |
+| H-11-12 | comparative synthesis could be produced semantically but without explicit grounding citations | hard to audit objective support for each conclusion | recursive loop now enforces two-stage comparative output (evidence matrix -> conclusions) with citation markers before finalizing | Fixed |
+| H-11-13 | diagnostics review after `/reset` could be misleading (showing old traces) | tuning loop could inspect stale retrieval evidence | added current-turn diagnostics command (`/rag-debug turn`) with `turn_id`-scoped filtering persisted from `search_chunks` | Fixed |
 
 ### Current behavior for explicit file targeting (`@arquivo`)
 
@@ -379,6 +384,10 @@ vault/
 4. Multiple mentions produce a union scope; explicit filters (`file_type_filter`, `doc_name_filter`) are then intersected.
 5. Unknown/unindexed mentions return explicit feedback instead of silently widening search.
 6. Migration: pre-hardening indexes should run `/index build` once to regenerate chunk metadata with consistent `doc_id`s.
+7. For comparative prompts with multiple mentions, the agent requires grounded retrieval coverage across the referenced mention set before final response.
+8. In exhaustive + multi-doc scope, retrieval attempts backfill for uncovered mentioned docs and prioritizes one-or-more chunks per scoped doc in final ordering.
+9. Comparative outputs are now validated for explicit inline citation markers (e.g., `[1]`) before final response.
+10. Diagnostics can be inspected globally (`/rag-debug last`) or scoped to the current turn (`/rag-debug turn`).
 
 ### Open optimization backlog (next iterations)
 

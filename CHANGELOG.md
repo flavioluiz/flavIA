@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Added regression tests in `tests/test_search_chunks_tool.py` for mention scoping and filter intersection
 - **RAG diagnostics mode and tuning controls**:
   - Runtime command `/rag-debug [on|off|status|last [N]]` to toggle diagnostics capture and inspect recent traces
+  - Added turn-scoped diagnostics command `/rag-debug turn [N]` to inspect only traces from the current user turn
   - New persistent diagnostics log: `.flavia/rag_debug.jsonl` (JSONL, one retrieval trace per entry)
   - New `/index diagnose` command (alias `/index-diagnose`) with deeper index health insights:
     - runtime RAG configuration
@@ -165,6 +166,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - FTS search now retries broader lexical variants (token OR/AND + exact phrase fallback) to reduce `fts_hits=0` cases in natural-language queries
   - Retrieval diversity cap now adapts for single-document scopes to avoid clipping coverage in item/subitem extraction tasks
   - `search_chunks` supports `retrieval_mode=exhaustive` and auto-switches to exhaustive profile for checklist-like prompts ("todos os itens/subitens")
+  - Exhaustive auto-detection now covers broader list/comparison cues (e.g., compare/versus/list-only/sem descrição variants)
+  - In exhaustive mode with multi-document scope, `search_chunks` now backfills uncovered scoped docs and rebalances results to improve per-document evidence coverage
+  - Mention-scoped grounding is now stricter: when user prompts include `@...`, the loop requires successful `search_chunks` grounding and returns an explicit error if grounding is repeatedly skipped
+  - Comparative prompts with multiple `@mentions` now require cross-document mention coverage before final answer
+  - Comparative answers now enforce two-stage structure (evidence matrix then conclusions) with inline citations (`[1]`, `[2]`) before finalization
+  - Mention-target errors from `search_chunks` (unresolved/unindexed `@file`) are now propagated directly instead of being masked by fallback responses
+  - Turn-level exhaustive propagation: checklist intent in the original user prompt now auto-applies `retrieval_mode=exhaustive` to all `search_chunks` calls in that turn (unless explicitly overridden)
+  - RAG debug hint quality improved: router-candidate hint is suppressed when retrieval is already explicitly scoped by caller filters
 - **Hybrid converted-content access policy**:
   - New per-agent `converted_access_mode` in `agents.yaml`: `strict`, `hybrid`, `open`
   - `hybrid` is the default: agents must call `search_chunks` first, then can fallback to direct `.converted/` reads

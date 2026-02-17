@@ -41,7 +41,12 @@ def append_rag_debug_trace(base_dir: Path, payload: dict[str, Any]) -> Optional[
     return trace_id
 
 
-def read_recent_rag_debug_traces(base_dir: Path, limit: int = 1) -> list[dict[str, Any]]:
+def read_recent_rag_debug_traces(
+    base_dir: Path,
+    limit: int = 1,
+    *,
+    turn_id: Optional[str] = None,
+) -> list[dict[str, Any]]:
     """Read the most recent diagnostics traces from log file."""
     if limit <= 0:
         return []
@@ -62,6 +67,8 @@ def read_recent_rag_debug_traces(base_dir: Path, limit: int = 1) -> list[dict[st
                 except json.JSONDecodeError:
                     continue
                 if isinstance(payload, dict):
+                    if turn_id and str(payload.get("turn_id") or "") != str(turn_id):
+                        continue
                     tail.append(payload)
     except OSError:
         return []
@@ -130,7 +137,15 @@ def format_rag_debug_trace(trace: dict[str, Any]) -> str:
         hints.append("Vector recall is low; consider higher vector_k or chunk tuning.")
     if counts.get("fts_hits", 0) == 0 and counts.get("vector_hits", 0) > 0:
         hints.append("Lexical recall is low; consider higher fts_k or query wording.")
-    if counts.get("routed_doc_ids") == 0:
+    input_scope_count = filters.get("input_doc_ids_filter_count")
+    effective_scope_count = filters.get("effective_doc_ids_filter_count")
+    scoped_by_caller = (
+        isinstance(input_scope_count, int)
+        and isinstance(effective_scope_count, int)
+        and input_scope_count > 0
+        and effective_scope_count > 0
+    )
+    if counts.get("routed_doc_ids") == 0 and not scoped_by_caller:
         hints.append("Catalog router found no candidates; inspect summaries/metadata quality.")
     if counts.get("skipped_by_doc_diversity", 0) > 0:
         hints.append("Diversity cap clipped results; consider higher RAG_MAX_CHUNKS_PER_DOC.")

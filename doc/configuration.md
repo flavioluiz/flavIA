@@ -336,7 +336,7 @@ TELEGRAM_ALLOW_ALL_USERS=true
 ```
 
 `RAG_DEBUG=true` enables retrieval diagnostics capture (equivalent to runtime `/rag-debug on`).
-Captured traces are persisted to `.flavia/rag_debug.jsonl` and can be inspected with `/rag-debug last`.
+Captured traces are persisted to `.flavia/rag_debug.jsonl` and can be inspected with `/rag-debug last` (global) or `/rag-debug turn` (current turn only).
 
 ## Connection test
 

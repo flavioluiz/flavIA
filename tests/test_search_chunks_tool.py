@@ -339,3 +339,72 @@ def test_search_chunks_rejects_invalid_retrieval_mode(tmp_path: Path) -> None:
 
     result = tool.execute({"query": "x", "retrieval_mode": "invalid"}, ctx)
     assert "retrieval_mode must be 'balanced' or 'exhaustive'" in result
+
+
+def test_search_chunks_exhaustive_backfills_missing_docs_in_multi_doc_scope(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _create_catalog_and_index(tmp_path)
+    tool = SearchChunksTool()
+    ctx = _make_context(tmp_path)
+    monkeypatch.setattr("flavia.config.settings.get_settings", _make_settings_stub)
+
+    catalog = ContentCatalog.load(tmp_path / ".flavia")
+    assert catalog is not None
+    paper_entry = catalog.files["paper.pdf"]
+    lecture_entry = catalog.files["lecture.mp4"]
+    paper_doc_id = hashlib.sha1(
+        f"{tmp_path}:{paper_entry.path}:{paper_entry.checksum_sha256}".encode()
+    ).hexdigest()
+    lecture_doc_id = hashlib.sha1(
+        f"{tmp_path}:{lecture_entry.path}:{lecture_entry.checksum_sha256}".encode()
+    ).hexdigest()
+
+    calls: list[dict[str, object]] = []
+
+    def _fake_retrieve(*, question, base_dir, settings, doc_ids_filter, top_k, **kwargs):
+        calls.append(
+            {
+                "doc_ids_filter": doc_ids_filter,
+                "top_k": top_k,
+                "catalog_router_k": kwargs.get("catalog_router_k"),
+            }
+        )
+        if isinstance(doc_ids_filter, list) and len(doc_ids_filter) == 2:
+            return [
+                {
+                    "chunk_id": "paper-1",
+                    "doc_id": paper_doc_id,
+                    "doc_name": "paper.pdf",
+                    "modality": "text",
+                    "heading_path": ["Expected"],
+                    "locator": {"line_start": 10, "line_end": 12},
+                    "text": "Expected criteria excerpt.",
+                }
+            ]
+        if doc_ids_filter == [lecture_doc_id]:
+            return [
+                {
+                    "chunk_id": "lecture-1",
+                    "doc_id": lecture_doc_id,
+                    "doc_name": "lecture.mp4",
+                    "modality": "video_transcript",
+                    "heading_path": [],
+                    "locator": {},
+                    "text": "Submitted evidence excerpt.",
+                }
+            ]
+        return []
+
+    monkeypatch.setattr("flavia.content.indexer.retrieve", _fake_retrieve)
+    output = tool.execute(
+        {
+            "query": "@paper.pdf @lecture.mp4 compare item by item",
+            "retrieval_mode": "exhaustive",
+        },
+        ctx,
+    )
+
+    assert any(call.get("doc_ids_filter") == [lecture_doc_id] for call in calls)
+    assert "[1] paper.pdf" in output
+    assert "lecture.mp4" in output

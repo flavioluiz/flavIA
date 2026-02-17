@@ -22,11 +22,28 @@ _EXHAUSTIVE_QUERY_PATTERNS = (
     "item por item",
     "subitem por subitem",
     "sem descrições",
+    "sem descricoes",
+    "sem descrição",
+    "sem descricao",
     "lista completa",
+    "apenas lista",
+    "somente lista",
+    "sem detalhes",
+    "compare",
+    "comparar",
+    "comparação",
+    "comparacao",
+    "versus",
+    "expected x",
+    "esperado x",
+    "enviado x",
     "all items",
     "all subitems",
     "item by item",
     "subitem by subitem",
+    "without descriptions",
+    "list only",
+    "comparison",
 )
 
 
@@ -164,6 +181,71 @@ def _looks_exhaustive_query(query: str) -> bool:
     """Heuristic for checklist-style extraction requests."""
     normalized = query.lower()
     return any(pattern in normalized for pattern in _EXHAUSTIVE_QUERY_PATTERNS)
+
+
+def _dedupe_results_by_chunk(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Deduplicate retrieval results while preserving the first occurrence order."""
+    deduped: list[dict[str, Any]] = []
+    seen_chunk_ids: set[str] = set()
+    for item in results:
+        chunk_id = str(item.get("chunk_id") or "")
+        if not chunk_id:
+            deduped.append(item)
+            continue
+        if chunk_id in seen_chunk_ids:
+            continue
+        seen_chunk_ids.add(chunk_id)
+        deduped.append(item)
+    return deduped
+
+
+def _prioritize_doc_coverage(
+    results: list[dict[str, Any]],
+    *,
+    scoped_doc_ids: list[str],
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Prioritize at least one result per scoped document before filling remaining slots."""
+    if limit <= 0:
+        return []
+    if not results:
+        return []
+    if not scoped_doc_ids:
+        return _dedupe_results_by_chunk(results)[:limit]
+
+    deduped = _dedupe_results_by_chunk(results)
+    by_doc: dict[str, list[dict[str, Any]]] = {}
+    for item in deduped:
+        doc_id = str(item.get("doc_id") or "")
+        by_doc.setdefault(doc_id, []).append(item)
+
+    prioritized: list[dict[str, Any]] = []
+    used_chunk_ids: set[str] = set()
+
+    for doc_id in scoped_doc_ids:
+        group = by_doc.get(doc_id) or []
+        if not group:
+            continue
+        item = group[0]
+        chunk_id = str(item.get("chunk_id") or "")
+        if chunk_id and chunk_id in used_chunk_ids:
+            continue
+        prioritized.append(item)
+        if chunk_id:
+            used_chunk_ids.add(chunk_id)
+        if len(prioritized) >= limit:
+            return prioritized[:limit]
+
+    for item in deduped:
+        chunk_id = str(item.get("chunk_id") or "")
+        if chunk_id and chunk_id in used_chunk_ids:
+            continue
+        prioritized.append(item)
+        if chunk_id:
+            used_chunk_ids.add(chunk_id)
+        if len(prioritized) >= limit:
+            break
+    return prioritized[:limit]
 
 
 class SearchChunksTool(BaseTool):
@@ -426,10 +508,72 @@ class SearchChunksTool(BaseTool):
         except Exception as e:
             return f"Error during retrieval: {e}"
 
+        if (
+            retrieval_mode == "exhaustive"
+            and isinstance(doc_ids_filter, list)
+            and len(doc_ids_filter) > 1
+        ):
+            covered_initial = {
+                str(item.get("doc_id") or "")
+                for item in results
+                if item.get("doc_id")
+            }
+            missing_doc_ids = [doc_id for doc_id in doc_ids_filter if doc_id not in covered_initial]
+            backfilled_docs: list[str] = []
+            backfill_attempted = 0
+            per_doc_backfill_k = max(
+                4,
+                min(12, max(1, effective_top_k // max(len(doc_ids_filter), 1))),
+            )
+            for doc_id in missing_doc_ids[:8]:
+                backfill_attempted += 1
+                try:
+                    supplemental = retrieve(
+                        question=effective_query,
+                        base_dir=base_dir,
+                        settings=settings,
+                        doc_ids_filter=[doc_id],
+                        top_k=per_doc_backfill_k,
+                        catalog_router_k=0,
+                        vector_k=max(effective_vector_k, per_doc_backfill_k),
+                        fts_k=max(effective_fts_k, per_doc_backfill_k),
+                        rrf_k=settings.rag_rrf_k,
+                        max_chunks_per_doc=max(effective_max_chunks_per_doc, per_doc_backfill_k),
+                        expand_video_temporal=settings.rag_expand_video_temporal,
+                        retrieval_mode="exhaustive",
+                    )
+                except Exception:
+                    continue
+                if supplemental:
+                    backfilled_docs.append(doc_id)
+                    results.extend(supplemental)
+
+            results = _prioritize_doc_coverage(
+                results,
+                scoped_doc_ids=doc_ids_filter,
+                limit=effective_top_k,
+            )
+            if debug_mode:
+                trace["coverage_backfill"] = {
+                    "scoped_docs": len(doc_ids_filter),
+                    "covered_docs_initial": len(covered_initial),
+                    "missing_docs_initial": len(missing_doc_ids),
+                    "backfill_attempted": backfill_attempted,
+                    "backfilled_docs": len(backfilled_docs),
+                    "final_covered_docs": len(
+                        {
+                            str(item.get("doc_id") or "")
+                            for item in results
+                            if item.get("doc_id")
+                        }
+                    ),
+                }
+
         if debug_mode:
             append_rag_debug_trace(
                 base_dir,
                 {
+                    "turn_id": getattr(agent_context, "rag_turn_id", None),
                     "query_raw": query,
                     "query_effective": effective_query,
                     "top_k": top_k,

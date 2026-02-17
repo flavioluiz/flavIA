@@ -32,6 +32,8 @@ class AgentContext:
     max_context_tokens: int = 128_000
     current_context_tokens: int = 0
     rag_debug: bool = False
+    rag_turn_id: Optional[str] = None
+    rag_turn_counter: int = 0
     converted_access_mode: str = "hybrid"
     allow_converted_read: bool = False
 
@@ -84,6 +86,9 @@ class AgentContext:
             permissions=profile.permissions.copy(),
             write_confirmation=self.write_confirmation,
             dry_run=self.dry_run,
+            rag_debug=self.rag_debug,
+            rag_turn_id=self.rag_turn_id,
+            rag_turn_counter=self.rag_turn_counter,
             converted_access_mode=profile.converted_access_mode,
             allow_converted_read=profile.allow_converted_read,
         )
@@ -134,6 +139,10 @@ def _build_catalog_first_guidance(context: AgentContext) -> str:
         lines.append(
             "- If the user cites files as `@arquivo.ext`, keep those mentions in the "
             "`search_chunks` query to scope retrieval to the referenced original files."
+        )
+        lines.append(
+            "- For comparative tasks across multiple files, do retrieval in two stages: "
+            "extract source-specific facts first (with citations), then synthesize conclusions."
         )
 
     if has_query:

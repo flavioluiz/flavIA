@@ -1,6 +1,7 @@
 """Recursive agent with parallel execution for flavIA."""
 
 import json
+from pathlib import Path
 import re
 import threading
 import weakref
@@ -56,6 +57,53 @@ class RecursiveAgent(BaseAgent):
     MAX_ITERATIONS = 20
     MAX_ITERATIONS_MESSAGE_RE = re.compile(r"^Maximum iterations reached \((\d+)\)\.")
     DOC_MENTION_RE = re.compile(r'(?<![A-Za-z0-9])@(?:"[^"]+"|\'[^\']+\'|[^\s@"\']+)')
+    MENTION_TRAILING_PUNCT = ".,;:!?)]}"
+    MAX_MENTION_GROUNDING_REMINDERS = 3
+    MAX_COMPARISON_FORMAT_REMINDERS = 2
+    CITATION_MARKER_RE = re.compile(r"\[\d+\]")
+    CROSS_DOC_COMPARISON_PATTERNS = (
+        "compare",
+        "comparar",
+        "comparação",
+        "comparacao",
+        "versus",
+        " vs ",
+        "esperado x",
+        "enviado x",
+        "expected x",
+        "item por item",
+        "subitem por subitem",
+    )
+    EXHAUSTIVE_QUERY_PATTERNS = (
+        "todos os itens",
+        "todos os subitens",
+        "item por item",
+        "subitem por subitem",
+        "sem descrições",
+        "sem descricoes",
+        "sem descrição",
+        "sem descricao",
+        "lista completa",
+        "apenas lista",
+        "somente lista",
+        "sem detalhes",
+        "compare",
+        "comparar",
+        "comparação",
+        "comparacao",
+        "versus",
+        "esperado x",
+        "enviado x",
+        "expected x",
+        "all items",
+        "all subitems",
+        "item by item",
+        "subitem by subitem",
+        "compare",
+        "comparison",
+        "without descriptions",
+        "list only",
+    )
     WRITE_TOOL_NAMES = {
         "write_file",
         "edit_file",
@@ -127,9 +175,18 @@ class RecursiveAgent(BaseAgent):
         had_write_tool_call = False
         had_successful_write = False
         write_failures: list[str] = []
+        required_mentions = self._extract_doc_mentions(user_message)
         requires_mention_scoped_search = self._requires_mention_scoped_search(user_message)
-        mention_enforcement_injected = False
-        had_search_chunks_call = False
+        requires_cross_doc_coverage = self._requires_cross_doc_coverage(
+            user_message,
+            mention_count=len(required_mentions),
+        )
+        force_exhaustive_retrieval = self._requires_exhaustive_retrieval(user_message)
+        mention_enforcement_attempts = 0
+        coverage_enforcement_attempts = 0
+        comparison_format_enforcement_attempts = 0
+        had_grounded_search = False
+        covered_mentions: set[str] = set()
 
         while iterations < iteration_limit:
             iterations += 1
@@ -148,18 +205,63 @@ class RecursiveAgent(BaseAgent):
 
             if not response.tool_calls:
                 if (
-                    requires_mention_scoped_search
-                    and not had_search_chunks_call
-                    and not mention_enforcement_injected
+                    requires_cross_doc_coverage
+                    and required_mentions
+                    and covered_mentions != required_mentions
                 ):
-                    mention_enforcement_injected = True
+                    remaining_mentions = sorted(required_mentions - covered_mentions)
+                    if coverage_enforcement_attempts >= self.MAX_MENTION_GROUNDING_REMINDERS:
+                        return self._mention_coverage_error_message(remaining_mentions)
+                    coverage_enforcement_attempts += 1
+                    self.messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "[System notice] This is a multi-file comparison request. "
+                                "Before answering, call search_chunks again and include the remaining "
+                                f"@mentions in the query: {self._format_mentions(remaining_mentions)}."
+                            ),
+                        }
+                    )
+                    continue
+                if (
+                    requires_cross_doc_coverage
+                    and had_grounded_search
+                    and not self._has_citation_markers(str(response.content or ""))
+                ):
+                    if (
+                        comparison_format_enforcement_attempts
+                        >= self.MAX_COMPARISON_FORMAT_REMINDERS
+                    ):
+                        return self._comparison_format_error_message()
+                    comparison_format_enforcement_attempts += 1
+                    self.messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "[System notice] For comparative multi-file tasks, answer in two stages:\n"
+                                "1) Evidence matrix grouped by source file.\n"
+                                "2) Conclusions based only on cited evidence.\n"
+                                "Every factual claim must include at least one citation marker like [1]. "
+                                "If evidence is missing, explicitly write 'not found in retrieved evidence'."
+                            ),
+                        }
+                    )
+                    continue
+                if (
+                    requires_mention_scoped_search
+                    and not had_grounded_search
+                ):
+                    if mention_enforcement_attempts >= self.MAX_MENTION_GROUNDING_REMINDERS:
+                        return self._mention_grounding_error_message()
+                    mention_enforcement_attempts += 1
                     self.messages.append(
                         {
                             "role": "user",
                             "content": (
                                 "[System notice] The user referenced files using @mentions. "
-                                "Before answering, call search_chunks with the user query (including "
-                                "@mentions) to ground the response in indexed evidence."
+                                "Before answering, you must call search_chunks with the user query "
+                                "(including @mentions) to ground the response in indexed evidence."
                             ),
                         }
                     )
@@ -173,7 +275,10 @@ class RecursiveAgent(BaseAgent):
                     final_text += f"\n\nWrite operations were not applied due to errors:\n{details}"
                 return final_text
 
-            tool_results, spawns = self._process_tool_calls_with_spawns(response.tool_calls)
+            tool_results, spawns = self._process_tool_calls_with_spawns(
+                response.tool_calls,
+                force_search_mode="exhaustive" if force_exhaustive_retrieval else None,
+            )
 
             # Inject context-window warning for the LLM to see on next iteration.
             # Only injected once per run() and only when there are tool calls
@@ -195,7 +300,19 @@ class RecursiveAgent(BaseAgent):
             for tool_call, tool_result in zip(response.tool_calls, tool_results):
                 tool_name = getattr(getattr(tool_call, "function", None), "name", "")
                 if tool_name == "search_chunks":
-                    had_search_chunks_call = True
+                    tool_args = self._parse_tool_args(getattr(tool_call, "function", None))
+                    query_value = tool_args.get("query")
+                    if isinstance(query_value, str):
+                        query_mentions = self._extract_doc_mentions(query_value)
+                        for query_mention in query_mentions:
+                            for required_mention in required_mentions:
+                                if self._mentions_equivalent(required_mention, query_mention):
+                                    covered_mentions.add(required_mention)
+                    result_text = str(tool_result.get("content", ""))
+                    if result_text.startswith("No indexed documents match the @file references"):
+                        return result_text
+                    if not self._is_error_result(result_text):
+                        had_grounded_search = True
                 if tool_name not in self.WRITE_TOOL_NAMES:
                     continue
                 had_write_tool_call = True
@@ -210,10 +327,15 @@ class RecursiveAgent(BaseAgent):
 
             if (
                 requires_mention_scoped_search
-                and not had_search_chunks_call
-                and not mention_enforcement_injected
+                and not had_grounded_search
+                and not any(
+                    getattr(getattr(tc, "function", None), "name", "") == "search_chunks"
+                    for tc in response.tool_calls
+                )
             ):
-                mention_enforcement_injected = True
+                if mention_enforcement_attempts >= self.MAX_MENTION_GROUNDING_REMINDERS:
+                    return self._mention_grounding_error_message()
+                mention_enforcement_attempts += 1
                 self.messages.append(
                     {
                         "role": "user",
@@ -239,6 +361,33 @@ class RecursiveAgent(BaseAgent):
         self.log(f"Max iterations reached ({iteration_limit})")
         return self.format_max_iterations_message(iteration_limit)
 
+    @staticmethod
+    def _mention_grounding_error_message() -> str:
+        """Message returned when mention-scoped grounding could not be enforced."""
+        return (
+            "Unable to complete the answer because @file grounding was required but `search_chunks` "
+            "was not executed successfully. Please retry, keeping the @file references explicit."
+        )
+
+    @staticmethod
+    def _mention_coverage_error_message(remaining_mentions: list[str]) -> str:
+        """Message returned when cross-document mention coverage remains incomplete."""
+        suffix = ""
+        if remaining_mentions:
+            suffix = " Missing evidence scope for: " + ", ".join(f"@{item}" for item in remaining_mentions)
+        return (
+            "Unable to complete the answer because multi-file grounding was incomplete."
+            f"{suffix} Please retry with explicit @file references."
+        )
+
+    @staticmethod
+    def _comparison_format_error_message() -> str:
+        """Message returned when comparative output lacks required citation grounding."""
+        return (
+            "Unable to complete the comparative answer with grounded citations. "
+            "Please retry and keep explicit @file scope so evidence can be cited item by item."
+        )
+
     def _requires_mention_scoped_search(self, user_message: str) -> bool:
         """Return True when @mentions should trigger mandatory search_chunks grounding."""
         if not isinstance(user_message, str) or not user_message.strip():
@@ -259,6 +408,85 @@ class RecursiveAgent(BaseAgent):
             return False
         return (base_dir / ".index" / "index.db").exists()
 
+    def _requires_exhaustive_retrieval(self, user_message: str) -> bool:
+        """Return True when query should default to exhaustive retrieval profile."""
+        if not isinstance(user_message, str) or not user_message.strip():
+            return False
+        lowered = user_message.lower()
+        return any(pattern in lowered for pattern in self.EXHAUSTIVE_QUERY_PATTERNS)
+
+    def _requires_cross_doc_coverage(self, user_message: str, *, mention_count: int) -> bool:
+        """Return True when multi-document requests should cover each mentioned scope."""
+        if mention_count < 2:
+            return False
+        if not isinstance(user_message, str) or not user_message.strip():
+            return False
+        lowered = user_message.lower()
+        return any(pattern in lowered for pattern in self.CROSS_DOC_COMPARISON_PATTERNS)
+
+    @classmethod
+    def _extract_doc_mentions(cls, text: str) -> set[str]:
+        """Extract normalized @mention tokens from free text."""
+        if not isinstance(text, str) or not text.strip():
+            return set()
+
+        mentions: set[str] = set()
+        for match in cls.DOC_MENTION_RE.finditer(text):
+            raw = (match.group(0) or "").strip()
+            if not raw.startswith("@"):
+                continue
+            token = raw[1:].strip()
+            if token.startswith(("'", '"')) and token.endswith(("'", '"')) and len(token) >= 2:
+                token = token[1:-1]
+            token = token.rstrip(cls.MENTION_TRAILING_PUNCT).strip()
+            token = cls._normalize_mention_token(token)
+            if token:
+                mentions.add(token)
+        return mentions
+
+    @staticmethod
+    def _normalize_mention_token(token: str) -> str:
+        """Normalize mention token for robust set comparisons."""
+        normalized = token.strip().replace("\\", "/")
+        while normalized.startswith("./"):
+            normalized = normalized[2:]
+        return normalized.lower().strip("/")
+
+    @staticmethod
+    def _format_mentions(mentions: list[str]) -> str:
+        """Render mentions for user/system notices."""
+        if not mentions:
+            return "(none)"
+        return ", ".join(f"@{item}" for item in mentions)
+
+    @classmethod
+    def _has_citation_markers(cls, text: str) -> bool:
+        """Return True when text contains inline retrieval citation markers like [1]."""
+        if not isinstance(text, str) or not text.strip():
+            return False
+        return bool(cls.CITATION_MARKER_RE.search(text))
+
+    @staticmethod
+    def _parse_tool_args(function_obj: Any) -> dict[str, Any]:
+        """Parse JSON tool call arguments into a dict."""
+        arguments = getattr(function_obj, "arguments", "")
+        try:
+            parsed = json.loads(arguments)
+        except (TypeError, json.JSONDecodeError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    @staticmethod
+    def _mentions_equivalent(required: str, candidate: str) -> bool:
+        """Return True when two mention tokens likely refer to the same target file."""
+        if required == candidate:
+            return True
+        if not required or not candidate:
+            return False
+        if required.endswith(f"/{candidate}") or candidate.endswith(f"/{required}"):
+            return True
+        return Path(required).stem == Path(candidate).stem
+
     @staticmethod
     def _is_error_result(result_text: str) -> bool:
         """Return True when a tool result indicates failure/cancellation."""
@@ -266,7 +494,10 @@ class RecursiveAgent(BaseAgent):
         return lowered.startswith("error:") or lowered.startswith("operation cancelled")
 
     def _process_tool_calls_with_spawns(
-        self, tool_calls: list[Any]
+        self,
+        tool_calls: list[Any],
+        *,
+        force_search_mode: Optional[str] = None,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """Process tool calls and identify spawn requests."""
         results = []
@@ -280,6 +511,13 @@ class RecursiveAgent(BaseAgent):
                 args = parsed_args if isinstance(parsed_args, dict) else {}
             except json.JSONDecodeError:
                 args = {}
+            if (
+                name == "search_chunks"
+                and force_search_mode
+                and isinstance(args, dict)
+                and "retrieval_mode" not in args
+            ):
+                args["retrieval_mode"] = force_search_mode
 
             self.log(f"Tool: {name}({args})")
 
@@ -480,6 +718,10 @@ class RecursiveAgent(BaseAgent):
             parent_id=self.context.agent_id,
         )
         child.status_callback = self.status_callback
+        if hasattr(child, "context") and hasattr(self, "context"):
+            child.context.rag_turn_id = getattr(self.context, "rag_turn_id", None)
+            child.context.rag_turn_counter = getattr(self.context, "rag_turn_counter", 0)
+            child.context.rag_debug = bool(getattr(self.context, "rag_debug", False))
 
         try:
             result = child.run(task)
@@ -532,6 +774,10 @@ class RecursiveAgent(BaseAgent):
             parent_id=self.context.agent_id,
         )
         child.status_callback = self.status_callback
+        if hasattr(child, "context") and hasattr(self, "context"):
+            child.context.rag_turn_id = getattr(self.context, "rag_turn_id", None)
+            child.context.rag_turn_counter = getattr(self.context, "rag_turn_counter", 0)
+            child.context.rag_debug = bool(getattr(self.context, "rag_debug", False))
 
         try:
             result = child.run(task)

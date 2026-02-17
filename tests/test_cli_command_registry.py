@@ -596,6 +596,65 @@ def test_dispatch_rag_debug_last_rejects_invalid_limit():
     assert any("Usage: /rag-debug last [N]" in line for line in console.printed)
 
 
+def test_dispatch_rag_debug_turn_filters_current_turn(tmp_path):
+    """`/rag-debug turn` should show only traces for current turn id."""
+    console = _DummyConsole()
+    settings = Settings(base_dir=tmp_path)
+    agent = _DummyAgent()
+    agent.context = MagicMock()
+    agent.context.rag_turn_id = "turn-000007-abc123"
+    ctx = _make_test_context(console=console, settings=settings, agent=agent)
+
+    flavia_dir = tmp_path / ".flavia"
+    flavia_dir.mkdir(parents=True, exist_ok=True)
+    trace_path = flavia_dir / "rag_debug.jsonl"
+    trace_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "trace_id": "old1",
+                        "timestamp": "2026-02-17T12:00:00+00:00",
+                        "turn_id": "turn-000006-zzz999",
+                        "query_effective": "old query",
+                        "trace": {"params": {}, "filters": {}, "counts": {}, "timings_ms": {}},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "trace_id": "new1",
+                        "timestamp": "2026-02-17T12:01:00+00:00",
+                        "turn_id": "turn-000007-abc123",
+                        "query_effective": "current query",
+                        "trace": {"params": {}, "filters": {}, "counts": {}, "timings_ms": {}},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert dispatch_command(ctx, "/rag-debug turn") is True
+    printed = "\n".join(console.printed)
+    assert "new1" in printed
+    assert "current query" in printed
+    assert "turn_id: turn-000007-abc123" in printed
+    assert "old1" not in printed
+
+
+def test_dispatch_rag_debug_turn_without_active_turn():
+    """`/rag-debug turn` should explain when no active turn id exists."""
+    console = _DummyConsole()
+    agent = _DummyAgent()
+    agent.context = MagicMock()
+    agent.context.rag_turn_id = None
+    ctx = _make_test_context(console=console, agent=agent)
+
+    assert dispatch_command(ctx, "/rag-debug turn") is True
+    assert any("No active turn id found" in line for line in console.printed)
+
+
 def test_get_help_listing_shows_short_descriptions():
     """Test /help listing shows command descriptions."""
     help_text = get_help_listing()
