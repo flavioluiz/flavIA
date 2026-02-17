@@ -264,6 +264,9 @@ class VectorStore:
             query_vec: Query embedding vector (L2-normalized, 768 dims).
             k: Number of results to return.
             doc_ids_filter: Optional list of doc_ids to restrict search to.
+                - None: Search all documents
+                - []: Return empty results (explicit empty scope)
+                - ["id1", "id2"]: Search only specified documents
 
         Returns:
             List of dicts with keys: chunk_id, distance, doc_id, modality,
@@ -271,6 +274,10 @@ class VectorStore:
         """
         conn = self._get_connection()
         if k <= 0:
+            return []
+
+        # Handle empty filter case (consistent with FTSIndex)
+        if doc_ids_filter is not None and len(doc_ids_filter) == 0:
             return []
 
         # Build the query with optional doc_id filter

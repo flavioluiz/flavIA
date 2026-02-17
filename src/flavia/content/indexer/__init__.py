@@ -21,6 +21,7 @@ from .embedder import (
     get_embedding_client,
 )
 from .fts import FTSIndex
+from .retrieval import retrieve
 from .vector_store import VectorStore
 
 __all__ = [
@@ -38,4 +39,6 @@ __all__ = [
     "VectorStore",
     # FTS Index (11.3)
     "FTSIndex",
+    # Hybrid Retrieval (11.4)
+    "retrieve",
 ]
