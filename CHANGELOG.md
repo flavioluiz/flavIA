@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Video Temporal Expansion (Task 11.5)**: New `video_retrieval.py` module in `content/indexer/` for expanding retrieved video chunks with chronological evidence bundles:
+  - `expand_temporal_window(anchor_chunk, base_dir, vector_store, fts_index)` — Expands video_transcript (±15s) and video_frame (±10s) chunks with surrounding context
+  - Temporal bundle format: transcripts first (chronological), then frames (chronological)
+  - Fallback mechanism: 1 nearest frame before + 1 after (up to 30s) when no frames in range
+  - Frame reading from filesystem (`.converted/{video}_frames/frame_{MM}m{SS}s.md`) for efficiency
+  - `_get_all_frames_for_doc(doc_id, base_dir)` — Reads catalog to find all frame descriptions for a document
+  - `_get_nearest_frames(center_time, all_frames, max_distance)` — Finds closest frames before/after anchor
+  - `_format_evidence_bundle(transcript_items, frame_items)` — Formats output with `time_display`, `modality_label` ("(Audio)" / "(Screen)"), and `text`
+  - Integration: `retrieve()` now accepts `expand_video_temporal=True` parameter (default True) and adds `temporal_bundle` field to video chunk results
+  - New `VectorStore.get_chunks_by_doc_id(doc_id, modalities)` — Retrieve all chunks for a document, filtered by modality, sorted by time_start
+  - New `FTSIndex.get_chunks_by_doc_id(doc_id, modalities)` — Retrieve FTS chunks for a document, optionally filtered by modality
+  - 11 new unit tests in `tests/test_video_retrieval.py` covering timecode parsing, frame reading, bundle formatting, nearest frames, and expansion logic
 - **Hybrid Retrieval Engine with RRF fusion (Task 11.4)**: New `retrieval.py` module in `content/indexer/`:
   - Stage A catalog router: FTS5 shortlist (default 20) over catalog summaries + metadata
   - `retrieve(question, base_dir, settings, ...)` combines vector kNN + FTS BM25 via Reciprocal Rank Fusion (`k=60`)

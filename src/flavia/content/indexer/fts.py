@@ -109,9 +109,7 @@ class FTSIndex:
 
             if chunk_id in existing_ids:
                 # FTS5 doesn't support UPDATE: delete then insert
-                conn.execute(
-                    "DELETE FROM chunks_fts WHERE chunk_id = ?", (chunk_id,)
-                )
+                conn.execute("DELETE FROM chunks_fts WHERE chunk_id = ?", (chunk_id,))
                 conn.execute(
                     "INSERT INTO chunks_fts (chunk_id, doc_id, modality, text, heading_path) "
                     "VALUES (?, ?, ?, ?, ?)",
@@ -235,13 +233,64 @@ class FTSIndex:
         deleted = 0
 
         for chunk_id in chunk_ids:
-            cursor = conn.execute(
-                "DELETE FROM chunks_fts WHERE chunk_id = ?", (chunk_id,)
-            )
+            cursor = conn.execute("DELETE FROM chunks_fts WHERE chunk_id = ?", (chunk_id,))
             deleted += cursor.rowcount
 
         conn.commit()
         return deleted
+
+    def get_chunks_by_doc_id(
+        self,
+        doc_id: str,
+        modalities: Optional[list[str]] = None,
+    ) -> list[dict[str, Any]]:
+        """Get all chunks for a specific doc_id, optionally filtered by modality.
+
+        Args:
+            doc_id: Document ID to retrieve chunks for.
+            modalities: Optional list of modalities to filter by.
+
+        Returns:
+            List of chunk dicts with keys: chunk_id, doc_id, modality, text, heading_path.
+        """
+        conn = self._get_connection()
+
+        if modalities:
+            placeholders = ",".join("?" * len(modalities))
+            cursor = conn.execute(
+                f"""
+                SELECT chunk_id, doc_id, modality, text, heading_path
+                FROM chunks_fts
+                WHERE doc_id = ? AND modality IN ({placeholders})
+                """,
+                (doc_id, *modalities),
+            )
+        else:
+            cursor = conn.execute(
+                """
+                SELECT chunk_id, doc_id, modality, text, heading_path
+                FROM chunks_fts
+                WHERE doc_id = ?
+                """,
+                (doc_id,),
+            )
+
+        chunks = []
+        for row in cursor:
+            heading_str = row["heading_path"] or ""
+            heading_path = [h for h in heading_str.split(" > ") if h] if heading_str else []
+
+            chunks.append(
+                {
+                    "chunk_id": row["chunk_id"],
+                    "doc_id": row["doc_id"],
+                    "modality": row["modality"],
+                    "text": row["text"],
+                    "heading_path": heading_path,
+                }
+            )
+
+        return chunks
 
     def get_stats(self) -> dict[str, Any]:
         """Get statistics about the FTS index.

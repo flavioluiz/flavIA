@@ -2,7 +2,7 @@
 
 Transform flavIA's current keyword-based catalog search into a full RAG pipeline that embeds converted documents, stores vectors in SQLite, and provides hybrid retrieval (vector + full-text) to the agent.
 
-**Status**: 3 / 8 tasks complete
+**Status**: 4 / 8 tasks complete
 **Dependencies**: Area 1 complete (all converters done ✓)
 
 ---

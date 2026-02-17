@@ -10,6 +10,7 @@ Currently implemented:
   embedder.embed_chunks(...), embed_query(...) — Task 11.2 ✓
   vector_store.VectorStore — Task 11.2 ✓
   fts.FTSIndex — Task 11.3 ✓
+  video_retrieval.expand_video_chunks(...) — Task 11.5 ✓
 """
 
 from .chunker import chunk_document, chunk_text_document, chunk_video_document
@@ -23,6 +24,7 @@ from .embedder import (
 from .fts import FTSIndex
 from .retrieval import retrieve
 from .vector_store import VectorStore
+from .video_retrieval import expand_video_chunks
 
 __all__ = [
     # Chunker (11.1)
@@ -41,4 +43,6 @@ __all__ = [
     "FTSIndex",
     # Hybrid Retrieval (11.4)
     "retrieve",
+    # Video Temporal Retrieval (11.5)
+    "expand_video_chunks",
 ]

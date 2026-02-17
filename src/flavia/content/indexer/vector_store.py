@@ -82,8 +82,7 @@ class VectorStore:
         except Exception as e:
             # sqlite_vec module exists but load failed
             raise RuntimeError(
-                f"Failed to load sqlite-vec extension: {e}\n"
-                "Install with: pip install sqlite-vec"
+                f"Failed to load sqlite-vec extension: {e}\nInstall with: pip install sqlite-vec"
             ) from e
 
         # Strategy 2: Extension not found
@@ -128,9 +127,7 @@ class VectorStore:
         )
 
         # Create index for doc_id filtering
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_chunks_meta_doc_id ON chunks_meta(doc_id)"
-        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_meta_doc_id ON chunks_meta(doc_id)")
 
         conn.commit()
 
@@ -156,9 +153,7 @@ class VectorStore:
 
         for chunk_id, vector, metadata in items:
             # Check if exists
-            cursor = conn.execute(
-                "SELECT 1 FROM chunks_meta WHERE chunk_id = ?", (chunk_id,)
-            )
+            cursor = conn.execute("SELECT 1 FROM chunks_meta WHERE chunk_id = ?", (chunk_id,))
             exists = cursor.fetchone() is not None
 
             now = datetime.now(timezone.utc).isoformat()
@@ -366,17 +361,101 @@ class VectorStore:
         deleted = 0
 
         for chunk_id in chunk_ids:
-            cursor = conn.execute(
-                "DELETE FROM chunks_meta WHERE chunk_id = ?", (chunk_id,)
-            )
+            cursor = conn.execute("DELETE FROM chunks_meta WHERE chunk_id = ?", (chunk_id,))
             if cursor.rowcount > 0:
-                conn.execute(
-                    "DELETE FROM chunks_vec WHERE chunk_id = ?", (chunk_id,)
-                )
+                conn.execute("DELETE FROM chunks_vec WHERE chunk_id = ?", (chunk_id,))
                 deleted += 1
 
         conn.commit()
         return deleted
+
+    def get_chunks_by_doc_id(
+        self,
+        doc_id: str,
+        modalities: Optional[list[str]] = None,
+    ) -> list[dict[str, Any]]:
+        """Get all chunks for a specific doc_id, optionally filtered by modality.
+
+        Args:
+            doc_id: Document ID to retrieve chunks for.
+            modalities: Optional list of modalities to filter by (e.g., ["video_transcript", "video_frame"]).
+                      If None, returns all modalities.
+
+        Returns:
+            List of chunk dicts with keys: chunk_id, doc_id, modality, converted_path,
+            locator, heading_path, doc_name, file_type, text. Results are sorted by
+            time_start in locator if temporal locator is present.
+        """
+        conn = self._get_connection()
+
+        if modalities:
+            placeholders = ",".join("?" * len(modalities))
+            cursor = conn.execute(
+                f"""
+                SELECT v.chunk_id, m.doc_id, m.modality, m.converted_path,
+                       m.locator_json, m.heading_json, m.doc_name, m.file_type,
+                       f.text
+                FROM chunks_vec v
+                JOIN chunks_meta m ON v.chunk_id = m.chunk_id
+                JOIN chunks_fts f ON v.chunk_id = f.chunk_id
+                WHERE m.doc_id = ? AND m.modality IN ({placeholders})
+                ORDER BY m.chunk_id
+                """,
+                (doc_id, *modalities),
+            )
+        else:
+            cursor = conn.execute(
+                """
+                SELECT v.chunk_id, m.doc_id, m.modality, m.converted_path,
+                       m.locator_json, m.heading_json, m.doc_name, m.file_type,
+                       f.text
+                FROM chunks_vec v
+                JOIN chunks_meta m ON v.chunk_id = m.chunk_id
+                JOIN chunks_fts f ON v.chunk_id = f.chunk_id
+                WHERE m.doc_id = ?
+                ORDER BY m.chunk_id
+                """,
+                (doc_id,),
+            )
+
+        chunks = []
+        for row in cursor:
+            locator = json.loads(row["locator_json"]) if row["locator_json"] else {}
+            heading_path = json.loads(row["heading_json"]) if row["heading_json"] else []
+
+            chunks.append(
+                {
+                    "chunk_id": row["chunk_id"],
+                    "doc_id": row["doc_id"],
+                    "modality": row["modality"],
+                    "converted_path": row["converted_path"],
+                    "locator": locator,
+                    "heading_path": heading_path,
+                    "doc_name": row["doc_name"],
+                    "file_type": row["file_type"],
+                    "text": row["text"],
+                }
+            )
+
+        def _get_time_start(locator: dict) -> float:
+            """Extract time_start in seconds if available."""
+            time_str = locator.get("time_start", "")
+            if not time_str:
+                return float("inf")
+            try:
+                parts = time_str.split(":")
+                parts = [float(p) for p in parts]
+                if len(parts) == 3:
+                    return parts[0] * 3600 + parts[1] * 60 + parts[2]
+                if len(parts) == 2:
+                    return parts[0] * 60 + parts[1]
+                return parts[0]
+            except (ValueError, IndexError):
+                return float("inf")
+
+        chunks.sort(key=lambda c: _get_time_start(c.get("locator", {})))
+
+        return chunks
 
     def get_stats(self) -> dict[str, Any]:
         """Get statistics about the vector store.
@@ -405,9 +484,7 @@ class VectorStore:
             db_size = self.db_path.stat().st_size
 
         # Last indexed timestamp
-        cursor = conn.execute(
-            "SELECT MAX(indexed_at) as last_indexed FROM chunks_meta"
-        )
+        cursor = conn.execute("SELECT MAX(indexed_at) as last_indexed FROM chunks_meta")
         row = cursor.fetchone()
         last_indexed = row["last_indexed"] if row else None
 
