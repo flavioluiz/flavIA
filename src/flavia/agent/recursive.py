@@ -60,7 +60,7 @@ class RecursiveAgent(BaseAgent):
     MENTION_TRAILING_PUNCT = ".,;:!?)]}"
     MAX_MENTION_GROUNDING_REMINDERS = 3
     MAX_COMPARISON_FORMAT_REMINDERS = 2
-    CITATION_MARKER_RE = re.compile(r"\[\d+\]")
+    CITATION_MARKER_RE = re.compile(r"\[(?:\d+|C-[A-Za-z0-9-]+)\]")
     CROSS_DOC_COMPARISON_PATTERNS = (
         "compare",
         "comparar",

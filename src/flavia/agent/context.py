@@ -34,6 +34,7 @@ class AgentContext:
     rag_debug: bool = False
     rag_turn_id: Optional[str] = None
     rag_turn_counter: int = 0
+    rag_citation_counter: int = 0
     converted_access_mode: str = "hybrid"
     allow_converted_read: bool = False
 
@@ -89,6 +90,7 @@ class AgentContext:
             rag_debug=self.rag_debug,
             rag_turn_id=self.rag_turn_id,
             rag_turn_counter=self.rag_turn_counter,
+            rag_citation_counter=self.rag_citation_counter,
             converted_access_mode=profile.converted_access_mode,
             allow_converted_read=profile.allow_converted_read,
         )

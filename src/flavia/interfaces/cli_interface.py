@@ -54,6 +54,7 @@ _COMMANDS_WITH_ARGS = {
     "/agent",
     "/model",
     "/tools",
+    "/citations",
     "/provider-manage",
     "/provider-test",
     "/compact",
@@ -1633,6 +1634,7 @@ def run_cli(settings: Settings) -> None:
                     new_counter = current_counter + 1
                     ctx.agent.context.rag_turn_counter = new_counter
                     ctx.agent.context.rag_turn_id = f"turn-{new_counter:06d}-{uuid4().hex[:6]}"
+                    ctx.agent.context.rag_citation_counter = 0
                 _append_prompt_history(user_input, ctx.history_file, ctx.history_enabled)
                 _append_chat_log(ctx.chat_log_file, "user", user_input, model_ref=active_model)
                 response = _run_agent_with_feedback(
@@ -1643,6 +1645,10 @@ def run_cli(settings: Settings) -> None:
                 )
                 console.print(f"[bold blue]{_build_agent_prefix(ctx.agent)}[/bold blue] ", end="")
                 console.print(Markdown(response))
+                if "[C-" in response:
+                    console.print(
+                        "[dim]Tip: use /citations turn to inspect citation markers shown in the answer.[/dim]"
+                    )
                 _display_token_usage(ctx.agent)
                 _prompt_compaction(ctx.agent)
                 _append_chat_log(ctx.chat_log_file, "assistant", response, model_ref=active_model)

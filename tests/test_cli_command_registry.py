@@ -93,6 +93,7 @@ def test_command_registry_contains_expected_commands():
         "/model",
         "/providers",
         "/tools",
+        "/citations",
         "/config",
         "/catalog",
         "/provider-setup",
@@ -667,6 +668,81 @@ def test_dispatch_rag_debug_turn_without_traces_and_debug_off_shows_hint(tmp_pat
     assert dispatch_command(ctx, "/rag-debug turn") is True
     assert any("No RAG diagnostics traces found for current turn" in line for line in console.printed)
     assert any("RAG debug mode is currently OFF" in line for line in console.printed)
+
+
+def test_dispatch_citations_turn_prints_current_turn_entries(tmp_path):
+    """`/citations turn` should print citation entries filtered by active turn."""
+    console = _DummyConsole()
+    settings = Settings(base_dir=tmp_path)
+    agent = _DummyAgent()
+    agent.context = MagicMock()
+    agent.context.rag_turn_id = "turn-000010-abc123"
+    ctx = _make_test_context(console=console, settings=settings, agent=agent)
+
+    flavia_dir = tmp_path / ".flavia"
+    flavia_dir.mkdir(parents=True, exist_ok=True)
+    citation_path = flavia_dir / "rag_citations.jsonl"
+    citation_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "citation_id": "C-main-0001",
+                        "turn_id": "turn-000009-zzzzzz",
+                        "doc_name": "old.pdf",
+                        "locator": {"line_start": 1, "line_end": 2},
+                        "excerpt": "old",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "citation_id": "C-main-0002",
+                        "turn_id": "turn-000010-abc123",
+                        "doc_name": "current.pdf",
+                        "locator": {"line_start": 10, "line_end": 20},
+                        "excerpt": "current evidence",
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert dispatch_command(ctx, "/citations turn") is True
+    printed = "\n".join(console.printed)
+    assert "C-main-0002" in printed
+    assert "current.pdf" in printed
+    assert "old.pdf" not in printed
+
+
+def test_dispatch_citations_id_prints_single_entry(tmp_path):
+    """`/citations id` should return exactly the requested citation."""
+    console = _DummyConsole()
+    settings = Settings(base_dir=tmp_path)
+    ctx = _make_test_context(console=console, settings=settings)
+
+    flavia_dir = tmp_path / ".flavia"
+    flavia_dir.mkdir(parents=True, exist_ok=True)
+    citation_path = flavia_dir / "rag_citations.jsonl"
+    citation_path.write_text(
+        json.dumps(
+            {
+                "citation_id": "C-main-0042",
+                "turn_id": "turn-000111-abc111",
+                "doc_name": "evidence.pdf",
+                "locator": {"line_start": 7, "line_end": 9},
+                "excerpt": "important excerpt",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert dispatch_command(ctx, "/citations id C-main-0042") is True
+    printed = "\n".join(console.printed)
+    assert "C-main-0042" in printed
+    assert "evidence.pdf" in printed
 
 
 def test_get_help_listing_shows_short_descriptions():

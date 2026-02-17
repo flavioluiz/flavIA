@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from ..base import BaseTool, ToolParameter, ToolSchema
 from ..permissions import check_read_permission
+from flavia.content.indexer.citation_log import append_citation_entries
 from flavia.content.indexer.rag_debug_log import append_rag_debug_trace
 
 if TYPE_CHECKING:
@@ -246,6 +247,9 @@ def _prioritize_doc_coverage(
         if len(prioritized) >= limit:
             break
     return prioritized[:limit]
+
+
+_CITATION_AGENT_TAG_RE = re.compile(r"[^a-z0-9]+")
 
 
 class SearchChunksTool(BaseTool):
@@ -600,7 +604,18 @@ class SearchChunksTool(BaseTool):
         if not results:
             return f"No results found for query: '{effective_query}'"
 
-        formatted_results = self._format_results(results)
+        citation_labels = self._build_citation_labels(results, agent_context)
+        if citation_labels:
+            citation_entries = self._build_citation_entries(
+                results,
+                citation_labels=citation_labels,
+                turn_id=str(getattr(agent_context, "rag_turn_id", "") or ""),
+                agent_id=str(getattr(agent_context, "agent_id", "main") or "main"),
+                query=effective_query,
+            )
+            append_citation_entries(base_dir, citation_entries)
+
+        formatted_results = self._format_results(results, citation_labels=citation_labels)
         if mentions and (unresolved_mentions or unindexed_mentions):
             notes: list[str] = []
             if unresolved_mentions:
@@ -610,11 +625,21 @@ class SearchChunksTool(BaseTool):
             formatted_results = f"Note: some @file references were ignored ({'; '.join(notes)}).\n\n{formatted_results}"
         return formatted_results
 
-    def _format_results(self, results: list[dict[str, Any]]) -> str:
+    def _format_results(
+        self,
+        results: list[dict[str, Any]],
+        *,
+        citation_labels: Optional[list[str]] = None,
+    ) -> str:
         """Format retrieval results as annotated context blocks with citations."""
         parts = []
 
         for idx, result in enumerate(results, 1):
+            citation_label = (
+                citation_labels[idx - 1]
+                if citation_labels and idx - 1 < len(citation_labels)
+                else str(idx)
+            )
             doc_name = result.get("doc_name", "unknown")
             modality = result.get("modality", "text")
             locator = result.get("locator", {})
@@ -644,7 +669,7 @@ class SearchChunksTool(BaseTool):
             citation = " — ".join(citation_parts)
             if line_annotation:
                 citation = f"{citation} ({line_annotation})"
-            parts.append(f"[{idx}] {citation}")
+            parts.append(f"[{citation_label}] {citation}")
 
             temporal_bundle = result.get("temporal_bundle")
 
@@ -667,6 +692,66 @@ class SearchChunksTool(BaseTool):
             parts.append("")
 
         return "\n".join(parts)
+
+    def _build_citation_labels(
+        self,
+        results: list[dict[str, Any]],
+        agent_context: "AgentContext",
+    ) -> list[str]:
+        """Create stable citation labels for retrieval results in the current turn."""
+        if not results:
+            return []
+        labels: list[str] = []
+        for _ in results:
+            labels.append(self._next_citation_label(agent_context))
+        return labels
+
+    @staticmethod
+    def _next_citation_label(agent_context: "AgentContext") -> str:
+        """Generate next citation label scoped by agent id and turn-local counter."""
+        current = int(getattr(agent_context, "rag_citation_counter", 0) or 0)
+        current += 1
+        agent_context.rag_citation_counter = current
+
+        raw_agent_id = str(getattr(agent_context, "agent_id", "main") or "main").lower()
+        agent_tag = _CITATION_AGENT_TAG_RE.sub("-", raw_agent_id).strip("-")
+        if not agent_tag:
+            agent_tag = "main"
+        return f"C-{agent_tag}-{current:04d}"
+
+    def _build_citation_entries(
+        self,
+        results: list[dict[str, Any]],
+        *,
+        citation_labels: list[str],
+        turn_id: str,
+        agent_id: str,
+        query: str,
+    ) -> list[dict[str, Any]]:
+        """Build citation records to persist for user inspection."""
+        entries: list[dict[str, Any]] = []
+        for idx, result in enumerate(results):
+            if idx >= len(citation_labels):
+                break
+            text = str(result.get("text") or "").strip()
+            excerpt = " ".join(text.split())
+            if len(excerpt) > 500:
+                excerpt = excerpt[:497] + "..."
+            entries.append(
+                {
+                    "citation_id": citation_labels[idx],
+                    "turn_id": turn_id,
+                    "agent_id": agent_id,
+                    "query": query,
+                    "doc_name": str(result.get("doc_name") or "unknown"),
+                    "modality": str(result.get("modality") or ""),
+                    "heading_path": list(result.get("heading_path") or []),
+                    "locator": dict(result.get("locator") or {}),
+                    "chunk_id": str(result.get("chunk_id") or ""),
+                    "excerpt": excerpt,
+                }
+            )
+        return entries
 
     def is_available(self, agent_context: "AgentContext") -> bool:
         """Available whenever the vector index exists."""

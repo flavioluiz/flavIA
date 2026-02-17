@@ -115,7 +115,7 @@ def test_search_chunks_file_type_filter_accepts_pdf_category(
     assert captured["top_k"] == 10
     assert captured["kwargs"]["vector_k"] == 15
     assert captured["kwargs"]["fts_k"] == 15
-    assert "[1] paper.pdf — Section 2 > Method (lines 120–170)" in output
+    assert "[C-test-0001] paper.pdf — Section 2 > Method (lines 120–170)" in output
 
 
 def test_search_chunks_formats_temporal_bundle_output(tmp_path: Path, monkeypatch) -> None:
@@ -152,7 +152,7 @@ def test_search_chunks_formats_temporal_bundle_output(tmp_path: Path, monkeypatc
 
     output = tool.execute({"query": "batch norm"}, ctx)
 
-    assert "[1] lecture.mp4 — video transcript" in output
+    assert "[C-test-0001] lecture.mp4 — video transcript" in output
     assert '00:01:05-00:01:18 (Audio): "We then apply batch normalisation."' in output
     assert '00:01:12 (Screen): "Slide: BatchNorm formula"' in output
 
@@ -238,6 +238,38 @@ def test_search_chunks_debug_persists_trace_without_injecting_output(tmp_path: P
     assert payload["trace"]["counts"]["vector_hits"] == 4
 
 
+def test_search_chunks_persists_citation_entries(tmp_path: Path, monkeypatch) -> None:
+    _create_catalog_and_index(tmp_path)
+    tool = SearchChunksTool()
+    ctx = _make_context(tmp_path)
+
+    monkeypatch.setattr("flavia.config.settings.get_settings", _make_settings_stub)
+
+    def _fake_retrieve(*, question, base_dir, settings, doc_ids_filter, top_k, **kwargs):
+        return [
+            {
+                "chunk_id": "chunk-1",
+                "doc_name": "paper.pdf",
+                "modality": "text",
+                "heading_path": ["Overview"],
+                "locator": {"line_start": 10, "line_end": 20},
+                "text": "Sample evidence.",
+            }
+        ]
+
+    monkeypatch.setattr("flavia.content.indexer.retrieve", _fake_retrieve)
+    output = tool.execute({"query": "sample"}, ctx)
+    assert "[C-test-0001]" in output
+
+    citation_log = tmp_path / ".flavia" / "rag_citations.jsonl"
+    assert citation_log.exists()
+    lines = [line for line in citation_log.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(lines) == 1
+    payload = json.loads(lines[0])
+    assert payload["citation_id"] == "C-test-0001"
+    assert payload["doc_name"] == "paper.pdf"
+
+
 def test_search_chunks_scopes_by_at_file_reference(tmp_path: Path, monkeypatch) -> None:
     _create_catalog_and_index(tmp_path)
     tool = SearchChunksTool()
@@ -273,7 +305,7 @@ def test_search_chunks_scopes_by_at_file_reference(tmp_path: Path, monkeypatch) 
     assert captured["question"] == "transformer backbone"
     assert captured["doc_ids_filter"] == [expected_doc_id]
     assert captured["kwargs"]["preserve_doc_scope"] is True
-    assert "[1] paper.pdf — Section (lines 1–2)" in output
+    assert "[C-test-0001] paper.pdf — Section (lines 1–2)" in output
 
 
 def test_search_chunks_at_file_intersects_with_filters(tmp_path: Path, monkeypatch) -> None:
@@ -408,5 +440,5 @@ def test_search_chunks_exhaustive_backfills_missing_docs_in_multi_doc_scope(
     )
 
     assert any(call.get("doc_ids_filter") == [lecture_doc_id] for call in calls)
-    assert "[1] paper.pdf" in output
+    assert "[C-test-0001] paper.pdf" in output
     assert "lecture.mp4" in output

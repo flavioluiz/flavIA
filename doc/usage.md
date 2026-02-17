@@ -211,6 +211,7 @@ Inside a chat session, the following commands are available:
 | `/rag-debug [on\|off\|status\|last [N]\|turn [N]]` | Toggle diagnostics capture and inspect recent persisted traces (global or current turn) |
 | `/tools` | List available tools by category |
 | `/tools <name>` | Show tool schema and parameters |
+| `/citations [turn [N]\|id <CITATION_ID>]` | Inspect retrieval citation markers from current turn or by id |
 | `/config` | Show configuration paths and active settings |
 | `/quit` | Exit session (aliases: `/exit`, `/q`) |
 
@@ -246,6 +247,10 @@ Notes:
   - `/rag-debug turn` (or `/rag-debug turn N`): inspect only traces captured in the current user turn.
   - If `/rag-debug turn` returns empty and debug is off, enable it first with `/rag-debug on`, rerun the prompt, then inspect again.
   - `/index diagnose`: reports index health, modality distribution, top docs by chunk count, and current RAG tuning parameters.
+ - Citation marker inspection:
+  - Retrieval outputs now use stable citation markers like `[C-main-0001]`.
+  - Use `/citations turn` to see marker meaning (source file, locator, excerpt) for the current turn.
+  - Use `/citations id <CITATION_ID>` to inspect one specific marker.
  - Comparative analysis workflow (generic):
   - For multi-file comparison prompts, the agent now enforces a two-stage flow: source-specific evidence extraction first, then synthesis.
   - Comparative conclusions must be grounded with inline retrieval citations (`[1]`, `[2]`, etc.).
