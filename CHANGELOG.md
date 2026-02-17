@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **File-targeted RAG retrieval via `@arquivo` mentions**:
+  - `search_chunks` now parses explicit file mentions in `query` (example: `@relatorio.pdf pontos fracos`)
+  - Mentions are resolved against original catalog entries (`entry.path` / `entry.name`) and mapped to indexed converted chunks
+  - Mention scope combines with existing filters: union of mentions, then intersection with `file_type_filter` / `doc_name_filter`
+  - Unknown or unindexed mentions now return explicit feedback instead of silently broadening retrieval
+  - Added regression tests in `tests/test_search_chunks_tool.py` for mention scoping and filter intersection
 - **RAG diagnostics mode and tuning controls**:
   - New runtime command `/rag-debug [on|off|status]` to toggle detailed retrieval diagnostics in `search_chunks`
   - New `/index diagnose` command (alias `/index-diagnose`) with deeper index health insights:
@@ -142,6 +148,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- **Chunk `doc_id` consistency hardening**:
+  - `chunker.chunk_document()` now uses the original source checksum (`entry.checksum_sha256`) for `doc_id` derivation when available
+  - This aligns index-time `doc_id` generation with retrieval/router/filter derivation and avoids scope mismatches
+  - Legacy fallback (converted checksum) is preserved only for direct chunker calls without catalog checksum context
+  - Added regression test in `tests/test_content_indexer_chunker.py`
+- **Agent retrieval guidance update**:
+  - Catalog-first prompt guidance now explicitly instructs keeping `@arquivo.ext` mentions in `search_chunks` queries for precise file scoping
 - **Hybrid converted-content access policy**:
   - New per-agent `converted_access_mode` in `agents.yaml`: `strict`, `hybrid`, `open`
   - `hybrid` is the default: agents must call `search_chunks` first, then can fallback to direct `.converted/` reads

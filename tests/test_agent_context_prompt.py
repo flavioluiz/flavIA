@@ -33,6 +33,7 @@ def test_build_system_prompt_includes_catalog_first_guidance(tmp_path: Path):
         "Use search_chunks when answering questions about document content (what, how, why). "
         "Use query_catalog to discover which files exist or filter by type/name."
     ) in prompt
+    assert "If the user cites files as `@arquivo.ext`" in prompt
     assert "Only use `read_file` after shortlisting" in prompt
     assert "Video workflow playbook:" in prompt
     assert "`frame_descriptions`" in prompt

@@ -165,6 +165,8 @@ The `{base_dir}` placeholder in the context is replaced with the base directory 
 - `hybrid` (default): require a `search_chunks` call first, then allow direct fallback reads.
 - `open`: always allow direct `.converted/` reads.
 
+`search_chunks` also supports `@arquivo` mentions in the query for explicit file scoping (by original catalog file names/paths, e.g., `@relatorio.pdf`). Mentioned originals are mapped to their indexed converted content automatically.
+
 Legacy key (still accepted): `allow_converted_read: true|false` maps to `open|strict`.
 
 ### Available tools
@@ -178,7 +180,7 @@ Legacy key (still accepted): `allow_converted_read: true|false` maps to `open|st
 | `query_catalog` | content | Query indexed files by filters (name, type, extension, summary text) |
 | `get_catalog_summary` | content | Retrieve a high-level project/content catalog summary |
 | `refresh_catalog` | content | Rescan project files and update the content catalog |
-| `search_chunks` | content | Hybrid semantic retrieval (vector + FTS) over indexed chunks with citations |
+| `search_chunks` | content | Hybrid semantic retrieval (vector + FTS) over indexed chunks with citations; supports `@arquivo` scoping |
 | `analyze_image` | content | Analyze an image with a vision-capable model and return a detailed description |
 | `compile_latex` | academic | Compile `.tex` into PDF with log parsing and configurable passes |
 | `write_file` | write | Create or overwrite a file |

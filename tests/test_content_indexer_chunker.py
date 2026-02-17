@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 
 from flavia.content.indexer.chunker import chunk_document, chunk_text_document, chunk_video_document
@@ -168,6 +169,27 @@ def test_chunk_text_document_uses_real_line_numbers(tmp_path: Path):
     assert len(chunks) == 1
     assert chunks[0]["source"]["locator"]["line_start"] == 3
     assert chunks[0]["source"]["locator"]["line_end"] == 3
+
+
+def test_chunk_document_uses_original_checksum_for_doc_id(tmp_path: Path):
+    converted_dir = tmp_path / ".converted"
+    converted_dir.mkdir()
+    converted_path = converted_dir / "paper.md"
+    converted_path.write_text("A " * 2000, encoding="utf-8")
+
+    entry = {
+        "path": "paper.pdf",
+        "name": "paper.pdf",
+        "file_type": "binary_document",
+        "converted_to": ".converted/paper.md",
+        "checksum_sha256": "sha-original-file",
+    }
+
+    chunks = chunk_document(entry, tmp_path)
+    assert chunks
+
+    expected_doc_id = hashlib.sha1(f"{tmp_path}:paper.pdf:sha-original-file".encode()).hexdigest()
+    assert chunks[0]["doc_id"] == expected_doc_id
 
 
 def test_chunk_text_document_rejects_outside_base_dir(tmp_path: Path):

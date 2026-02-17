@@ -231,6 +231,7 @@ def chunk_text_document(
     file_type: str,
     base_dir: Path,
     original_path: str,
+    source_checksum: Optional[str] = None,
     chunk_min_tokens: Optional[int] = None,
     chunk_max_tokens: Optional[int] = None,
 ) -> list[dict]:
@@ -242,6 +243,7 @@ def chunk_text_document(
         file_type: Original file type (pdf, image, audio, ...).
         base_dir: Vault base directory (for doc_id generation).
         original_path: Relative path of original file.
+        source_checksum: Optional checksum from the original source file.
 
     Returns:
         List of chunk dicts (JSONL-compatible).
@@ -256,7 +258,9 @@ def chunk_text_document(
     except OSError:
         return []
 
-    checksum = _file_checksum(converted_path)
+    checksum = (source_checksum or "").strip()
+    if not checksum:
+        checksum = _file_checksum(converted_path)
     doc = _doc_id(base_dir, original_path, checksum)
 
     # Detect modality from file_type
@@ -342,6 +346,7 @@ def chunk_video_document(
     source_name: str,
     base_dir: Path,
     original_path: str,
+    source_checksum: Optional[str] = None,
     frame_desc_paths: Optional[list[str]] = None,
     chunk_min_tokens: Optional[int] = None,
     chunk_max_tokens: Optional[int] = None,
@@ -354,6 +359,7 @@ def chunk_video_document(
         source_name: Human-readable video name.
         base_dir: Vault base directory.
         original_path: Relative path of original video file.
+        source_checksum: Optional checksum from the original source file.
         frame_desc_paths: List of frame description .md file paths.
 
     Returns:
@@ -366,7 +372,9 @@ def chunk_video_document(
 
     chunks = []
 
-    checksum = _file_checksum(converted_path)
+    checksum = (source_checksum or "").strip()
+    if not checksum:
+        checksum = _file_checksum(converted_path)
     doc = _doc_id(base_dir, original_path, checksum)
 
     # --- Transcript stream ---
@@ -384,6 +392,7 @@ def chunk_video_document(
                 base_dir,
                 converted_path,
                 original_path,
+                source_checksum=source_checksum,
                 chunk_min_tokens=chunk_min_tokens,
                 chunk_max_tokens=chunk_max_tokens,
                 video_window_seconds=video_window_seconds,
@@ -414,6 +423,7 @@ def _chunk_video_transcript(
     base_dir: Path,
     converted_path: Path,
     original_path: str,
+    source_checksum: Optional[str] = None,
     chunk_min_tokens: Optional[int] = None,
     chunk_max_tokens: Optional[int] = None,
     video_window_seconds: Optional[int] = None,
@@ -458,6 +468,7 @@ def _chunk_video_transcript(
             "video",
             base_dir,
             original_path,
+            source_checksum=source_checksum,
             chunk_min_tokens=chunk_min_tokens,
             chunk_max_tokens=chunk_max_tokens,
         )
@@ -591,12 +602,14 @@ def chunk_document(
         name = entry.get("name", path)
         file_type = entry.get("file_type", "text")
         converted_to = entry.get("converted_to", "")
+        checksum_sha256 = entry.get("checksum_sha256", "") or ""
         frame_descriptions = entry.get("frame_descriptions", [])
     else:
         path = getattr(entry, "path", "")
         name = getattr(entry, "name", path)
         file_type = getattr(entry, "file_type", "text")
         converted_to = getattr(entry, "converted_to", "") or ""
+        checksum_sha256 = getattr(entry, "checksum_sha256", "") or ""
         frame_descriptions = getattr(entry, "frame_descriptions", []) or []
 
     if not converted_to:
@@ -614,6 +627,7 @@ def chunk_document(
             source_name=name,
             base_dir=base_dir,
             original_path=path,
+            source_checksum=checksum_sha256,
             frame_desc_paths=frame_descriptions if frame_descriptions else None,
             chunk_min_tokens=chunk_min_tokens,
             chunk_max_tokens=chunk_max_tokens,
@@ -626,6 +640,7 @@ def chunk_document(
         file_type=file_type,
         base_dir=base_dir,
         original_path=path,
+        source_checksum=checksum_sha256,
         chunk_min_tokens=chunk_min_tokens,
         chunk_max_tokens=chunk_max_tokens,
     )

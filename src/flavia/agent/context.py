@@ -131,6 +131,10 @@ def _build_catalog_first_guidance(context: AgentContext) -> str:
             "Use search_chunks when answering questions about document content (what, how, why). "
             "Use query_catalog to discover which files exist or filter by type/name."
         )
+        lines.append(
+            "- If the user cites files as `@arquivo.ext`, keep those mentions in the "
+            "`search_chunks` query to scope retrieval to the referenced original files."
+        )
 
     if has_query:
         lines.append(

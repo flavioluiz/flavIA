@@ -41,10 +41,16 @@ def _make_context(base_dir: Path, permissions: AgentPermissions | None = None) -
 def _create_catalog_and_index(base_dir: Path) -> None:
     (base_dir / "paper.pdf").write_bytes(b"%PDF-1.4 fake")
     (base_dir / "lecture.mp4").write_bytes(b"fake video content")
+    converted_dir = base_dir / ".converted"
+    converted_dir.mkdir(exist_ok=True)
+    (converted_dir / "paper.md").write_text("paper content", encoding="utf-8")
+    (converted_dir / "lecture.md").write_text("lecture content", encoding="utf-8")
     config_dir = base_dir / ".flavia"
     config_dir.mkdir(exist_ok=True)
     catalog = ContentCatalog(base_dir)
     catalog.build()
+    catalog.files["paper.pdf"].converted_to = ".converted/paper.md"
+    catalog.files["lecture.mp4"].converted_to = ".converted/lecture.md"
     catalog.save(config_dir)
     index_dir = base_dir / ".index"
     index_dir.mkdir(exist_ok=True)
@@ -220,3 +226,64 @@ def test_search_chunks_debug_output_includes_trace(tmp_path: Path, monkeypatch) 
     output = tool.execute({"query": "sample"}, ctx)
     assert "[RAG DEBUG]" in output
     assert "hits: vector=4 fts=3" in output
+
+
+def test_search_chunks_scopes_by_at_file_reference(tmp_path: Path, monkeypatch) -> None:
+    _create_catalog_and_index(tmp_path)
+    tool = SearchChunksTool()
+    ctx = _make_context(tmp_path)
+    monkeypatch.setattr("flavia.config.settings.get_settings", _make_settings_stub)
+
+    captured: dict[str, object] = {}
+
+    def _fake_retrieve(*, question, base_dir, settings, doc_ids_filter, top_k, **kwargs):
+        captured["question"] = question
+        captured["doc_ids_filter"] = doc_ids_filter
+        return [
+            {
+                "doc_name": "paper.pdf",
+                "modality": "text",
+                "heading_path": ["Section"],
+                "locator": {"line_start": 1, "line_end": 2},
+                "text": "Scoped chunk.",
+            }
+        ]
+
+    monkeypatch.setattr("flavia.content.indexer.retrieve", _fake_retrieve)
+    output = tool.execute({"query": "@paper.pdf transformer backbone"}, ctx)
+
+    catalog = ContentCatalog.load(tmp_path / ".flavia")
+    assert catalog is not None
+    entry = catalog.files["paper.pdf"]
+    expected_doc_id = hashlib.sha1(
+        f"{tmp_path}:{entry.path}:{entry.checksum_sha256}".encode()
+    ).hexdigest()
+
+    assert captured["question"] == "transformer backbone"
+    assert captured["doc_ids_filter"] == [expected_doc_id]
+    assert "[1] paper.pdf — Section (lines 1–2)" in output
+
+
+def test_search_chunks_at_file_intersects_with_filters(tmp_path: Path, monkeypatch) -> None:
+    _create_catalog_and_index(tmp_path)
+    tool = SearchChunksTool()
+    ctx = _make_context(tmp_path)
+    monkeypatch.setattr("flavia.config.settings.get_settings", _make_settings_stub)
+    monkeypatch.setattr("flavia.content.indexer.retrieve", lambda **_: [])
+
+    result = tool.execute(
+        {"query": "@paper.pdf transformer backbone", "file_type_filter": "video"},
+        ctx,
+    )
+    assert "No documents remain after combining @file references" in result
+
+
+def test_search_chunks_reports_unknown_at_file_reference(tmp_path: Path, monkeypatch) -> None:
+    _create_catalog_and_index(tmp_path)
+    tool = SearchChunksTool()
+    ctx = _make_context(tmp_path)
+    monkeypatch.setattr("flavia.config.settings.get_settings", _make_settings_stub)
+    monkeypatch.setattr("flavia.content.indexer.retrieve", lambda **_: [])
+
+    result = tool.execute({"query": "@missing_document.pdf details"}, ctx)
+    assert "No indexed documents match the @file references" in result

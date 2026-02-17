@@ -1,6 +1,8 @@
 """Tool for semantic search across document chunks using hybrid retrieval."""
 
 import hashlib
+import re
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from ..base import BaseTool, ToolParameter, ToolSchema
@@ -8,6 +10,141 @@ from ..permissions import check_read_permission
 
 if TYPE_CHECKING:
     from flavia.agent.context import AgentContext
+
+
+_DOC_MENTION_QUOTED_PATTERN = re.compile(r'(?<![A-Za-z0-9])@(?:"([^"]+)"|\'([^\']+)\')')
+_DOC_MENTION_BARE_PATTERN = re.compile(r'(?<![A-Za-z0-9])@([^\s@"\']+)')
+_MENTION_TRAILING_PUNCT = ".,;:!?)]}"
+
+
+def _catalog_doc_id(base_dir: Path, path: str, checksum: str) -> str:
+    """Derive doc_id from catalog entry fields."""
+    raw = f"{base_dir}:{path}:{checksum}"
+    return hashlib.sha1(raw.encode()).hexdigest()
+
+
+def _normalize_ref(value: str) -> str:
+    """Normalize a user or catalog reference for robust matching."""
+    normalized = value.strip().replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized.lower().strip("/")
+
+
+def _extract_doc_mentions(query: str) -> tuple[str, list[str]]:
+    """Extract @file mentions and return (query_without_mentions, mentions)."""
+    mentions: list[str] = []
+    seen_keys: set[str] = set()
+
+    def _add_mention(raw_token: str) -> None:
+        token = raw_token.strip()
+        if not token:
+            return
+        key = _normalize_ref(token)
+        if not key or key in seen_keys:
+            return
+        seen_keys.add(key)
+        mentions.append(token)
+
+    def _quoted_replacer(match: re.Match[str]) -> str:
+        token = match.group(1) or match.group(2) or ""
+        _add_mention(token)
+        return " "
+
+    stripped = _DOC_MENTION_QUOTED_PATTERN.sub(_quoted_replacer, query)
+
+    def _bare_replacer(match: re.Match[str]) -> str:
+        token = (match.group(1) or "").rstrip(_MENTION_TRAILING_PUNCT).strip()
+        _add_mention(token)
+        return " "
+
+    stripped = _DOC_MENTION_BARE_PATTERN.sub(_bare_replacer, stripped)
+    stripped = " ".join(stripped.split())
+    return stripped, mentions
+
+
+def _entry_matches_mention(entry: Any, normalized_mention: str) -> bool:
+    """Return True when a mention matches an original or converted reference."""
+    if not normalized_mention:
+        return False
+
+    path_value = _normalize_ref(getattr(entry, "path", ""))
+    name_value = _normalize_ref(getattr(entry, "name", ""))
+    converted_value = _normalize_ref(getattr(entry, "converted_to", "") or "")
+
+    candidates: set[str] = {path_value, name_value}
+    suffix_candidates: list[str] = [path_value]
+
+    if converted_value:
+        candidates.add(converted_value)
+        suffix_candidates.append(converted_value)
+
+    frame_descriptions = getattr(entry, "frame_descriptions", []) or []
+    for frame_path in frame_descriptions:
+        frame_norm = _normalize_ref(str(frame_path))
+        if frame_norm:
+            candidates.add(frame_norm)
+            suffix_candidates.append(frame_norm)
+
+    for raw_candidate in (getattr(entry, "path", ""), getattr(entry, "name", "")):
+        stem = Path(str(raw_candidate)).stem
+        if stem:
+            candidates.add(_normalize_ref(stem))
+
+    if normalized_mention in candidates:
+        return True
+
+    for candidate in suffix_candidates:
+        if candidate.endswith(f"/{normalized_mention}"):
+            return True
+    return False
+
+
+def _resolve_doc_ids_from_mentions(
+    mentions: list[str],
+    *,
+    catalog,
+    base_dir: Path,
+) -> tuple[list[str], list[str], list[str]]:
+    """Resolve @mentions to indexed doc_ids.
+
+    Returns:
+        resolved_doc_ids, unresolved_mentions, unindexed_mentions
+    """
+    resolved_doc_ids: list[str] = []
+    seen_doc_ids: set[str] = set()
+    unresolved: list[str] = []
+    unindexed: list[str] = []
+
+    entries = list(catalog.files.values())
+
+    for mention in mentions:
+        normalized = _normalize_ref(mention)
+        matched_any = False
+        matched_indexed = False
+
+        for entry in entries:
+            if entry.status == "missing":
+                continue
+            if not _entry_matches_mention(entry, normalized):
+                continue
+
+            matched_any = True
+            if not getattr(entry, "converted_to", None):
+                continue
+
+            matched_indexed = True
+            doc_id = _catalog_doc_id(base_dir, entry.path, entry.checksum_sha256)
+            if doc_id not in seen_doc_ids:
+                seen_doc_ids.add(doc_id)
+                resolved_doc_ids.append(doc_id)
+
+        if not matched_any:
+            unresolved.append(mention)
+        elif not matched_indexed:
+            unindexed.append(mention)
+
+    return resolved_doc_ids, unresolved, unindexed
 
 
 class SearchChunksTool(BaseTool):
@@ -31,7 +168,11 @@ class SearchChunksTool(BaseTool):
                 ToolParameter(
                     name="query",
                     type="string",
-                    description="Semantic search query describing what you're looking for",
+                    description=(
+                        "Semantic search query describing what you're looking for. "
+                        "Supports explicit file scoping with @mentions, e.g. "
+                        "'@report.pdf weak points in methodology'"
+                    ),
                     required=True,
                 ),
                 ToolParameter(
@@ -78,6 +219,8 @@ class SearchChunksTool(BaseTool):
         if not isinstance(query, str) or not query.strip():
             return "Error: query parameter is required and cannot be empty."
         query = query.strip()
+        stripped_query, mentions = _extract_doc_mentions(query)
+        effective_query = stripped_query or query
 
         top_k_raw = args.get("top_k", 10)
         if isinstance(top_k_raw, bool):
@@ -154,8 +297,7 @@ class SearchChunksTool(BaseTool):
                         matches_filter = False
 
                 if matches_filter:
-                    raw = f"{base_dir}:{entry.path}:{entry.checksum_sha256}"
-                    doc_id = hashlib.sha1(raw.encode()).hexdigest()
+                    doc_id = _catalog_doc_id(base_dir, entry.path, entry.checksum_sha256)
                     doc_ids_filter.append(doc_id)
 
             if not doc_ids_filter and (file_type_filter or doc_name_filter):
@@ -164,12 +306,57 @@ class SearchChunksTool(BaseTool):
             if not doc_ids_filter:
                 doc_ids_filter = None
 
+        resolved_mentions: list[str] = []
+        unresolved_mentions: list[str] = []
+        unindexed_mentions: list[str] = []
+        if mentions:
+            mention_doc_ids, unresolved_mentions, unindexed_mentions = _resolve_doc_ids_from_mentions(
+                mentions,
+                catalog=catalog,
+                base_dir=base_dir,
+            )
+            resolved_mentions = mentions[:]
+
+            if not mention_doc_ids:
+                unresolved_parts: list[str] = []
+                if unresolved_mentions:
+                    unresolved_parts.append(
+                        "unknown: " + ", ".join(f"@{item}" for item in unresolved_mentions)
+                    )
+                if unindexed_mentions:
+                    unresolved_parts.append(
+                        "not indexed: " + ", ".join(f"@{item}" for item in unindexed_mentions)
+                    )
+                details = "; ".join(unresolved_parts) if unresolved_parts else "no matching indexed files"
+                return (
+                    "No indexed documents match the @file references "
+                    f"({details}). Ensure files are cataloged, converted, and indexed."
+                )
+
+            if doc_ids_filter is None:
+                doc_ids_filter = mention_doc_ids
+            else:
+                scoped = set(mention_doc_ids)
+                doc_ids_filter = [doc_id for doc_id in doc_ids_filter if doc_id in scoped]
+                if not doc_ids_filter:
+                    return (
+                        "No documents remain after combining @file references with "
+                        "the provided filters."
+                    )
+
         settings = get_settings()
 
         trace: dict[str, Any] = {}
+        if debug_mode and mentions:
+            trace["mention_scope"] = {
+                "query_mentions": [f"@{item}" for item in mentions],
+                "unresolved_mentions": [f"@{item}" for item in unresolved_mentions],
+                "unindexed_mentions": [f"@{item}" for item in unindexed_mentions],
+                "effective_query": effective_query,
+            }
         try:
             results = retrieve(
-                question=query,
+                question=effective_query,
                 base_dir=base_dir,
                 settings=settings,
                 doc_ids_filter=doc_ids_filter,
@@ -186,12 +373,19 @@ class SearchChunksTool(BaseTool):
             return f"Error during retrieval: {e}"
 
         if not results:
-            message = f"No results found for query: '{query}'"
+            message = f"No results found for query: '{effective_query}'"
             if debug_mode and trace:
                 message = f"{message}\n\n{self._format_debug_trace(trace)}"
             return message
 
         formatted_results = self._format_results(results)
+        if mentions and (unresolved_mentions or unindexed_mentions):
+            notes: list[str] = []
+            if unresolved_mentions:
+                notes.append("unknown: " + ", ".join(f"@{item}" for item in unresolved_mentions))
+            if unindexed_mentions:
+                notes.append("not indexed: " + ", ".join(f"@{item}" for item in unindexed_mentions))
+            formatted_results = f"Note: some @file references were ignored ({'; '.join(notes)}).\n\n{formatted_results}"
         if debug_mode and trace:
             formatted_results = f"{formatted_results}\n{self._format_debug_trace(trace)}"
         return formatted_results
@@ -260,6 +454,7 @@ class SearchChunksTool(BaseTool):
         counts = trace.get("counts", {})
         timings = trace.get("timings_ms", {})
         filters = trace.get("filters", {})
+        mention_scope = trace.get("mention_scope", {})
 
         lines = ["[RAG DEBUG]"]
         lines.append(
@@ -300,6 +495,14 @@ class SearchChunksTool(BaseTool):
         if modalities:
             modal_str = ", ".join(f"{k}={v}" for k, v in sorted(modalities.items()))
             lines.append(f"modalities: {modal_str}")
+        if mention_scope:
+            lines.append(
+                "mention_scope: "
+                f"mentions={mention_scope.get('query_mentions', [])} "
+                f"unresolved={mention_scope.get('unresolved_mentions', [])} "
+                f"unindexed={mention_scope.get('unindexed_mentions', [])}"
+            )
+            lines.append(f"effective_query: {mention_scope.get('effective_query', '')}")
 
         # Lightweight, actionable hints for tuning.
         hints: list[str] = []

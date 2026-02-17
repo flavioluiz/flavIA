@@ -2,7 +2,7 @@
 
 Transform flavIA's current keyword-based catalog search into a full RAG pipeline that embeds converted documents, stores vectors in SQLite, and provides hybrid retrieval (vector + full-text) to the agent.
 
-**Status**: 8 / 8 tasks complete
+**Status**: 8 / 8 tasks complete + post-completion hardening in progress
 **Dependencies**: Area 1 complete (all converters done ✓)
 
 ---
@@ -44,6 +44,10 @@ Split every `.converted/*.md` file into retrievable fragments (300–800 tokens)
 
 **File**: `src/flavia/content/indexer/chunker.py`
 Public entry points: `chunk_document(entry, base_dir)`, `chunk_text_document(...)`, `chunk_video_document(...)`
+
+**Hardening note (2026-02-17)**:
+- `doc_id` derivation now prioritizes the original source checksum from catalog (`entry.checksum_sha256`) to stay consistent with retrieval routing/filtering.
+- Fallback to converted checksum remains only when source checksum is unavailable (legacy/direct calls).
 
 ---
 
@@ -179,7 +183,7 @@ Agent-accessible tool that calls `retrieve()` and formats results as annotated c
 **Parameters**:
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `query` | string | required | Semantic search query |
+| `query` | string | required | Semantic search query (supports `@arquivo` mentions for explicit file scoping) |
 | `top_k` | integer | 10 | Number of chunks to return |
 | `file_type_filter` | string | — | Restrict to file type (pdf, video, audio, …) |
 | `doc_name_filter` | string | — | Restrict to docs matching this name substring |
@@ -273,6 +277,7 @@ These metrics define when each task is considered complete in a production-ready
 | Diversity policy | 100% responses enforce max 3 chunks/doc | Unit + integration tests |
 | Filter correctness | 100% respect `file_type_filter` and `doc_name_filter` | Tool-level tests |
 | Filter semantics consistency | `doc_ids_filter=None` vs `doc_ids_filter=[]` handled identically in vector+FTS contracts (`None`=unfiltered, `[]`=empty result) | Unit tests for `VectorStore` + `FTSIndex` |
+| Doc identity consistency | `doc_id` generated in chunking matches `doc_id` used by router/tool filters | Unit tests for chunker + retrieval/search tool |
 
 ### 11.5 Video Temporal Expansion
 
@@ -308,6 +313,7 @@ These metrics define when each task is considered complete in a production-ready
 | Prompt completeness | Guidance explicitly differentiates `search_chunks` vs `query_catalog` | Prompt unit test |
 | Routing behavior | >=90% correct tool choice on labeled routing prompts | Behavior test with fixed stubs |
 | Regression guard | Existing metadata/file-discovery flows remain unchanged | Agent prompt regression tests |
+| Mention guidance clarity | Prompt explicitly documents `@arquivo` scoping behavior | Prompt unit test |
 
 ---
 
@@ -348,3 +354,28 @@ vault/
 - The `chunks.jsonl` file is the source of truth; `index.db` is a derived index and can be rebuilt from it.
 - Embeddings are only generated for chunks not already present in `chunks_meta` (incremental mode uses `chunk_id` as idempotency key).
 - Video temporal expansion (11.5) is implemented and enabled by default in `retrieve()` via `expand_video_temporal=True`.
+
+## Post-completion hardening log (2026-02-17)
+
+### Issues found and corrected
+
+| ID | Issue | Impact | Correction | Status |
+|----|-------|--------|------------|--------|
+| H-11-01 | `doc_id` mismatch between chunker and retrieval filters (chunker used converted checksum while router/tool filters used original checksum) | file-scoped retrieval and Stage-A routing could miss indexed chunks | chunker updated to use catalog source checksum when available; fallback kept for legacy paths | Fixed |
+| H-11-02 | `search_chunks` lacked explicit `@arquivo` scoping | agent could ignore user-requested file scope and search broadly | implemented mention parser + resolver in `search_chunks` with doc filter intersection | Fixed |
+| H-11-03 | weak observability of retrieval decisions | difficult to tune router/vector/FTS behavior | added `/rag-debug`, `/index diagnose`, and trace output in `search_chunks` | Fixed |
+| H-11-04 | strict `.converted/` blocking sometimes reduced answer completeness | agent over-corrected with complex fallback paths | introduced `converted_access_mode` (`strict|hybrid|open`) with `hybrid` default | Fixed |
+
+### Current behavior for explicit file targeting (`@arquivo`)
+
+1. Mentions are read from `search_chunks.query` (e.g., `@relatorio.pdf`).
+2. Mentions are resolved against original catalog entries (`entry.path`, `entry.name`), not `.converted/*.md` names.
+3. Matching originals are mapped to their indexed converted chunks through stable `doc_id`.
+4. Multiple mentions produce a union scope; explicit filters (`file_type_filter`, `doc_name_filter`) are then intersected.
+5. Unknown/unindexed mentions return explicit feedback instead of silently widening search.
+
+### Open optimization backlog (next iterations)
+
+- Add reranking stage (cross-encoder or lightweight LLM reranker) after RRF for long analytical prompts.
+- Add adaptive chunk-size profiles by modality/domain (current chunk size is global).
+- Add configurable mention-matching strictness (`exact_only` vs `suffix_match`) for large corpora with repeated filenames.

@@ -228,6 +228,12 @@ From a fresh project setup (`flavia --init`) to retrieval-ready chat:
 Notes:
 - `search_chunks` is only available when `.index/index.db` exists.
 - `query_catalog` remains the best tool for file discovery/metadata filtering.
+- `search_chunks` supports explicit file scoping via `@arquivo` in the query text.
+  - Example: `@ficha_recomendacao_33011010008P0.pdf pontos mal avaliados`
+  - Mentions are resolved against original catalog entries (`entry.path` / `entry.name`) and mapped to indexed converted content automatically.
+  - Users should reference original files (PDF/video/audio/etc.), not `.converted/*.md`.
+  - Multiple mentions are supported; retrieval scope is the union of mentioned files, then intersected with explicit filters (`file_type_filter`, `doc_name_filter`) when provided.
+  - Unknown/unindexed mentions return an explicit message so the agent can correct scope (instead of silently searching everything).
 - Runtime retrieval diagnostics:
   - `/rag-debug on`: appends pipeline trace (`router/vector/fts/fusion` counts + timings + hints) to `search_chunks` output.
   - `/index diagnose`: reports index health, modality distribution, top docs by chunk count, and current RAG tuning parameters.
