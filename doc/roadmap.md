@@ -123,7 +123,7 @@ Transform keyword-based catalog search into a full RAG pipeline: chunk converted
  - ~~**11.2** Embedding Index — sqlite-vec (Medium)~~ — **DONE** ✓ Embed chunks via Synthetic provider; store L2-normalised 768-dim vectors in `vec0` table
  - ~~**11.3** FTS Index — SQLite FTS5 (Easy)~~ — **DONE** ✓ BM25 full-text search for exact-term matching (numbers, codes, siglas)
  - **11.4** Hybrid Retrieval Engine (Medium) — `retrieve(question, filters, top_k)`: Stage A catalog router + Stage B vector+FTS merge via RRF; normalize filter semantics (`doc_ids_filter=None` = no filter, `doc_ids_filter=[]` = empty scope/no results) consistently across VectorStore and FTS
- - ~~**11.5** Video Temporal Expansion (Medium)~~ — **DONE** ✓ Expand anchor timecode ±15s (transcript) / ±10s (frames); return chronological evidence bundle with transcripts first, then frames
+ - ~~**11.5** Video Temporal Expansion (Medium)~~ — **DONE** ✓ Expand anchor timecode ±15s (transcript) / ±10s (frames); return chronological evidence bundle across modalities
  - **11.6** `search_chunks` Tool (Easy) — Agent tool calling `retrieve()`, formatting annotated context blocks with citations
  - **11.7** Index CLI Commands `/index` (Easy) — `/index build`, `/index update`, `/index stats`
  - **11.8** Agent Guidance Update (Easy) — Add `search_chunks` routing rule to `_build_catalog_first_guidance()`

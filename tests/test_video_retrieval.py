@@ -1,9 +1,8 @@
 """Tests for video temporal expansion (Task 11.5)."""
 
+import hashlib
 from pathlib import Path
 from unittest.mock import Mock
-
-import pytest
 
 from flavia.content.indexer.video_retrieval import (
     _format_evidence_bundle,
@@ -15,6 +14,7 @@ from flavia.content.indexer.video_retrieval import (
     _seconds_to_timecode,
     expand_temporal_window,
 )
+from flavia.content.scanner import FileEntry
 
 
 def test_parse_timecode():
@@ -104,7 +104,7 @@ def test_format_evidence_bundle_transcripts_only():
 def test_format_evidence_bundle_both_modalities():
     """Test formatting a bundle with both transcripts and frames.
 
-    Transcripts should come first, then frames, each group sorted chronologically.
+    Items should be sorted chronologically across modalities.
     """
     transcript_items = [
         {
@@ -132,12 +132,12 @@ def test_format_evidence_bundle_both_modalities():
     assert result[0]["modality_label"] == "(Audio)"
     assert result[0]["text"] == "Earlier transcript."
 
-    assert result[1]["time_display"] == "00:00:10–00:00:20"
-    assert result[1]["modality_label"] == "(Audio)"
+    assert result[1]["time_display"] == "00:00:08"
+    assert result[1]["modality_label"] == "(Screen)"
+    assert result[1]["text"] == "Frame B."
 
-    assert result[2]["time_display"] == "00:00:08"
-    assert result[2]["modality_label"] == "(Screen)"
-    assert result[2]["text"] == "Frame B."
+    assert result[2]["time_display"] == "00:00:10–00:00:20"
+    assert result[2]["modality_label"] == "(Audio)"
 
     assert result[3]["time_display"] == "00:00:15"
     assert result[3]["modality_label"] == "(Screen)"
@@ -199,9 +199,50 @@ def test_get_nearest_frames(monkeypatch):
     assert before is None
     assert after is not None
 
-    before, after = _get_nearest_frames(5.0, all_frames, max_distance=5.0)
-    assert before is None
-    assert after is not None
+
+def test_get_all_frames_for_doc_matches_hashed_doc_id(tmp_path: Path, monkeypatch):
+    """Catalog lookup should resolve hashed doc_id used by chunker/retrieval."""
+    frame_dir = tmp_path / ".converted" / "lecture_frames"
+    frame_dir.mkdir(parents=True)
+
+    frame_10 = frame_dir / "frame_00m10s.md"
+    frame_10.write_text("# Visual Frame at 00:10\n\n## Description\n\nFrame at 10s.\n")
+
+    frame_45 = frame_dir / "frame_00m45s.md"
+    frame_45.write_text("# Visual Frame at 00:45\n\n## Description\n\nFrame at 45s.\n")
+
+    entry = FileEntry(
+        path="videos/lecture.mp4",
+        name="lecture.mp4",
+        extension=".mp4",
+        file_type="video",
+        category="mp4",
+        size_bytes=100,
+        created_at="2026-01-01T00:00:00+00:00",
+        modified_at="2026-01-01T00:00:00+00:00",
+        indexed_at="2026-01-01T00:00:00+00:00",
+        checksum_sha256="sha256-video",
+        frame_descriptions=[
+            ".converted/lecture_frames/frame_00m10s.md",
+            ".converted/lecture_frames/frame_00m45s.md",
+        ],
+    )
+
+    class _CatalogStub:
+        def __init__(self, e):
+            self.files = {e.path: e}
+
+    monkeypatch.setattr(
+        "flavia.content.indexer.video_retrieval.ContentCatalog.load",
+        lambda _: _CatalogStub(entry),
+    )
+
+    doc_id = hashlib.sha1(f"{tmp_path}:{entry.path}:{entry.checksum_sha256}".encode()).hexdigest()
+    frames = _get_all_frames_for_doc(doc_id, tmp_path)
+
+    assert [f[0] for f in frames] == [10, 45]
+    assert frames[0][1] == frame_10
+    assert frames[1][1] == frame_45
 
 
 def test_expand_temporal_window_non_video_chunk():
@@ -248,3 +289,33 @@ def test_expand_temporal_window_invalid_doc_id():
 
     result = expand_temporal_window(mock_chunk, mock_base_dir, mock_vs, mock_fts)
     assert result is None
+
+
+def test_expand_temporal_window_includes_overlapping_transcript(monkeypatch):
+    """Transcript chunks overlapping the window should be included even if they start before it."""
+    anchor_chunk = {
+        "modality": "video_frame",
+        "doc_id": "doc_1",
+        "locator": {"time_start": "00:00:50"},
+    }
+
+    mock_vs = Mock()
+    mock_vs.get_chunks_by_doc_id.return_value = [
+        {
+            "locator": {"time_start": "00:00:00", "time_end": "00:01:00"},
+            "text": "Long transcript chunk crossing the anchor window.",
+        }
+    ]
+
+    monkeypatch.setattr(
+        "flavia.content.indexer.video_retrieval._get_all_frames_for_doc",
+        lambda doc_id, base_dir: [],
+    )
+
+    bundle = expand_temporal_window(anchor_chunk, Path("/fake"), mock_vs, Mock())
+    assert bundle is not None
+    assert any(
+        item["modality"] == "video_transcript"
+        and "crossing the anchor window" in item["text"]
+        for item in bundle
+    )

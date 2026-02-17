@@ -250,6 +250,49 @@ class TestInputValidation:
         mock_get_client.assert_not_called()
 
 
+class TestVectorStoreLifecycle:
+    """Tests for conditional VectorStore usage in retrieval."""
+
+    @patch("flavia.content.indexer.retrieval.get_embedding_client")
+    @patch("flavia.content.indexer.retrieval.FTSIndex")
+    @patch("flavia.content.indexer.retrieval.VectorStore")
+    def test_fts_only_non_video_does_not_open_vector_store(
+        self,
+        mock_vs,
+        mock_fts,
+        mock_get_client,
+    ):
+        """FTS-only text results should not require opening VectorStore."""
+        mock_fts_instance = MagicMock()
+        mock_fts_instance.__enter__ = MagicMock(return_value=mock_fts_instance)
+        mock_fts_instance.__exit__ = MagicMock(return_value=None)
+        mock_fts_instance.search.return_value = [
+            {
+                "chunk_id": "chunk_1",
+                "doc_id": "doc_1",
+                "modality": "text",
+                "heading_path": ["Section"],
+                "text": "only fts text",
+            }
+        ]
+        mock_fts.return_value = mock_fts_instance
+
+        settings = Settings()
+        results = retrieve(
+            "question",
+            Path("/tmp"),
+            settings,
+            vector_k=0,
+            fts_k=10,
+            expand_video_temporal=True,
+        )
+
+        assert len(results) == 1
+        assert results[0]["chunk_id"] == "chunk_1"
+        mock_vs.assert_not_called()
+        mock_get_client.assert_not_called()
+
+
 class TestCatalogRouterStageA:
     """Tests for Stage A catalog routing behavior."""
 

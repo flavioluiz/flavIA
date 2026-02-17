@@ -5,12 +5,10 @@ This module provides functionality to expand retrieved video chunks
 evidence bundle with transcript and frame descriptions.
 """
 
-import json
+import hashlib
 import re
 from pathlib import Path
 from typing import Any, Optional
-
-from flavia.config import Settings
 
 from ..catalog import ContentCatalog
 from .fts import FTSIndex
@@ -127,8 +125,15 @@ def _get_all_frames_for_doc(
 
     entry = None
     for file_entry in catalog.files.values():
-        current_doc_id = file_entry.path
-        if current_doc_id == doc_id or file_entry.checksum_sha256 == doc_id:
+        # Match the same doc_id derivation used by chunker/retrieval:
+        # sha1(f"{base_dir}:{path}:{checksum_sha256}")
+        raw = f"{base_dir}:{file_entry.path}:{file_entry.checksum_sha256}"
+        catalog_doc_id = hashlib.sha1(raw.encode()).hexdigest()
+        if (
+            catalog_doc_id == doc_id
+            or file_entry.path == doc_id  # defensive legacy fallback
+            or file_entry.checksum_sha256 == doc_id  # defensive legacy fallback
+        ):
             entry = file_entry
             break
 
@@ -141,7 +146,6 @@ def _get_all_frames_for_doc(
         if frame_path is None or not frame_path.exists():
             continue
 
-        _, filename = frame_path.name.replace(".md", ""), frame_path
         pattern = re.match(r"frame_(\d{2})m(\d{2})s", frame_path.stem)
         if pattern:
             minutes = int(pattern.group(1))
@@ -231,9 +235,10 @@ def _format_evidence_bundle(
         frame_items: List of frame chunks with time_start, time_end, text.
 
     Returns:
-        List of formatted bundle items sorted by time (transcripts first, then frames).
+        List of formatted bundle items sorted chronologically across modalities.
+        Ties are broken with transcripts before frames for stable output.
     """
-    formatted = []
+    sortable_items: list[tuple[float, int, dict[str, Any]]] = []
 
     for item in transcript_items:
         time_start = item["time_start"]
@@ -244,13 +249,17 @@ def _format_evidence_bundle(
         else:
             time_display = f"{_seconds_to_timecode(time_start)}–{_seconds_to_timecode(time_end)}"
 
-        formatted.append(
-            {
-                "time_display": time_display,
-                "modality_label": "(Audio)",
-                "text": item["text"],
-                "modality": "video_transcript",
-            }
+        sortable_items.append(
+            (
+                time_start,
+                0,
+                {
+                    "time_display": time_display,
+                    "modality_label": "(Audio)",
+                    "text": item["text"],
+                    "modality": "video_transcript",
+                },
+            )
         )
 
     for item in frame_items:
@@ -262,23 +271,28 @@ def _format_evidence_bundle(
         else:
             time_display = f"{_seconds_to_timecode(time_start)}–{_seconds_to_timecode(time_end)}"
 
-        formatted.append(
-            {
-                "time_display": time_display,
-                "modality_label": "(Screen)",
-                "text": item["text"],
-                "modality": "video_frame",
-            }
+        sortable_items.append(
+            (
+                time_start,
+                1,
+                {
+                    "time_display": time_display,
+                    "modality_label": "(Screen)",
+                    "text": item["text"],
+                    "modality": "video_frame",
+                },
+            )
         )
 
-    return formatted
+    sortable_items.sort(key=lambda x: (x[0], x[1]))
+    return [item for _, _, item in sortable_items]
 
 
 def expand_temporal_window(
     anchor_chunk: dict[str, Any],
     base_dir: Path,
     vector_store: VectorStore,
-    fts_index: FTSIndex,
+    _fts_index: FTSIndex,
 ) -> Optional[list[dict[str, Any]]]:
     """Expand a video chunk into a chronological evidence bundle.
 
@@ -286,10 +300,10 @@ def expand_temporal_window(
         anchor_chunk: The retrieved video chunk with locator containing timecode.
         base_dir: Vault base directory.
         vector_store: VectorStore instance for retrieving transcript chunks.
-        fts_index: FTSIndex instance for retrieving text content.
+        _fts_index: Reserved for future cross-index expansion strategies.
 
     Returns:
-        List of formatted bundle items (transcripts first, then frames),
+        List of formatted bundle items sorted chronologically,
         or None if expansion fails or chunk is not video temporal.
     """
     modality = anchor_chunk.get("modality", "")
@@ -329,18 +343,23 @@ def expand_temporal_window(
     transcripts_in_range = []
     for chunk in transcript_chunks:
         chunk_locator = chunk.get("locator", {})
-        chunk_time_str = chunk_locator.get("time_start", "")
-        chunk_time = _parse_timecode(chunk_time_str)
+        chunk_time_start_str = chunk_locator.get("time_start", "")
+        chunk_time_start = _parse_timecode(chunk_time_start_str)
+        if chunk_time_start is None:
+            continue
 
-        if chunk_time is not None and range_start <= chunk_time <= range_end:
-            chunk_time_end_str = chunk_locator.get("time_end", chunk_time_str)
-            chunk_time_end = _parse_timecode(chunk_time_end_str)
-            if chunk_time_end is None:
-                chunk_time_end = chunk_time
+        chunk_time_end_str = chunk_locator.get("time_end", chunk_time_start_str)
+        chunk_time_end = _parse_timecode(chunk_time_end_str)
+        if chunk_time_end is None:
+            chunk_time_end = chunk_time_start
+        if chunk_time_end < chunk_time_start:
+            chunk_time_end = chunk_time_start
 
+        # Keep any transcript chunk that overlaps the target expansion window.
+        if chunk_time_start <= range_end and chunk_time_end >= range_start:
             transcripts_in_range.append(
                 {
-                    "time_start": chunk_time,
+                    "time_start": chunk_time_start,
                     "time_end": chunk_time_end,
                     "text": chunk.get("text", ""),
                     "modality": "video_transcript",
@@ -358,7 +377,7 @@ def expand_video_chunks(
     results: list[dict[str, Any]],
     base_dir: Path,
     vector_store: VectorStore,
-    fts_index: FTSIndex,
+    _fts_index: FTSIndex,
 ) -> list[dict[str, Any]]:
     """Expand all video temporal chunks in results with evidence bundles.
 
@@ -366,7 +385,7 @@ def expand_video_chunks(
         results: List of retrieved chunks from hybrid retrieval.
         base_dir: Vault base directory.
         vector_store: VectorStore instance (must already be opened as context manager).
-        fts_index: FTSIndex instance (must already be opened as context manager).
+        _fts_index: FTSIndex instance (must already be opened as context manager).
 
     Returns:
         Modified results with temporal_bundle field added to video chunks.
@@ -374,7 +393,7 @@ def expand_video_chunks(
     for result in results:
         modality = result.get("modality", "")
         if modality in ("video_transcript", "video_frame"):
-            bundle = expand_temporal_window(result, base_dir, vector_store, fts_index)
+            bundle = expand_temporal_window(result, base_dir, vector_store, _fts_index)
             if bundle:
                 result["temporal_bundle"] = bundle
 
