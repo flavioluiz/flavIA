@@ -8,13 +8,13 @@ Planned features and improvements for flavIA, organized by area. Each task inclu
 
 ## 📋 Executive Summary
 
-This roadmap outlines **45 tasks** across **10 major areas** to extend flavIA from a read-only research assistant into a comprehensive, production-ready AI agent system with multimodal processing, write capabilities, external service integration, web & academic research tools, multi-platform deployment, and file delivery through messaging interfaces.
+This roadmap outlines **53 tasks** across **11 major areas** to extend flavIA from a read-only research assistant into a comprehensive, production-ready AI agent system with multimodal processing, write capabilities, external service integration, web & academic research tools, multi-platform deployment, file delivery through messaging interfaces, and semantic RAG retrieval.
 
 ### Quick Stats
-- **10 Easy tasks** (< 1 day each) — Quick wins for immediate value — **7 completed** ✓
-- **26 Medium tasks** (1-2 days each) — Core feature development — **10 completed** ✓
-- **9 Hard tasks** (3+ days each) — Complex integrations requiring careful design — **1 completed** ✓
-- **Total completed so far**: **18 / 45 tasks** ✓
+- **13 Easy tasks** (< 1 day each) — Quick wins for immediate value — **7 completed** ✓
+- **30 Medium tasks** (1-2 days each) — Core feature development — **11 completed** ✓
+- **10 Hard tasks** (3+ days each) — Complex integrations requiring careful design — **1 completed** ✓
+- **Total completed so far**: **19 / 53 tasks** ✓
 
 ### Strategic Priorities
 1. **Immediate value** (Tasks 4.1-4.8, 8.1): Improve CLI UX and add token tracking
@@ -23,7 +23,8 @@ This roadmap outlines **45 tasks** across **10 major areas** to extend flavIA fr
 4. **Production readiness** (Tasks 3.1-3.6, 8.2-8.3): Multi-platform bots and context management
 5. **Web & academic research** (Tasks 9.1-9.8): Web search, academic databases, DOI resolution, Scopus, article download, BibTeX management
 6. **Telegram file delivery** (Tasks 10.1-10.3): Structured agent responses, send file tool, and Telegram document delivery
-7. **Advanced features** (Tasks 7.1-7.2, 2.3): External services and meta-agents
+7. **Semantic retrieval** (Tasks 11.1-11.8): RAG pipeline with vector + FTS hybrid search over converted documents
+8. **Advanced features** (Tasks 7.1-7.2, 2.3): External services and meta-agents
 
 ---
 
@@ -114,6 +115,18 @@ Enable the agent to send files directly through the Telegram chat, with structur
 - **10.1** Structured Agent Responses (Medium) — `AgentResponse` dataclass with text + actions, replacing plain `str` return
 - **10.2** Send File Tool (Easy) — `send_file(path)` tool that validates and registers a file delivery action
 - **10.3** Telegram File Delivery Handler (Medium) — Bot processes `SendFileAction` and calls `reply_document()`
+
+### [Area 11: Semantic Retrieval & RAG Pipeline](roadmap/area-11-semantic-retrieval.md) (8 tasks)
+Transform keyword-based catalog search into a full RAG pipeline: chunk converted documents, embed with `hf:nomic-ai/nomic-embed-text-v1.5`, store vectors in **sqlite-vec**, add **SQLite FTS5** for exact-term search, and expose hybrid retrieval to the agent.
+
+- ~~**11.1** Chunk Pipeline (Medium)~~ — **DONE** ✓ Split `.converted/*.md` files into 300–800 token chunks by heading/paragraph; two streams for video (transcript + frames with timecodes)
+- **11.2** Embedding Index — sqlite-vec (Medium) — Embed chunks via Synthetic provider; store L2-normalised 768-dim vectors in `vec0` table
+- **11.3** FTS Index — SQLite FTS5 (Easy) — BM25 full-text search for exact-term matching (numbers, codes, siglas)
+- **11.4** Hybrid Retrieval Engine (Medium) — `retrieve(question, filters, top_k)`: Stage A catalog router + Stage B vector+FTS merge via RRF
+- **11.5** Video Temporal Expansion (Medium) — Expand anchor timecode ±15s (transcript) / ±10s (frames); return chronological evidence bundle
+- **11.6** `search_chunks` Tool (Easy) — Agent tool calling `retrieve()`, formatting annotated context blocks with citations
+- **11.7** Index CLI Commands `/index` (Easy) — `/index build`, `/index update`, `/index stats`
+- **11.8** Agent Guidance Update (Easy) — Add `search_chunks` routing rule to `_build_catalog_first_guidance()`
 
 ---
 
@@ -287,6 +300,19 @@ Task 10.2 ───────────────────────�
 Cross-area dependencies for Area 10:
 Task 10.3 benefits from ── Task 3.4 (Abstract Messaging Interface)
 Task 10.3 benefits from ── Task 3.1 (YAML Bot Config, for per-bot file size limits)
+
+Area 11 -- Semantic Retrieval & RAG Pipeline:
+~~Task 11.1 (Chunk Pipeline)~~ ✓ ──┬── Task 11.2 (Embedder + sqlite-vec) ──┐
+                                    └── Task 11.3 (FTS5 Index) ──────────────┴── Task 11.4 (Hybrid Retrieval)
+                                                                                        ├── Task 11.5 (Video Temporal Expansion)
+                                                                                        └── Task 11.6 (search_chunks Tool)
+                                                                                                    └── Task 11.8 (Agent Guidance)
+~~Task 11.1~~ + Task 11.2 + Task 11.3 ──────────────────────────────────────────────── Task 11.7 (Index CLI)
+
+Cross-area dependencies for Area 11:
+Task 11.1 depends on ── Area 1 (converters produce .converted/ files)
+Task 11.2 requires ── Synthetic provider (hf:nomic-ai/nomic-embed-text-v1.5)
+Task 11.5 benefits from ── Task 1.5 (video frame extractor for frame_descriptions)
 ```
 
 ## Suggested Implementation Order
@@ -342,5 +368,13 @@ Tasks ordered by a pragmatic implementation sequence that balances dependency re
 | 44 | **10.1** Structured agent responses | Medium | Telegram File Delivery |
 | 45 | **10.2** Send file tool | Easy | Telegram File Delivery |
 | 46 | **10.3** Telegram file delivery handler | Medium | Telegram File Delivery |
+| 47 | ~~**11.1** Chunk pipeline~~ ✓ | ~~Medium~~ | ~~Semantic Retrieval~~ |
+| 48 | **11.3** FTS index (SQLite FTS5) | Easy | Semantic Retrieval |
+| 49 | **11.7** Index CLI commands `/index` | Easy | Semantic Retrieval |
+| 50 | **11.2** Embedding index (sqlite-vec) | Medium | Semantic Retrieval |
+| 51 | **11.4** Hybrid retrieval engine | Medium | Semantic Retrieval |
+| 52 | **11.6** `search_chunks` tool | Easy | Semantic Retrieval |
+| 53 | **11.8** Agent guidance update | Easy | Semantic Retrieval |
+| 54 | **11.5** Video temporal expansion | Medium | Semantic Retrieval |
 
 This order is a suggestion. Tasks can be implemented in any order that respects the dependency graph above.
