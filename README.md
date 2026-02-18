@@ -1,4 +1,13 @@
-# flavIA
+    __ _            Welcome to
+   / _| | __ ___   __   ██╗  █████╗  
+  | |_| |/ _` \ \ / /   ██║ ██╔══██╗
+  |  _| | (_| |\ V /    ██║ ███████║
+  |_| |_|\__,_| \_/     ██║ ██╔══██║
+                        ██║ ██║  ██║
+                        ╚═╝ ╚═╝  ╚═╝
+ > flavIA: Intelligent Academic Assistant
+
+---
 
 **Intelligent academic assistant** -- turn any working folder into an environment with AI agents ready to understand your documents, answer questions, generate ideas, and help with your research or study workflow.
 

@@ -43,6 +43,7 @@ def refresh_console() -> Console:
     console = _get_console()
     return console
 
+
 try:
     import readline as _readline
 except Exception:  # pragma: no cover - platform-dependent
@@ -1493,17 +1494,14 @@ def _resolve_agent_model_ref(
 def print_welcome(settings: Settings) -> None:
     """Print welcome message."""
     banner = r"""
-__ _                Welcome to
- / _| | __ ___   __   Isle of Knowledge.
-| |_| |/ _` \ \ / /
-|  _| | (_| |\ V /    ██╗  █████╗
-|_| |_|\__,_| \_/     ██║ ██╔══██╗
-                      ██║ ███████║
-                      ██║ ██╔══██║
-                      ██║ ██║  ██║
-                      ╚═╝ ╚═╝  ╚═╝
-
- > flavIA: Your Scholarly Companion ready.
+    __ _            Welcome to
+   / _| | __ ___   __   ██╗  █████╗  
+  | |_| |/ _` \ \ / /   ██║ ██╔══██╗
+  |  _| | (_| |\ V /    ██║ ███████║
+  |_| |_|\__,_| \_/     ██║ ██╔══██║
+                        ██║ ██║  ██║
+                        ╚═╝ ╚═╝  ╚═╝
+ > flavIA: Intelligent Academic Assistant
 """
     console.print(banner)
     console.print("\nType [bold]/help[/bold] for commands\n")
