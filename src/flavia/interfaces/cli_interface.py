@@ -1494,13 +1494,13 @@ def _resolve_agent_model_ref(
 def print_welcome(settings: Settings) -> None:
     """Print welcome message."""
     banner = r"""
-    __ _            Welcome to
-   / _| | __ ___   __   ██╗  █████╗  
-  | |_| |/ _` \ \ / /   ██║ ██╔══██╗
-  |  _| | (_| |\ V /    ██║ ███████║
-  |_| |_|\__,_| \_/     ██║ ██╔══██║
-                        ██║ ██║  ██║
-                        ╚═╝ ╚═╝  ╚═╝
+   Welcome to   
+     __ _.             ██╗  █████╗  
+    / _| | __ ___   __ ██║ ██╔══██╗
+   | |_| |/ _` \ \ / / ██║ ███████║
+   |  _| | (_| |\ V /  ██║ ██╔══██║
+   |_| |_|\__,_| \_/   ██║ ██║  ██║
+                       ╚═╝ ╚═╝  ╚═╝
  > flavIA: Intelligent Academic Assistant
 """
     console.print(banner)
