@@ -77,6 +77,16 @@ class Settings:
     status_max_tasks_main: int = -1
     status_max_tasks_subagent: int = -1
 
+    # Timeouts and limits
+    max_iterations: int = 20  # Max tool call iterations per agent turn
+    llm_request_timeout: int = 600  # LLM request timeout in seconds
+    llm_connect_timeout: int = 10  # LLM connection timeout in seconds
+    image_max_size_mb: int = 20  # Max image size for vision analysis
+    summary_max_length: int = 3000  # Max length for catalog summaries
+
+    # Display settings
+    show_token_usage: bool = True  # Show token usage after responses
+
     # Loaded configs
     models: list[ModelConfig] = field(default_factory=list)
     agents_config: dict[str, Any] = field(default_factory=dict)
@@ -312,6 +322,22 @@ def load_settings() -> Settings:
         rag_expand_video_temporal=_load_bool_env(
             "RAG_EXPAND_VIDEO_TEMPORAL", default=True
         ),
+        # Timeouts and limits
+        max_iterations=_load_int_env("MAX_ITERATIONS", default=20, minimum=1, maximum=100),
+        llm_request_timeout=_load_int_env(
+            "LLM_REQUEST_TIMEOUT", default=600, minimum=30, maximum=1800
+        ),
+        llm_connect_timeout=_load_int_env(
+            "LLM_CONNECT_TIMEOUT", default=10, minimum=5, maximum=120
+        ),
+        image_max_size_mb=_load_int_env(
+            "IMAGE_MAX_SIZE_MB", default=20, minimum=1, maximum=100
+        ),
+        summary_max_length=_load_int_env(
+            "SUMMARY_MAX_LENGTH", default=3000, minimum=500, maximum=10000
+        ),
+        # Display settings
+        show_token_usage=_load_bool_env("SHOW_TOKEN_USAGE", default=True),
     )
 
     # Load models and agents config

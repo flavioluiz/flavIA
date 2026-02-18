@@ -109,6 +109,7 @@ class AnalyzeImageTool(BaseTool):
             )
 
         # Analyze the image
+        max_image_bytes = getattr(settings, "image_max_size_mb", 20) * 1024 * 1024
         description, error = analyze_image(
             image_path=full_path,
             api_key=api_key,
@@ -116,6 +117,7 @@ class AnalyzeImageTool(BaseTool):
             model=model,
             prompt=custom_prompt,
             headers=headers,
+            max_image_bytes=max_image_bytes,
         )
 
         if error:

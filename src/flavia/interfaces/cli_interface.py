@@ -58,6 +58,7 @@ _COMMANDS_WITH_ARGS = {
     "/provider-manage",
     "/provider-test",
     "/compact",
+    "/settings",
 }
 
 

@@ -106,12 +106,14 @@ class ImageConverter(BaseConverter):
             logger.warning("No API key available for vision model")
             return None
 
+        max_image_bytes = getattr(self.settings, "image_max_size_mb", 20) * 1024 * 1024
         description, error = analyze_image(
             image_path=source_path,
             api_key=api_key,
             api_base_url=api_base_url,
             model=model,
             headers=headers,
+            max_image_bytes=max_image_bytes,
         )
 
         if error:

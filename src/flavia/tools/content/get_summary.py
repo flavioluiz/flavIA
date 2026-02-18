@@ -41,6 +41,7 @@ class GetSummaryTool(BaseTool):
         )
 
     def execute(self, args: dict[str, Any], agent_context: "AgentContext") -> str:
+        from flavia.config import get_settings
         from flavia.content.catalog import ContentCatalog
 
         config_dir = agent_context.base_dir / ".flavia"
@@ -55,7 +56,10 @@ class GetSummaryTool(BaseTool):
                 "Run 'flavia --init' or 'flavia --update' to build the catalog."
             )
 
-        max_length = args.get("max_length", 3000)
+        # Use settings.summary_max_length as default if not explicitly provided
+        settings = get_settings()
+        default_max_length = getattr(settings, "summary_max_length", 3000)
+        max_length = args.get("max_length", default_max_length)
         include_tree = args.get("include_tree", True)
 
         # Generate the context summary

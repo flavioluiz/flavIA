@@ -1310,3 +1310,11 @@ def cmd_index_diagnose(ctx: CommandContext, args: str) -> bool:
 
     show_index_diagnostics(ctx.settings.base_dir, ctx.settings, ctx.console)
     return True
+
+
+# =============================================================================
+# Import additional command modules to register their commands
+# =============================================================================
+
+# Settings command (interactive settings menu)
+from flavia.interfaces import settings_command as _settings_command  # noqa: F401, E402

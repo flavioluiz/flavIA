@@ -54,7 +54,7 @@ class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
 class RecursiveAgent(BaseAgent):
     """Agent capable of spawning and managing sub-agents."""
 
-    MAX_ITERATIONS = 20
+    MAX_ITERATIONS = 20  # Fallback; prefer settings.max_iterations
     MAX_ITERATIONS_MESSAGE_RE = re.compile(r"^Maximum iterations reached \((\d+)\)\.")
     DOC_MENTION_RE = re.compile(r'(?<![A-Za-z0-9])@(?:"[^"]+"|\'[^\']+\'|[^\s@"\']+)')
     MENTION_TRAILING_PUNCT = ".,;:!?)]}"
@@ -162,12 +162,14 @@ class RecursiveAgent(BaseAgent):
         if not continue_from_current:
             self.messages.append({"role": "user", "content": user_message})
 
+        # Use settings.max_iterations if available, fall back to class constant
+        default_iterations = getattr(self.settings, "max_iterations", self.MAX_ITERATIONS)
         try:
             iteration_limit = (
-                int(max_iterations) if max_iterations is not None else self.MAX_ITERATIONS
+                int(max_iterations) if max_iterations is not None else default_iterations
             )
         except (TypeError, ValueError):
-            iteration_limit = self.MAX_ITERATIONS
+            iteration_limit = default_iterations
         iteration_limit = max(1, iteration_limit)
 
         iterations = 0
