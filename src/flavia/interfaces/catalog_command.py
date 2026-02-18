@@ -10,9 +10,16 @@ from rich.tree import Tree
 
 from flavia.config import Settings
 from flavia.content.catalog import ContentCatalog
+from flavia.display import get_console
 from flavia.setup.prompt_utils import q_select
 
-console = Console()
+
+def _get_console() -> Console:
+    """Get themed console instance."""
+    return get_console()
+
+
+console = _get_console()
 
 
 def run_catalog_command(settings: Settings) -> bool:

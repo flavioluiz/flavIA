@@ -22,11 +22,19 @@ from rich.tree import Tree
 from flavia.agent import AgentProfile, RecursiveAgent, StatusPhase, ToolStatus
 from flavia.agent.status import sanitize_terminal_text
 from flavia.config import ProviderConfig, Settings
+from flavia.display import get_console
+from flavia.display.theme import get_current_theme
 from flavia.interfaces.commands import CommandContext, dispatch_command, list_commands
 from flavia.tools.write_confirmation import WriteConfirmation
 from flavia.tools.write.preview import OperationPreview
 
-console = Console()
+
+def _get_console() -> Console:
+    """Get themed console instance."""
+    return get_console()
+
+
+console = _get_console()
 
 try:
     import readline as _readline
@@ -63,15 +71,29 @@ _COMMANDS_WITH_ARGS = {
 
 
 _ANSI_RESET = "\033[0m"
-_ANSI_BOLD_CYAN = "\033[1;36m"
-_ANSI_BOLD_BLUE = "\033[1;34m"
-_ANSI_GREEN = "\033[32m"
-_ANSI_DIM = "\033[2m"
+
+
+def _get_ansi_codes() -> dict[str, str]:
+    """Return ANSI codes based on current theme."""
+    theme = get_current_theme()
+    if not theme.use_ansi_status:
+        return {"reset": "", "cyan": "", "blue": "", "green": "", "dim": "", "bold_blue": ""}
+    return {
+        "reset": _ANSI_RESET,
+        "cyan": "\033[1;36m",
+        "blue": "\033[1;34m",
+        "green": "\033[32m",
+        "dim": "\033[2m",
+        "bold_blue": "\033[1;34m",
+    }
 
 
 def _supports_status_colors() -> bool:
     """Return whether ANSI colors should be used for status streaming."""
     if os.getenv("NO_COLOR") is not None:
+        return False
+    theme = get_current_theme()
+    if not theme.use_ansi_status:
         return False
     out_stream = getattr(console, "file", None)
     return bool(out_stream and hasattr(out_stream, "isatty") and out_stream.isatty())
@@ -81,7 +103,8 @@ def _colorize_status(text: str, ansi_code: str) -> str:
     """Apply ANSI style to a status line when color is supported."""
     if not text or not _supports_status_colors():
         return text
-    return f"{ansi_code}{text}{_ANSI_RESET}"
+    codes = _get_ansi_codes()
+    return f"{ansi_code or codes.get('cyan', '')}{text}{codes.get('reset', '')}"
 
 
 def _build_loading_line(
@@ -1578,9 +1601,25 @@ def _prompt_compaction(agent: RecursiveAgent) -> bool:
     return False
 
 
+def _configure_logging(settings: Settings) -> None:
+    """Configure logging based on settings.
+
+    Args:
+        settings: Application settings.
+    """
+    level = getattr(logging, settings.log_level.upper(), logging.WARNING)
+    logging.basicConfig(level=level, format="%(name)s - %(levelname)s - %(message)s")
+
+    # Suppress verbose third-party library logs
+    for logger_name in ["httpx", "openai", "httpcore"]:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+
 def run_cli(settings: Settings) -> None:
     """Run the interactive CLI."""
     global _COMPLETION_SETTINGS
+
+    _configure_logging(settings)
 
     # Keep CLI output clean even if logging is configured elsewhere.
     logging.getLogger("httpx").setLevel(logging.WARNING)

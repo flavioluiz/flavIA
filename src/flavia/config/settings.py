@@ -86,6 +86,15 @@ class Settings:
 
     # Display settings
     show_token_usage: bool = True  # Show token usage after responses
+    color_theme: str = "default"  # Color theme: default, light, minimal
+    timestamp_format: str = "iso"  # Timestamp format: iso, relative, local
+    log_level: str = "warning"  # Log level: debug, info, warning, error
+
+    # Content processing settings
+    ocr_min_chars_per_page: int = 50  # Minimum characters per page for OCR
+    transcription_timeout: int = 600  # Timeout for transcription in seconds
+    embedder_batch_size: int = 64  # Batch size for embedding
+    latex_timeout: int = 120  # Timeout for LaTeX compilation in seconds
 
     # Loaded configs
     models: list[ModelConfig] = field(default_factory=list)
@@ -303,7 +312,9 @@ def load_settings() -> Settings:
         status_max_tasks_main=int(os.getenv("STATUS_MAX_TASKS_MAIN", "-1")),
         status_max_tasks_subagent=int(os.getenv("STATUS_MAX_TASKS_SUBAGENT", "-1")),
         rag_debug=rag_debug,
-        rag_catalog_router_k=_load_int_env("RAG_CATALOG_ROUTER_K", default=20, minimum=0, maximum=500),
+        rag_catalog_router_k=_load_int_env(
+            "RAG_CATALOG_ROUTER_K", default=20, minimum=0, maximum=500
+        ),
         rag_vector_k=_load_int_env("RAG_VECTOR_K", default=15, minimum=0, maximum=500),
         rag_fts_k=_load_int_env("RAG_FTS_K", default=15, minimum=0, maximum=500),
         rag_rrf_k=_load_int_env("RAG_RRF_K", default=60, minimum=1, maximum=1000),
@@ -319,9 +330,7 @@ def load_settings() -> Settings:
         rag_video_window_seconds=_load_int_env(
             "RAG_VIDEO_WINDOW_SECONDS", default=60, minimum=5, maximum=600
         ),
-        rag_expand_video_temporal=_load_bool_env(
-            "RAG_EXPAND_VIDEO_TEMPORAL", default=True
-        ),
+        rag_expand_video_temporal=_load_bool_env("RAG_EXPAND_VIDEO_TEMPORAL", default=True),
         # Timeouts and limits
         max_iterations=_load_int_env("MAX_ITERATIONS", default=20, minimum=1, maximum=100),
         llm_request_timeout=_load_int_env(
@@ -330,14 +339,26 @@ def load_settings() -> Settings:
         llm_connect_timeout=_load_int_env(
             "LLM_CONNECT_TIMEOUT", default=10, minimum=5, maximum=120
         ),
-        image_max_size_mb=_load_int_env(
-            "IMAGE_MAX_SIZE_MB", default=20, minimum=1, maximum=100
-        ),
+        image_max_size_mb=_load_int_env("IMAGE_MAX_SIZE_MB", default=20, minimum=1, maximum=100),
         summary_max_length=_load_int_env(
             "SUMMARY_MAX_LENGTH", default=3000, minimum=500, maximum=10000
         ),
         # Display settings
         show_token_usage=_load_bool_env("SHOW_TOKEN_USAGE", default=True),
+        color_theme=os.getenv("COLOR_THEME", "default"),
+        timestamp_format=os.getenv("TIMESTAMP_FORMAT", "iso"),
+        log_level=os.getenv("LOG_LEVEL", "warning"),
+        # Content processing settings
+        ocr_min_chars_per_page=_load_int_env(
+            "OCR_MIN_CHARS_PER_PAGE", default=50, minimum=1, maximum=1000
+        ),
+        transcription_timeout=_load_int_env(
+            "TRANSCRIPTION_TIMEOUT", default=600, minimum=60, maximum=3600
+        ),
+        embedder_batch_size=_load_int_env(
+            "EMBEDDER_BATCH_SIZE", default=64, minimum=1, maximum=256
+        ),
+        latex_timeout=_load_int_env("LATEX_TIMEOUT", default=120, minimum=30, maximum=600),
     )
 
     # Load models and agents config

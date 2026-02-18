@@ -153,6 +153,16 @@ class AudioConverter(BaseConverter):
         )
 
     @staticmethod
+    def _get_transcription_timeout() -> float:
+        """Get transcription timeout from settings."""
+        try:
+            from flavia.config import get_settings
+
+            return get_settings().transcription_timeout
+        except Exception:
+            return 600.0
+
+    @staticmethod
     def _request_transcription_http(
         api_key: str,
         audio_file,
@@ -177,7 +187,7 @@ class AudioConverter(BaseConverter):
             headers=headers,
             data=data,
             files=files,
-            timeout=600.0,
+            timeout=AudioConverter._get_transcription_timeout(),
         )
         response.raise_for_status()
         payload = response.json()

@@ -85,7 +85,7 @@ class PdfConverter(BaseConverter):
         """Return True if the PDF appears to be scanned/image-based.
 
         Uses pdfplumber to sample text; if the average chars per page is below
-        MistralOcrConverter.MIN_CHARS_PER_PAGE the PDF is treated as scanned.
+        the configured minimum chars per page, the PDF is treated as scanned.
         """
         from .mistral_ocr_converter import MistralOcrConverter
 
@@ -95,11 +95,9 @@ class PdfConverter(BaseConverter):
             with pdfplumber.open(pdf_path) as pdf:
                 if not pdf.pages:
                     return False
-                total_chars = sum(
-                    len(page.extract_text() or "") for page in pdf.pages
-                )
+                total_chars = sum(len(page.extract_text() or "") for page in pdf.pages)
                 avg = total_chars / len(pdf.pages)
-                return avg < MistralOcrConverter.MIN_CHARS_PER_PAGE
+                return avg < MistralOcrConverter.get_min_chars_per_page()
         except Exception:
             return False
 

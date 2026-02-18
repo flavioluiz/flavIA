@@ -191,7 +191,7 @@ class VideoConverter(BaseConverter):
                 ],
                 capture_output=True,
                 text=True,
-                timeout=600,  # 10 min timeout for large files
+                timeout=get_settings().transcription_timeout,
             )
 
             if result.returncode != 0:

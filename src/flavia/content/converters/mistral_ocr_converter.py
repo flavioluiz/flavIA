@@ -17,6 +17,16 @@ class MistralOcrConverter(BaseConverter):
 
     MIN_CHARS_PER_PAGE = 50
 
+    @classmethod
+    def get_min_chars_per_page(cls) -> int:
+        """Get the minimum chars per page from settings."""
+        try:
+            from flavia.config import get_settings
+
+            return get_settings().ocr_min_chars_per_page
+        except Exception:
+            return cls.MIN_CHARS_PER_PAGE
+
     def can_handle(self, file_path: Path) -> bool:
         # Not registered in the global registry; called explicitly by PdfConverter.
         return False

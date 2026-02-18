@@ -258,6 +258,30 @@ VISUAL_DISPLAY = SettingsCategory(
             default=False,
         ),
         SettingDefinition(
+            env_var="COLOR_THEME",
+            display_name="Color Theme",
+            description="UI color theme (default, light, minimal)",
+            setting_type="choice",
+            default="default",
+            choices=["default", "light", "minimal"],
+        ),
+        SettingDefinition(
+            env_var="TIMESTAMP_FORMAT",
+            display_name="Timestamp Format",
+            description="Format for timestamps (iso, relative, local)",
+            setting_type="choice",
+            default="iso",
+            choices=["iso", "relative", "local"],
+        ),
+        SettingDefinition(
+            env_var="LOG_LEVEL",
+            display_name="Log Level",
+            description="Logging verbosity level (debug, info, warning, error)",
+            setting_type="choice",
+            default="warning",
+            choices=["debug", "info", "warning", "error"],
+        ),
+        SettingDefinition(
             env_var="SHOW_TOKEN_USAGE",
             display_name="Show Token Usage",
             description="Display token usage after responses",
@@ -325,6 +349,49 @@ TIMEOUTS_LIMITS = SettingsCategory(
             min_value=500,
             max_value=10000,
         ),
+        SettingDefinition(
+            env_var="TRANSCRIPTION_TIMEOUT",
+            display_name="Transcription Timeout",
+            description="Timeout for audio/video transcription (seconds)",
+            setting_type="int",
+            default=600,
+            min_value=60,
+            max_value=3600,
+        ),
+        SettingDefinition(
+            env_var="LATEX_TIMEOUT",
+            display_name="LaTeX Timeout",
+            description="Timeout for LaTeX compilation (seconds)",
+            setting_type="int",
+            default=120,
+            min_value=30,
+            max_value=600,
+        ),
+    ],
+)
+
+CONTENT_PROCESSING = SettingsCategory(
+    id="content",
+    name="Content Processing",
+    settings=[
+        SettingDefinition(
+            env_var="OCR_MIN_CHARS_PER_PAGE",
+            display_name="OCR Min Chars/Page",
+            description="Minimum characters per page to trigger OCR",
+            setting_type="int",
+            default=50,
+            min_value=1,
+            max_value=1000,
+        ),
+        SettingDefinition(
+            env_var="EMBEDDER_BATCH_SIZE",
+            display_name="Embedder Batch Size",
+            description="Batch size for text embedding",
+            setting_type="int",
+            default=64,
+            min_value=1,
+            max_value=256,
+        ),
     ],
 )
 
@@ -336,6 +403,7 @@ SETTINGS_CATEGORIES: list[SettingsCategory] = [
     RAG_PARAMETERS,
     VISUAL_DISPLAY,
     TIMEOUTS_LIMITS,
+    CONTENT_PROCESSING,
 ]
 
 

@@ -223,11 +223,21 @@ def get_embedding_client(settings: Settings) -> tuple[OpenAI, str]:
     )
 
 
+def _get_default_batch_size() -> int:
+    """Get default batch size from settings."""
+    try:
+        from flavia.config import get_settings
+
+        return get_settings().embedder_batch_size
+    except Exception:
+        return DEFAULT_BATCH_SIZE
+
+
 def embed_chunks(
     chunks: list[dict],
     client: OpenAI,
     model: str = EMBEDDING_MODEL,
-    batch_size: int = DEFAULT_BATCH_SIZE,
+    batch_size: Optional[int] = None,
     on_progress: Optional[Callable[[int, int], None]] = None,
 ) -> Iterator[tuple[str, Optional[list[float]], Optional[str]]]:
     """Embed a list of chunks in batches.
@@ -236,7 +246,7 @@ def embed_chunks(
         chunks: List of chunk dicts with 'chunk_id', 'source', 'heading_path', 'text'.
         client: OpenAI client configured for embeddings.
         model: Model ID to use for embeddings.
-        batch_size: Number of chunks to embed per API call.
+        batch_size: Number of chunks to embed per API call. Uses settings default if None.
         on_progress: Optional callback(processed, total) for progress reporting.
 
     Yields:
@@ -244,6 +254,9 @@ def embed_chunks(
         - vector is the L2-normalized embedding (768 dims) or None on failure
         - error is None on success or an error message string on failure
     """
+    if batch_size is None:
+        batch_size = _get_default_batch_size()
+
     total = len(chunks)
     processed = 0
 

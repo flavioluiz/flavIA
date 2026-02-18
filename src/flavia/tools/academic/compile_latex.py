@@ -22,6 +22,17 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+def _get_latex_timeout() -> int:
+    """Get LaTeX compilation timeout from settings."""
+    try:
+        from flavia.config import get_settings
+
+        return get_settings().latex_timeout
+    except Exception:
+        return 120
+
+
 # Supported LaTeX compilers
 SUPPORTED_COMPILERS = ("pdflatex", "xelatex", "lualatex", "latexmk")
 
@@ -389,18 +400,20 @@ def _run_command(
 def compile_latex(
     tex_path: Path,
     config: LatexConfig,
-    timeout: int = 120,
+    timeout: Optional[int] = None,
 ) -> CompilationResult:
     """Compile a LaTeX document to PDF.
 
     Args:
         tex_path: Path to the .tex file.
         config: LaTeX compilation configuration.
-        timeout: Timeout in seconds for each subprocess call.
+        timeout: Timeout in seconds for each subprocess call. Uses settings default if None.
 
     Returns:
         CompilationResult with status, PDF path, and parsed errors/warnings.
     """
+    if timeout is None:
+        timeout = _get_latex_timeout()
     result = CompilationResult(
         success=False,
         compiler_used=config.compiler,
@@ -651,8 +664,7 @@ class CompileLatexTool(BaseTool):
                     name="shell_escape",
                     type="boolean",
                     description=(
-                        "Allow LaTeX shell-escape. "
-                        "Defaults to value from agents.yaml or false."
+                        "Allow LaTeX shell-escape. Defaults to value from agents.yaml or false."
                     ),
                     required=False,
                 ),
