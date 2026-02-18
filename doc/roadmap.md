@@ -82,6 +82,7 @@ Consolidacao de comandos e recursos avancados de CLI.
 | 4.5 | Standard Default Agent | Medium | — |
 | 4.6 | Global Agent Definitions | Medium | 2.1, 4.2 |
 | 4.9 | Configurable LLM API Timeout | Medium | — |
+| 4.10 | Batch OCR Processing in Catalog | Easy | — |
 
 ---
 
@@ -152,6 +153,7 @@ Area 4 -- CLI:
   4.5 (Standard Default Agent) ── (independente)
   4.6 (Global Agents) ── depende de 2.1, 4.2 (done)
   4.9 (Configurable Timeout) ── (independente)
+  4.10 (Batch OCR in Catalog) ── (independente)
 
 Area 6 -- Academic Workflow:
   6.2 (Script Execution) ── depende de 5.1 (done)
@@ -180,9 +182,9 @@ Area 10 -- Telegram File Delivery:
 
 | Metrica | Valor |
 |---------|-------|
-| Tarefas pendentes | 26 |
+| Tarefas pendentes | 27 |
 | Areas ativas | 7 |
-| Easy | 2 pendentes |
+| Easy | 3 pendentes |
 | Medium | 16 pendentes |
 | Hard | 8 pendentes |
 

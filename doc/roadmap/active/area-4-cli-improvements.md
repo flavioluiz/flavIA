@@ -476,4 +476,34 @@ Add a configurable timeout system for LLM API calls to allow runtime adjustment 
 
 ---
 
+### Task 4.10 -- Batch OCR Processing in Catalog
+
+**Difficulty**: Easy | **Dependencies**: None
+
+Improve the `/catalog` UI to support batch OCR operations on multiple files, instead of requiring one-by-one processing.
+
+**Current limitation**: The `/catalog` PDF manager allows triggering OCR for individual scanned PDFs, but there's no option to process multiple files at once. For large document collections, this is tedious.
+
+**Proposed UX**:
+
+1. **Batch selection in PDF manager**:
+   - Add "OCR all scanned PDFs" option in the PDF Files menu
+   - Add multi-select (checkbox) mode to choose specific files for batch OCR
+   - Show progress indicator during batch processing
+
+2. **CLI flag for batch OCR**:
+   - Add `--ocr-all` flag to `flavia --init` to OCR all detected scanned PDFs during setup
+   - Add `--ocr-pending` flag to process only files not yet OCR'd
+
+3. **Slash command**:
+   - `/ocr [pattern]` -- OCR all scanned PDFs, or those matching an optional glob pattern
+   - Example: `/ocr reports/*.pdf`
+
+**Key files to modify**:
+- `src/flavia/interfaces/catalog_command.py` -- batch selection UI, "OCR all" option
+- `src/flavia/cli.py` -- add `--ocr-all`, `--ocr-pending` flags
+- `src/flavia/setup_wizard.py` -- integrate batch OCR option in init flow
+
+---
+
 **[← Back to Roadmap](../../roadmap.md)**
