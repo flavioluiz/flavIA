@@ -212,6 +212,7 @@ Inside a chat session, the following commands are available:
 | `/tools` | List available tools by category |
 | `/tools <name>` | Show tool schema and parameters |
 | `/citations [turn [N]\|id <CITATION_ID>]` | Inspect retrieval citation markers from current turn or by id |
+| `/settings [category]` | Open interactive settings editor (`models`, `api_keys`, `agent`, `rag`, `display`, `timeouts`, `content`) |
 | `/config` | Show configuration paths and active settings |
 | `/quit` | Exit session (aliases: `/exit`, `/q`) |
 

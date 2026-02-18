@@ -36,6 +36,13 @@ def _get_console() -> Console:
 
 console = _get_console()
 
+
+def refresh_console() -> Console:
+    """Refresh module-level console after display settings changes."""
+    global console
+    console = _get_console()
+    return console
+
 try:
     import readline as _readline
 except Exception:  # pragma: no cover - platform-dependent
@@ -1533,6 +1540,10 @@ def _display_token_usage(agent: RecursiveAgent) -> None:
     - yellow: 70-89%
     - red: >= 90%
     """
+    settings = getattr(agent, "settings", None)
+    if settings is not None and not bool(getattr(settings, "show_token_usage", True)):
+        return
+
     prompt_tokens = agent.last_prompt_tokens
     max_tokens = agent.max_context_tokens
     completion_tokens = agent.last_completion_tokens

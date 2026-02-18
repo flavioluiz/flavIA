@@ -292,6 +292,29 @@ class TestCliTokenDisplay:
         assert "95,000" in output
         assert "95.0%" in output
 
+    def test_respects_show_token_usage_setting(self):
+        from flavia.interfaces.cli_interface import _display_token_usage
+        from io import StringIO
+        from rich.console import Console
+
+        agent = _make_agent(max_tokens=100_000)
+        agent.settings.show_token_usage = False
+        agent._update_token_usage(_make_usage(prompt_tokens=20_000, completion_tokens=300))
+
+        buf = StringIO()
+        test_console = Console(file=buf, no_color=True, width=200)
+
+        import flavia.interfaces.cli_interface as cli_mod
+
+        original_console = cli_mod.console
+        cli_mod.console = test_console
+        try:
+            _display_token_usage(agent)
+        finally:
+            cli_mod.console = original_console
+
+        assert buf.getvalue() == ""
+
 
 # ---------------------------------------------------------------------------
 # Telegram footer tests

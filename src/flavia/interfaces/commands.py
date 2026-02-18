@@ -367,6 +367,7 @@ def cmd_quit(ctx: CommandContext, args: str) -> bool:
 def cmd_reset(ctx: CommandContext, args: str) -> bool:
     """Reset conversation and reload config."""
     from flavia.config import load_settings, reset_settings
+    from flavia.display import reset_console, set_theme
 
     # Reload settings in case config changed
     reset_settings()
@@ -381,10 +382,22 @@ def cmd_reset(ctx: CommandContext, args: str) -> bool:
     ctx.settings = new_settings
 
     # Update history paths
-    from flavia.interfaces.cli_interface import _history_paths, _configure_prompt_history
+    from flavia.interfaces.cli_interface import (
+        _configure_prompt_history,
+        _history_paths,
+        refresh_console,
+    )
 
     ctx.history_file, ctx.chat_log_file = _history_paths(ctx.settings.base_dir)
     ctx.history_enabled = _configure_prompt_history(ctx.history_file)
+
+    # Refresh themed console in case display settings changed.
+    set_theme(getattr(ctx.settings, "color_theme", "default"))
+    reset_console()
+    ctx.console = refresh_console()
+    from flavia.interfaces import catalog_command as _catalog_command
+
+    _catalog_command.console = ctx.console
 
     ctx.recreate_agent()
     ctx.console.print("[yellow]Conversation reset and config reloaded.[/yellow]")

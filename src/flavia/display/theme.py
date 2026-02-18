@@ -114,4 +114,3 @@ def reset_theme() -> None:
     global _current_theme_name, _current_theme
     _current_theme_name = None
     _current_theme = None
-    set_theme("default")

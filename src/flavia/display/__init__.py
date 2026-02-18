@@ -1,8 +1,12 @@
-"""Display module for flavIA.
+"""Display module for flavIA."""
 
-This module provides themed console output and styling.
-"""
-
+from flavia.display.commands import (
+    display_agents,
+    display_config,
+    display_providers,
+    display_tool_schema,
+    display_tools,
+)
 from flavia.display.console import get_console, reset_console
 from flavia.display.styles import S, Styles
 from flavia.display.theme import (
@@ -15,6 +19,11 @@ from flavia.display.theme import (
 )
 
 __all__ = [
+    "display_agents",
+    "display_config",
+    "display_providers",
+    "display_tool_schema",
+    "display_tools",
     "get_console",
     "reset_console",
     "S",

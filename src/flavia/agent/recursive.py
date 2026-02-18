@@ -163,13 +163,26 @@ class RecursiveAgent(BaseAgent):
             self.messages.append({"role": "user", "content": user_message})
 
         # Use settings.max_iterations if available, fall back to class constant
-        default_iterations = getattr(self.settings, "max_iterations", self.MAX_ITERATIONS)
-        try:
-            iteration_limit = (
-                int(max_iterations) if max_iterations is not None else default_iterations
-            )
-        except (TypeError, ValueError):
-            iteration_limit = default_iterations
+        def _coerce_iterations(value: Any, fallback: int) -> int:
+            if isinstance(value, bool):
+                return fallback
+            if isinstance(value, (int, float, str)):
+                try:
+                    return int(value)
+                except (TypeError, ValueError):
+                    return fallback
+            return fallback
+
+        settings_obj = getattr(self, "settings", None)
+        default_iterations = _coerce_iterations(
+            getattr(settings_obj, "max_iterations", self.MAX_ITERATIONS),
+            self.MAX_ITERATIONS,
+        )
+        iteration_limit = (
+            _coerce_iterations(max_iterations, default_iterations)
+            if max_iterations is not None
+            else default_iterations
+        )
         iteration_limit = max(1, iteration_limit)
 
         iterations = 0

@@ -312,6 +312,7 @@ API_BASE_URL=https://api.synthetic.new/openai/v1
 DEFAULT_MODEL=synthetic:hf:moonshotai/Kimi-K2.5
 AGENT_MAX_DEPTH=3
 AGENT_PARALLEL_WORKERS=4
+AGENT_COMPACT_THRESHOLD=0.9
 
 # RAG diagnostics and tuning (optional)
 RAG_DEBUG=false
@@ -329,6 +330,21 @@ RAG_EXPAND_VIDEO_TEMPORAL=true
 STATUS_MAX_TASKS_MAIN=5
 STATUS_MAX_TASKS_SUBAGENT=3
 
+# Runtime limits and display settings
+MAX_ITERATIONS=20
+LLM_REQUEST_TIMEOUT=600
+LLM_CONNECT_TIMEOUT=10
+IMAGE_MAX_SIZE_MB=20
+SUMMARY_MAX_LENGTH=3000
+SHOW_TOKEN_USAGE=true
+COLOR_THEME=default
+TIMESTAMP_FORMAT=iso
+LOG_LEVEL=warning
+OCR_MIN_CHARS_PER_PAGE=50
+TRANSCRIPTION_TIMEOUT=600
+EMBEDDER_BATCH_SIZE=64
+LATEX_TIMEOUT=120
+
 # Telegram (optional)
 TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
 TELEGRAM_ALLOWED_USER_IDS=123456789,987654321
@@ -337,6 +353,8 @@ TELEGRAM_ALLOW_ALL_USERS=true
 
 `RAG_DEBUG=true` enables retrieval diagnostics capture (equivalent to runtime `/rag-debug on`).
 Captured traces are persisted to `.flavia/rag_debug.jsonl` and can be inspected with `/rag-debug last` (global) or `/rag-debug turn` (current turn only).
+
+Most of these values can also be edited interactively inside the CLI with `/settings`.
 
 ## Connection test
 

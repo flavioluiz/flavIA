@@ -212,8 +212,9 @@ def _edit_setting(
 
     # Write to file
     if write_to_env_file(target_path, setting.env_var, env_value):
+        display_value = _mask_value(env_value) if setting.masked else env_value
         console.print(
-            f"[green]Saved:[/green] {setting.env_var}={env_value} -> {scope} ({target_path})"
+            f"[green]Saved:[/green] {setting.env_var}={display_value} -> {scope} ({target_path})"
         )
         return True
     else:

@@ -100,6 +100,7 @@ def test_command_registry_contains_expected_commands():
         "/provider-manage",
         "/provider-test",
         "/compact",
+        "/settings",
         "/rag-debug",
         "/index",
         "/index-build",
@@ -236,6 +237,39 @@ def test_dispatch_no_arg_command_with_args_is_unknown():
     assert result is True
     assert any("Unknown command" in line for line in console.printed)
     assert not any("Goodbye" in line for line in console.printed)
+
+
+def test_dispatch_reset_refreshes_themed_console(monkeypatch, tmp_path):
+    """Reset should refresh theme and console after loading updated settings."""
+    from io import StringIO
+
+    from rich.console import Console
+
+    console = _DummyConsole()
+    current_settings = Settings(base_dir=tmp_path, color_theme="default")
+    reloaded_settings = Settings(base_dir=tmp_path, color_theme="minimal")
+    ctx = _make_test_context(settings=current_settings, console=console)
+
+    monkeypatch.setattr("flavia.config.reset_settings", lambda: None)
+    monkeypatch.setattr("flavia.config.load_settings", lambda: reloaded_settings)
+    monkeypatch.setattr(
+        "flavia.interfaces.cli_interface._history_paths",
+        lambda _base_dir: (tmp_path / ".prompt_history", tmp_path / "chat_history.jsonl"),
+    )
+    monkeypatch.setattr("flavia.interfaces.cli_interface._configure_prompt_history", lambda _f: False)
+    monkeypatch.setattr("flavia.interfaces.cli_interface._print_active_model_hint", lambda *_a: None)
+
+    set_theme_calls: list[str] = []
+    themed_console = Console(file=StringIO())
+    monkeypatch.setattr("flavia.display.set_theme", lambda name: set_theme_calls.append(name))
+    monkeypatch.setattr("flavia.display.reset_console", lambda: None)
+    monkeypatch.setattr("flavia.interfaces.cli_interface.refresh_console", lambda: themed_console)
+
+    result = dispatch_command(ctx, "/reset")
+
+    assert result is True
+    assert set_theme_calls == ["minimal"]
+    assert ctx.console is themed_console
 
 
 def test_dispatch_agent_cancelled_selection_shows_list_without_switch(monkeypatch, tmp_path):
