@@ -254,4 +254,4 @@ Create a `compact_context` tool that agents can call to summarize their own conv
 
 ---
 
-**[← Back to Roadmap](../roadmap.md)**
+**[← Back to Roadmap](../../roadmap.md)** | **[CHANGELOG](../../CHANGELOG.md)**

@@ -398,3 +398,7 @@ vault/
 - Add reranking stage (cross-encoder or lightweight LLM reranker) after RRF for long analytical prompts.
 - Add adaptive chunk-size profiles by modality/domain (current chunk size is global).
 - Add configurable mention-matching strictness (`exact_only` vs `suffix_match`) for large corpora with repeated filenames.
+
+---
+
+**[← Back to Roadmap](../../roadmap.md)** | **[CHANGELOG](../../CHANGELOG.md)**

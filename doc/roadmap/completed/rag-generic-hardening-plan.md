@@ -90,3 +90,7 @@ This plan defines incremental improvements to increase retrieval reliability, co
 - Hardcoding domain-specific labels, taxonomies, or grading systems.
 - Embedding fixed assumptions about one document family.
 - Coupling retrieval behavior to one evaluation workflow.
+
+---
+
+**[← Back to Roadmap](../../roadmap.md)** | **[CHANGELOG](../../CHANGELOG.md)**
