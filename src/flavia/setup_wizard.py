@@ -44,6 +44,7 @@ RUNTIME_CORE_TOOLS = [
     "search_chunks",
     "get_catalog_summary",
     "analyze_image",
+    "web_search",
     "compact_context",
 ]
 SPAWN_TOOLS = ["spawn_agent", "spawn_predefined_agent"]
@@ -205,6 +206,7 @@ Available tools:
 - search_chunks: Semantic search over indexed document chunks with citations
 - get_catalog_summary: Get a high-level overview of the project content
 - analyze_image: Describe images with a vision-capable model
+- web_search: Search the web for current information (news, docs, references)
 - compact_context: Compact long conversations and keep key context
 - compile_latex: Compile .tex files into PDF (only when write access is allowed)
 - refresh_catalog: Rebuild the project catalog (writes catalog data; only with write access)
@@ -214,7 +216,7 @@ Available tools:
 When generating agents.yaml:
 - Default `main.tools` should include all read/runtime tools:
   read_file, list_files, search_files, get_file_info, query_catalog, search_chunks, get_catalog_summary,
-  analyze_image, compact_context, spawn_agent, spawn_predefined_agent
+  analyze_image, web_search, compact_context, spawn_agent, spawn_predefined_agent
 - Only include write-capable tools when write access is explicitly requested:
   write_file, edit_file, insert_text, append_file, delete_file, create_directory,
   remove_directory, compile_latex, refresh_catalog
@@ -281,7 +283,7 @@ When generating agents.yaml, valid runtime write tools are:
   remove_directory, compile_latex, refresh_catalog
 - Also include these read/runtime tools by default:
   read_file, list_files, search_files, get_file_info, query_catalog, search_chunks, get_catalog_summary,
-  analyze_image, compact_context, spawn_agent, spawn_predefined_agent
+  analyze_image, web_search, compact_context, spawn_agent, spawn_predefined_agent
 
 Include a project_description that captures the academic subject.
 """
@@ -1417,6 +1419,7 @@ main:
         - list_files
         - search_files
         - query_catalog
+        - web_search
 """
         (config_dir / "agents.yaml").write_text(agents_content)
 

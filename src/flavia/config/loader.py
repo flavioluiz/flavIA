@@ -215,6 +215,7 @@ main:
     - search_chunks
     - get_catalog_summary
     - analyze_image
+    - web_search
     - compact_context
     - spawn_agent
     - spawn_predefined_agent
@@ -232,6 +233,7 @@ main:
         - list_files
         - search_files
         - query_catalog
+        - web_search
 
     summarizer:
       context: |

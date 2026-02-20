@@ -1424,7 +1424,7 @@ def create_agent_from_settings(
             context="You are a helpful assistant that can read and analyze files.",
             model=settings.default_model,
             base_dir=settings.base_dir,
-            tools=["read_file", "list_files", "search_files", "get_file_info"],
+            tools=["read_file", "list_files", "search_files", "get_file_info", "web_search"],
             subagents={},
             name="main",
             max_depth=settings.max_depth,
