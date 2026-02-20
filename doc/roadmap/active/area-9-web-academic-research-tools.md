@@ -1,6 +1,6 @@
 # Area 9: Web & Academic Research Tools
 
-flavIA is designed as an academic research assistant, but currently has no ability to search the web or access academic databases. This area introduces a comprehensive suite of tools for web search, academic literature discovery, article retrieval, and reference management -- the foundational capabilities needed for literature reviews, deep research, and producing scientifically rigorous work with correct citations.
+flavIA is designed as an academic research assistant. Web search is now available (Task 9.1), and the remaining tasks in this area focus on academic database access, article retrieval, and reference management -- foundational capabilities for literature reviews, deep research, and scientifically rigorous work with correct citations.
 
 The general architecture follows the existing tool pattern: each tool is a `BaseTool` subclass registered in `ToolRegistry`, organized under a new `tools/research/` category. Web-fetched content integrates with the existing content system (`content/converters/`, `.converted/`) with additional metadata for provenance tracking and lifecycle management.
 
@@ -11,6 +11,7 @@ The general architecture follows the existing tool pattern: each tool is a `Base
 ### Task 9.1 -- Web Search Engine
 
 **Difficulty**: Medium | **Dependencies**: None (enhanced by Task 1.5 for content extraction)
+**Status**: ✅ DONE (implemented on February 20, 2026 in commit `033f40d`)
 
 Create `tools/research/web_search.py` implementing a general-purpose web search tool. The tool queries a search engine API and returns structured results (title, URL, snippet, position) without accessing the pages themselves. The agent can then use the webpage converter (Task 1.5) or `read_url` tool to extract full content from selected results.
 
@@ -24,21 +25,14 @@ Create `tools/research/web_search.py` implementing a general-purpose web search 
 | **DuckDuckGo** | Free, no API key required (via `duckduckgo-search` library) | No official API, relies on scraping; rate-limited; less comprehensive |
 | **Bing Web Search API** | Good quality, Microsoft-backed | Paid after free tier (1000/month) |
 
-**Recommended approach**: Support multiple providers via a `SearchProvider` abstraction, similar to the existing LLM provider system. Configure the active provider in `.flavia/services.yaml`:
+**Implementation note (current)**: The provider abstraction was implemented with `duckduckgo`, `google`, `brave`, and `bing`. Runtime configuration is read from `.env` and `/settings` (not `.flavia/services.yaml`), using:
 
-```yaml
-services:
-  web_search:
-    provider: "brave"        # or "google", "duckduckgo", "serpapi", "bing"
-    api_key: "${BRAVE_SEARCH_API_KEY}"
-    max_results: 10
-    # Provider-specific settings
-    google:
-      cx: "${GOOGLE_SEARCH_CX}"   # Custom Search Engine ID
-      api_key: "${GOOGLE_SEARCH_API_KEY}"
-    brave:
-      api_key: "${BRAVE_SEARCH_API_KEY}"
-    duckduckgo: {}  # No API key needed
+```bash
+WEB_SEARCH_PROVIDER=duckduckgo
+GOOGLE_SEARCH_API_KEY=
+GOOGLE_SEARCH_CX=
+BRAVE_SEARCH_API_KEY=
+BING_SEARCH_API_KEY=
 ```
 
 **Tool interface**:
@@ -73,7 +67,7 @@ The agent can then decide which URLs to read in full using the webpage converter
 - `tools/research/search_providers/google.py` (new)
 - `tools/research/search_providers/duckduckgo.py` (new)
 - `tools/__init__.py` (add `research` submodule import)
-- `config/settings.py` (load `services.yaml` web_search config)
+- `config/settings.py` (load `.env` web search config keys)
 
 **New dependencies** (optional extras): `duckduckgo-search` (for DuckDuckGo); API-based providers use `httpx` (already a dependency).
 

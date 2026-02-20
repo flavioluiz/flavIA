@@ -58,13 +58,18 @@ class DuckDuckGoSearchProvider(BaseSearchProvider):
             return SearchResponse(
                 query=query,
                 provider=self.name,
+                error_message=(
+                    "duckduckgo-search is not installed in the current Python environment. "
+                    "Install with: pip install -e '.[research]' (project repo) "
+                    "or pip install 'duckduckgo-search>=6.0'"
+                ),
                 results=[
                     SearchResult(
                         title="Error",
                         url="",
                         snippet=(
-                            "duckduckgo-search library is not installed. "
-                            "Install it with: pip install 'flavia[research]'"
+                            "duckduckgo-search is not installed in the current Python "
+                            "environment."
                         ),
                         position=1,
                     )
@@ -85,15 +90,40 @@ class DuckDuckGoSearchProvider(BaseSearchProvider):
                     )
                 )
         except Exception as e:
-            logger.warning("DuckDuckGo search failed: %s", e)
+            err_text = str(e).strip()
+            lowered = err_text.lower()
+            if "ratelimit" in lowered or "rate limit" in lowered:
+                logger.warning("DuckDuckGo search rate limited")
+                return SearchResponse(
+                    query=query,
+                    provider=self.name,
+                    error_message=(
+                        "DuckDuckGo search is temporarily rate limited. "
+                        "Try again in a few minutes or use another provider."
+                    ),
+                    results=[
+                        SearchResult(
+                            title="Search Error",
+                            url="",
+                            snippet=(
+                                "DuckDuckGo search is temporarily rate limited. "
+                                "Try again in a few minutes."
+                            ),
+                            position=1,
+                        )
+                    ],
+                )
+
+            logger.warning("DuckDuckGo search failed (%s)", type(e).__name__)
             return SearchResponse(
                 query=query,
                 provider=self.name,
+                error_message="DuckDuckGo search failed due to an unexpected error.",
                 results=[
                     SearchResult(
                         title="Search Error",
                         url="",
-                        snippet=f"DuckDuckGo search failed: {e}",
+                        snippet="DuckDuckGo search failed due to an unexpected error.",
                         position=1,
                     )
                 ],

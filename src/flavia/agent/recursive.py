@@ -202,6 +202,7 @@ class RecursiveAgent(BaseAgent):
         comparison_format_enforcement_attempts = 0
         had_grounded_search = False
         covered_mentions: set[str] = set()
+        pending_web_search_error: Optional[str] = None
 
         while iterations < iteration_limit:
             iterations += 1
@@ -288,6 +289,10 @@ class RecursiveAgent(BaseAgent):
                 if had_write_tool_call and not had_successful_write and write_failures:
                     details = "\n".join(f"- {item}" for item in write_failures[-3:])
                     final_text += f"\n\nWrite operations were not applied due to errors:\n{details}"
+                if pending_web_search_error:
+                    final_lower = str(final_text).strip().lower()
+                    if not final_lower.startswith("error: web search unavailable"):
+                        final_text = f"{final_text}\n\n{pending_web_search_error}"
                 return final_text
 
             tool_results, spawns = self._process_tool_calls_with_spawns(
@@ -315,6 +320,16 @@ class RecursiveAgent(BaseAgent):
 
             for tool_call, tool_result in zip(response.tool_calls, tool_results):
                 tool_name = getattr(getattr(tool_call, "function", None), "name", "")
+                result_text = str(tool_result.get("content", ""))
+
+                # Preserve actionable diagnostics from web_search failures and append
+                # them to the final assistant response, without interrupting flow.
+                if (
+                    tool_name == "web_search"
+                    and result_text.startswith("Error: web search unavailable")
+                ):
+                    pending_web_search_error = result_text
+
                 if tool_name == "search_chunks":
                     tool_args = self._parse_tool_args(getattr(tool_call, "function", None))
                     query_value = tool_args.get("query")
@@ -324,7 +339,6 @@ class RecursiveAgent(BaseAgent):
                             for required_mention in required_mentions:
                                 if self._mentions_equivalent(required_mention, query_mention):
                                     covered_mentions.add(required_mention)
-                    result_text = str(tool_result.get("content", ""))
                     if result_text.startswith("No indexed documents match the @file references"):
                         return result_text
                     if not self._is_error_result(result_text):
@@ -332,7 +346,6 @@ class RecursiveAgent(BaseAgent):
                 if tool_name not in self.WRITE_TOOL_NAMES:
                     continue
                 had_write_tool_call = True
-                result_text = str(tool_result.get("content", ""))
                 if self._is_error_result(result_text):
                     write_failures.append(f"{tool_name}: {result_text}")
                 else:

@@ -23,6 +23,7 @@ class SearchResponse:
     results: list[SearchResult] = field(default_factory=list)
     provider: str = ""
     total_results: Optional[int] = None
+    error_message: Optional[str] = None
 
 
 class BaseSearchProvider(ABC):

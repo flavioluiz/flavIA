@@ -108,6 +108,24 @@ flavia -m openrouter:anthropic/claude-3.5-sonnet
 flavia -m 0     # by index (order from --list-providers)
 ```
 
+## Web search
+
+The `web_search` research tool supports multiple providers. Configure defaults in `.env`:
+
+```bash
+WEB_SEARCH_PROVIDER=duckduckgo   # duckduckgo | google | brave | bing
+GOOGLE_SEARCH_API_KEY=
+GOOGLE_SEARCH_CX=
+BRAVE_SEARCH_API_KEY=
+BING_SEARCH_API_KEY=
+```
+
+Notes:
+- `duckduckgo` is the default provider and does not require API keys.
+- Install optional dependency for DuckDuckGo provider with either:
+  - `pip install -e '.[research]'` (from project repo root)
+  - `pip install 'duckduckgo-search>=6.0'`
+
 ## Agents
 
 Agent configuration lives in `agents.yaml`. It can be generated automatically by the wizard (`flavia --init`) or edited manually.
@@ -182,6 +200,7 @@ Legacy key (still accepted): `allow_converted_read: true|false` maps to `open|st
 | `refresh_catalog` | content | Rescan project files and update the content catalog |
 | `search_chunks` | content | Hybrid semantic retrieval (vector + FTS) over indexed chunks with citations; supports `@arquivo` scoping and `retrieval_mode=exhaustive` |
 | `analyze_image` | content | Analyze an image with a vision-capable model and return a detailed description |
+| `web_search` | research | Search the web with DuckDuckGo, Google, Brave, or Bing and return titles, URLs, and snippets |
 | `compile_latex` | academic | Compile `.tex` into PDF with log parsing and configurable passes |
 | `write_file` | write | Create or overwrite a file |
 | `edit_file` | write | Replace exact text in a file (single match required) |
@@ -325,6 +344,13 @@ RAG_CHUNK_MIN_TOKENS=300
 RAG_CHUNK_MAX_TOKENS=800
 RAG_VIDEO_WINDOW_SECONDS=60
 RAG_EXPAND_VIDEO_TEMPORAL=true
+
+# Web search providers (optional)
+WEB_SEARCH_PROVIDER=duckduckgo
+GOOGLE_SEARCH_API_KEY=
+GOOGLE_SEARCH_CX=
+BRAVE_SEARCH_API_KEY=
+BING_SEARCH_API_KEY=
 
 # CLI status panel limits (-1 = unlimited)
 STATUS_MAX_TASKS_MAIN=5

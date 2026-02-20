@@ -51,6 +51,9 @@ class BraveSearchProvider(BaseSearchProvider):
             return SearchResponse(
                 query=query,
                 provider=self.name,
+                error_message=(
+                    "Brave search is not configured. Set BRAVE_SEARCH_API_KEY."
+                ),
                 results=[
                     SearchResult(
                         title="Configuration Error",
@@ -81,16 +84,48 @@ class BraveSearchProvider(BaseSearchProvider):
             resp = httpx.get(API_URL, headers=headers, params=params, timeout=15)
             resp.raise_for_status()
             data = resp.json()
-        except Exception as e:
-            logger.warning("Brave search failed: %s", e)
+        except httpx.HTTPStatusError as e:
+            status_code = e.response.status_code if e.response is not None else "unknown"
+            logger.warning("Brave search failed with HTTP status %s", status_code)
             return SearchResponse(
                 query=query,
                 provider=self.name,
+                error_message=f"Brave search failed (HTTP {status_code}).",
                 results=[
                     SearchResult(
                         title="Search Error",
                         url="",
-                        snippet=f"Brave search failed: {e}",
+                        snippet=f"Brave search failed (HTTP {status_code}).",
+                        position=1,
+                    )
+                ],
+            )
+        except httpx.RequestError:
+            logger.warning("Brave search failed due to network error")
+            return SearchResponse(
+                query=query,
+                provider=self.name,
+                error_message="Brave search failed due to a network error.",
+                results=[
+                    SearchResult(
+                        title="Search Error",
+                        url="",
+                        snippet="Brave search failed due to a network error.",
+                        position=1,
+                    )
+                ],
+            )
+        except Exception as e:
+            logger.warning("Brave search failed (%s)", type(e).__name__)
+            return SearchResponse(
+                query=query,
+                provider=self.name,
+                error_message="Brave search failed due to an unexpected error.",
+                results=[
+                    SearchResult(
+                        title="Search Error",
+                        url="",
+                        snippet="Brave search failed due to an unexpected error.",
                         position=1,
                     )
                 ],

@@ -160,7 +160,22 @@ def _edit_setting(
 
     # Get new value
     try:
-        if setting.masked:
+        if setting.setting_type == "choice" and setting.choices:
+            current = source.value if source.value else ""
+            default_choice = (
+                current
+                if any(c.lower() == current.lower() for c in setting.choices)
+                else setting.choices[0]
+            )
+            new_value = q_select(
+                "Select value:",
+                choices=setting.choices,
+                default=default_choice,
+            )
+            if new_value is None:
+                console.print("[yellow]Cancelled.[/yellow]")
+                return False
+        elif setting.masked:
             new_value = safe_prompt(
                 "Enter new value (Enter to keep)",
                 default="",

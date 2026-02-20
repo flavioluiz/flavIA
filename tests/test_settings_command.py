@@ -51,3 +51,43 @@ def test_edit_masked_setting_does_not_echo_secret(monkeypatch, tmp_path):
     assert "super-secret-token" not in output
     assert "SYNTHETIC_API_KEY=" in output
     assert "*" in output
+
+
+def test_edit_choice_setting_uses_selector(monkeypatch, tmp_path):
+    setting = SettingDefinition(
+        env_var="WEB_SEARCH_PROVIDER",
+        display_name="Search Provider",
+        description="Default web search provider",
+        setting_type="choice",
+        default="duckduckgo",
+        choices=["duckduckgo", "google", "brave", "bing"],
+    )
+
+    monkeypatch.setattr(
+        settings_command,
+        "q_select",
+        lambda *_a, **_k: "brave",
+    )
+    prompts = iter(["1"])
+    monkeypatch.setattr(settings_command, "safe_prompt", lambda *_a, **_k: next(prompts))
+    monkeypatch.setattr(
+        settings_command,
+        "get_setting_source",
+        lambda *_a, **_k: SettingSource(value="duckduckgo", source="default"),
+    )
+    monkeypatch.setattr(settings_command, "get_local_env_path", lambda: tmp_path / ".flavia" / ".env")
+
+    writes: dict[str, str] = {}
+
+    def _fake_write_to_env_file(_env_file, env_var, value):
+        writes["env_var"] = env_var
+        writes["value"] = value
+        return True
+
+    monkeypatch.setattr(settings_command, "write_to_env_file", _fake_write_to_env_file)
+
+    console = _DummyConsole()
+    changed = settings_command._edit_setting(console, setting)
+
+    assert changed is True
+    assert writes == {"env_var": "WEB_SEARCH_PROVIDER", "value": "brave"}

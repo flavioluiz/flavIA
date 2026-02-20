@@ -53,6 +53,10 @@ class GoogleSearchProvider(BaseSearchProvider):
             return SearchResponse(
                 query=query,
                 provider=self.name,
+                error_message=(
+                    "Google search is not configured. Set GOOGLE_SEARCH_API_KEY and "
+                    "GOOGLE_SEARCH_CX."
+                ),
                 results=[
                     SearchResult(
                         title="Configuration Error",
@@ -81,16 +85,48 @@ class GoogleSearchProvider(BaseSearchProvider):
             resp = httpx.get(API_URL, params=params, timeout=15)
             resp.raise_for_status()
             data = resp.json()
-        except Exception as e:
-            logger.warning("Google search failed: %s", e)
+        except httpx.HTTPStatusError as e:
+            status_code = e.response.status_code if e.response is not None else "unknown"
+            logger.warning("Google search failed with HTTP status %s", status_code)
             return SearchResponse(
                 query=query,
                 provider=self.name,
+                error_message=f"Google search failed (HTTP {status_code}).",
                 results=[
                     SearchResult(
                         title="Search Error",
                         url="",
-                        snippet=f"Google search failed: {e}",
+                        snippet=f"Google search failed (HTTP {status_code}).",
+                        position=1,
+                    )
+                ],
+            )
+        except httpx.RequestError:
+            logger.warning("Google search failed due to network error")
+            return SearchResponse(
+                query=query,
+                provider=self.name,
+                error_message="Google search failed due to a network error.",
+                results=[
+                    SearchResult(
+                        title="Search Error",
+                        url="",
+                        snippet="Google search failed due to a network error.",
+                        position=1,
+                    )
+                ],
+            )
+        except Exception as e:
+            logger.warning("Google search failed (%s)", type(e).__name__)
+            return SearchResponse(
+                query=query,
+                provider=self.name,
+                error_message="Google search failed due to an unexpected error.",
+                results=[
+                    SearchResult(
+                        title="Search Error",
+                        url="",
+                        snippet="Google search failed due to an unexpected error.",
                         position=1,
                     )
                 ],
