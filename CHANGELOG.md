@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Web Search Tool (Task 9.1)**: Multi-provider web search with configurable search engines:
+  - `WebSearchTool` integrates with DuckDuckGo (default, no API key), Google Custom Search, Brave Search, and Bing Web Search
+  - Parameters: `query` (required), `num_results` (1-20, default 10), `region` (optional), `time_range` (day/week/month/year), `provider` (override)
+  - Provider abstraction via `BaseSearchProvider` with lazy settings loading for API keys
+  - Settings UI integration: new "Web Search" category with provider choice and 4 API key fields
+  - Environment variable configuration: `WEB_SEARCH_PROVIDER`, `GOOGLE_SEARCH_API_KEY`, `GOOGLE_SEARCH_CX`, `BRAVE_SEARCH_API_KEY`, `BING_SEARCH_API_KEY`
+  - Optional dependency: `duckduckgo-search>=6.0` (installed with `pip install 'flavia[research]'`)
+  - Graceful error handling: missing libraries and unconfigured providers return informative error messages
 - **File-targeted RAG retrieval via `@arquivo` mentions**:
   - `search_chunks` now parses explicit file mentions in `query` (example: `@relatorio.pdf pontos fracos`)
   - Mentions are resolved against original catalog entries (`entry.path` / `entry.name`) and mapped to indexed converted chunks

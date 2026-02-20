@@ -15,6 +15,7 @@ from . import content
 from . import write
 from . import academic
 from . import compact
+from . import research
 
 __all__ = [
     "BaseTool",

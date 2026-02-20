@@ -90,6 +90,13 @@ class Settings:
     timestamp_format: str = "iso"  # Timestamp format: iso, relative, local
     log_level: str = "warning"  # Log level: debug, info, warning, error
 
+    # Web search settings
+    web_search_provider: str = "duckduckgo"
+    google_search_api_key: str = ""
+    google_search_cx: str = ""
+    brave_search_api_key: str = ""
+    bing_search_api_key: str = ""
+
     # Content processing settings
     ocr_min_chars_per_page: int = 50  # Minimum characters per page for OCR
     transcription_timeout: int = 600  # Timeout for transcription in seconds
@@ -348,6 +355,12 @@ def load_settings() -> Settings:
         color_theme=os.getenv("COLOR_THEME", "default"),
         timestamp_format=os.getenv("TIMESTAMP_FORMAT", "iso"),
         log_level=os.getenv("LOG_LEVEL", "warning"),
+        # Web search settings
+        web_search_provider=os.getenv("WEB_SEARCH_PROVIDER", "duckduckgo"),
+        google_search_api_key=os.getenv("GOOGLE_SEARCH_API_KEY", ""),
+        google_search_cx=os.getenv("GOOGLE_SEARCH_CX", ""),
+        brave_search_api_key=os.getenv("BRAVE_SEARCH_API_KEY", ""),
+        bing_search_api_key=os.getenv("BING_SEARCH_API_KEY", ""),
         # Content processing settings
         ocr_min_chars_per_page=_load_int_env(
             "OCR_MIN_CHARS_PER_PAGE", default=50, minimum=1, maximum=1000

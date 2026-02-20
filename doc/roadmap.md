@@ -111,16 +111,16 @@ Integracao com email e calendario.
 
 Suite completa de ferramentas para pesquisa web e academica.
 
-| ID | Tarefa | Dificuldade | Dependencias |
-|----|--------|-------------|--------------|
-| 9.1 | Web Search Engine | Medium | — |
+| ID | Tarefa | Dificuldade | Dependencias | Status |
+|----|--------|-------------|--------------|--------|
+| 9.1 | Web Search Engine | Medium | — | ✅ DONE |
 | 9.2 | Academic Database Search | Medium | — |
 | 9.3 | DOI Metadata Resolution | Easy | — |
 | 9.4 | Scopus Integration | Medium | — |
 | 9.5 | Article Download & Integration | Hard | 9.2, 9.3, 1.5 (done) |
 | 9.6 | CAPES/Academic Network Access | Hard | 9.5, 9.4 |
 | 9.7 | BibTeX Reference Management | Medium | 9.3, 5.1 (done) |
-| 9.8 | Research Session Management | Medium | 9.1, 9.2, 9.5 |
+| 9.8 | Research Session Management | Medium | 9.2, 9.5 |
 
 ---
 
@@ -163,12 +163,12 @@ Area 7 -- External Services:
   7.2 (Calendar) ── (independente)
 
 Area 9 -- Web & Academic Research:
+  9.1 (Web Search) ✅ DONE
   9.3 (DOI Resolution) ─────────────────────────────────┐
-  9.1 (Web Search) ─────────────────────────────────────┤
   9.2 (Academic Search) ──┬── 9.5 (Article Download) ───┴── 9.6 (CAPES Access)
   9.4 (Scopus) ───────────┤                             │
                           └── 9.7 (BibTeX Management) ──┘
-  9.8 (Research Sessions) ── depende de 9.1, 9.2, 9.5
+  9.8 (Research Sessions) ── depende de 9.2, 9.5
 
 Area 10 -- Telegram File Delivery:
   10.1 (Structured Responses) ──┬── 10.2 (Send File Tool)
@@ -182,10 +182,10 @@ Area 10 -- Telegram File Delivery:
 
 | Metrica | Valor |
 |---------|-------|
-| Tarefas pendentes | 27 |
+| Tarefas pendentes | 26 |
 | Areas ativas | 7 |
 | Easy | 3 pendentes |
-| Medium | 16 pendentes |
+| Medium | 15 pendentes |
 | Hard | 8 pendentes |
 
 ---

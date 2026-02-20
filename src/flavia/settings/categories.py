@@ -395,12 +395,59 @@ CONTENT_PROCESSING = SettingsCategory(
     ],
 )
 
+WEB_SEARCH_SETTINGS = SettingsCategory(
+    id="web_search",
+    name="Web Search",
+    settings=[
+        SettingDefinition(
+            env_var="WEB_SEARCH_PROVIDER",
+            display_name="Search Provider",
+            description="Default web search provider",
+            setting_type="choice",
+            default="duckduckgo",
+            choices=["duckduckgo", "google", "brave", "bing"],
+        ),
+        SettingDefinition(
+            env_var="GOOGLE_SEARCH_API_KEY",
+            display_name="Google API Key",
+            description="API key for Google Custom Search",
+            setting_type="string",
+            default="",
+            masked=True,
+        ),
+        SettingDefinition(
+            env_var="GOOGLE_SEARCH_CX",
+            display_name="Google Search CX",
+            description="Custom Search Engine ID for Google",
+            setting_type="string",
+            default="",
+        ),
+        SettingDefinition(
+            env_var="BRAVE_SEARCH_API_KEY",
+            display_name="Brave API Key",
+            description="API key for Brave Search",
+            setting_type="string",
+            default="",
+            masked=True,
+        ),
+        SettingDefinition(
+            env_var="BING_SEARCH_API_KEY",
+            display_name="Bing API Key",
+            description="API key for Bing Web Search",
+            setting_type="string",
+            default="",
+            masked=True,
+        ),
+    ],
+)
+
 # All categories in display order
 SETTINGS_CATEGORIES: list[SettingsCategory] = [
     MODEL_SETTINGS,
     API_KEYS,
     AGENT_PARAMETERS,
     RAG_PARAMETERS,
+    WEB_SEARCH_SETTINGS,
     VISUAL_DISPLAY,
     TIMEOUTS_LIMITS,
     CONTENT_PROCESSING,
