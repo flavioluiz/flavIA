@@ -128,7 +128,7 @@ Notes:
 
 ## Academic search
 
-The academic research tools (`search_papers`, `get_paper_details`, `get_citations`, `get_references`, `find_similar_papers`) use OpenAlex and Semantic Scholar providers.
+The academic research tools (`search_papers`, `get_paper_details`, `get_citations`, `get_references`, `find_similar_papers`, `resolve_doi`) use OpenAlex/Semantic Scholar providers and DOI metadata services (CrossRef, DataCite, Unpaywall).
 
 ```bash
 ACADEMIC_SEARCH_PROVIDER=openalex    # openalex | semantic_scholar
@@ -139,6 +139,7 @@ OPENALEX_EMAIL=                      # optional (polite pool / higher limits)
 Notes:
 - `openalex` is the default provider and does not require an API key.
 - `semantic_scholar` works without API key, but rate limits are stricter.
+- `resolve_doi` uses `OPENALEX_EMAIL` as contact email for CrossRef (`mailto`) and Unpaywall (`email`). Unpaywall lookups are skipped when email is empty.
 - All academic research tools support `diagnostics=true` to include provider-order and fallback diagnostics in tool output.
 
 ## Agents

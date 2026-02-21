@@ -8,6 +8,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
+from urllib.parse import quote, unquote
 
 import httpx
 
@@ -107,6 +108,11 @@ def _is_valid_doi(doi: str) -> bool:
     return bool(doi) and doi.startswith("10.") and "/" in doi
 
 
+def _encode_doi_for_path(doi: str) -> str:
+    """Encode DOI for safe use in URL path, avoiding double-encoding."""
+    return quote(unquote(doi), safe="/")
+
+
 # ---------------------------------------------------------------------------
 # Abstract cleaning
 # ---------------------------------------------------------------------------
@@ -162,7 +168,11 @@ def _parse_crossref(data: dict) -> DOIMetadata:
         affiliation = affils[0].get("name", "") if affils else ""
 
         orcid_raw = a.get("ORCID", "")
-        orcid = orcid_raw.replace("http://orcid.org/", "").replace("https://orcid.org/", "") if orcid_raw else ""
+        orcid = (
+            orcid_raw.replace("http://orcid.org/", "").replace("https://orcid.org/", "")
+            if orcid_raw
+            else ""
+        )
 
         authors.append(AuthorInfo(name=name, affiliation=affiliation, orcid=orcid))
 
@@ -236,7 +246,9 @@ def _parse_datacite(data: dict) -> DOIMetadata:
 
         affils = c.get("affiliation") or []
         if affils:
-            affiliation = affils[0].get("name", "") if isinstance(affils[0], dict) else str(affils[0])
+            affiliation = (
+                affils[0].get("name", "") if isinstance(affils[0], dict) else str(affils[0])
+            )
         else:
             affiliation = ""
 
@@ -257,7 +269,12 @@ def _parse_datacite(data: dict) -> DOIMetadata:
     issue = str(container.get("issue", "") or "")
     first_page = str(container.get("firstPage", "") or "")
     last_page = str(container.get("lastPage", "") or "")
-    pages = f"{first_page}-{last_page}" if first_page and last_page else first_page
+    if first_page and last_page:
+        pages = f"{first_page}-{last_page}"
+    elif first_page:
+        pages = first_page
+    else:
+        pages = last_page
 
     # Abstract
     abstract = ""
@@ -328,8 +345,9 @@ def _fetch_unpaywall_url(doi: str, email: str) -> str:
     if not email:
         return ""
     try:
+        doi_path = _encode_doi_for_path(doi)
         resp = httpx.get(
-            f"{_UNPAYWALL_API}/{doi}",
+            f"{_UNPAYWALL_API}/{doi_path}",
             params={"email": email},
             headers={"User-Agent": "flavIA/1.0"},
             timeout=10,
@@ -374,6 +392,16 @@ def _generate_citation_key(meta: DOIMetadata) -> str:
 
 def _generate_bibtex(meta: DOIMetadata) -> str:
     """Generate a BibTeX entry from DOIMetadata."""
+    def _escape_bibtex_value(value: str) -> str:
+        # Keep values on one line and escape characters that can break
+        # brace-delimited BibTeX fields.
+        clean = re.sub(r"\s+", " ", value).strip()
+        return (
+            clean.replace("\\", "\\\\")
+            .replace("{", "\\{")
+            .replace("}", "\\}")
+        )
+
     bibtex_type_map = {
         "article": "article",
         "inproceedings": "inproceedings",
@@ -392,24 +420,23 @@ def _generate_bibtex(meta: DOIMetadata) -> str:
 
     lines = [f"@{btype}{{{key},"]
     if meta.title:
-        escaped_title = meta.title.replace("{", "\\{").replace("}", "\\}")
-        lines.append(f"  title={{{escaped_title}}},")
+        lines.append(f"  title={{{_escape_bibtex_value(meta.title)}}},")
     if author_str:
-        lines.append(f"  author={{{author_str}}},")
+        lines.append(f"  author={{{_escape_bibtex_value(author_str)}}},")
     if meta.venue:
-        lines.append(f"  {venue_field_name}={{{meta.venue}}},")
+        lines.append(f"  {venue_field_name}={{{_escape_bibtex_value(meta.venue)}}},")
     if meta.volume:
-        lines.append(f"  volume={{{meta.volume}}},")
+        lines.append(f"  volume={{{_escape_bibtex_value(meta.volume)}}},")
     if meta.issue:
-        lines.append(f"  number={{{meta.issue}}},")
+        lines.append(f"  number={{{_escape_bibtex_value(meta.issue)}}},")
     if meta.pages:
-        lines.append(f"  pages={{{meta.pages}}},")
+        lines.append(f"  pages={{{_escape_bibtex_value(meta.pages)}}},")
     if meta.year:
         lines.append(f"  year={{{meta.year}}},")
     if meta.publisher:
-        lines.append(f"  publisher={{{meta.publisher}}},")
+        lines.append(f"  publisher={{{_escape_bibtex_value(meta.publisher)}}},")
     if meta.doi:
-        lines.append(f"  doi={{{meta.doi}}},")
+        lines.append(f"  doi={{{_escape_bibtex_value(meta.doi)}}},")
     lines.append("}")
 
     return "\n".join(lines)
@@ -580,10 +607,11 @@ class ResolveDOITool(BaseTool):
             params["mailto"] = email
 
         headers = {"User-Agent": "flavIA/1.0", "Accept": "application/json"}
+        doi_path = _encode_doi_for_path(doi)
 
         try:
             resp = httpx.get(
-                f"{_CROSSREF_API}/{doi}",
+                f"{_CROSSREF_API}/{doi_path}",
                 params=params,
                 headers=headers,
                 timeout=15,
@@ -623,10 +651,11 @@ class ResolveDOITool(BaseTool):
 
     def _try_datacite(self, doi: str, attempts: list[str]) -> Optional[DOIMetadata]:
         headers = {"Accept": "application/vnd.api+json", "User-Agent": "flavIA/1.0"}
+        doi_path = _encode_doi_for_path(doi)
 
         try:
             resp = httpx.get(
-                f"{_DATACITE_API}/{doi}",
+                f"{_DATACITE_API}/{doi_path}",
                 headers=headers,
                 timeout=15,
             )

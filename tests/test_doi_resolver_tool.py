@@ -5,7 +5,6 @@ import logging
 from pathlib import Path
 
 import httpx
-import pytest
 
 from flavia.agent.context import AgentContext
 from flavia.agent.profile import AgentPermissions
@@ -14,6 +13,7 @@ from flavia.tools.research.doi_resolver import (
     AuthorInfo,
     DOIMetadata,
     ResolveDOITool,
+    _encode_doi_for_path,
     _generate_bibtex,
     _generate_citation_key,
     _is_valid_doi,
@@ -166,6 +166,14 @@ def test_is_valid_doi_rejects_invalid() -> None:
     assert _is_valid_doi("10.1234") is False  # missing slash
 
 
+def test_encode_doi_for_path_encodes_reserved_chars() -> None:
+    assert _encode_doi_for_path("10.1234/test?query#frag") == "10.1234/test%3Fquery%23frag"
+
+
+def test_encode_doi_for_path_avoids_double_encoding() -> None:
+    assert _encode_doi_for_path("10.1234/test%3Fquery") == "10.1234/test%3Fquery"
+
+
 def test_strip_jats_tags_removes_xml() -> None:
     text = "<jats:p>Hello <jats:bold>world</jats:bold>.</jats:p>"
     assert _strip_jats_tags(text) == "Hello world."
@@ -245,6 +253,20 @@ def test_generate_bibtex_misc_for_unknown_type() -> None:
     assert "@misc{" in bibtex
 
 
+def test_generate_bibtex_escapes_fields_and_normalizes_whitespace() -> None:
+    meta = _make_meta(
+        title="Neural {Network}\nAttention",
+        authors=[AuthorInfo(name="Doe, Jane {Lab}\nTeam")],
+        venue="Journal {X}",
+        publisher="Pub\\House {Y}",
+    )
+    bibtex = _generate_bibtex(meta)
+    assert r"title={Neural \{Network\} Attention}" in bibtex
+    assert r"author={Doe, Jane \{Lab\} Team}" in bibtex
+    assert r"journal={Journal \{X\}}" in bibtex
+    assert r"publisher={Pub\\House \{Y\}}" in bibtex
+
+
 # ---------------------------------------------------------------------------
 # CrossRef parsing tests
 # ---------------------------------------------------------------------------
@@ -291,6 +313,14 @@ def test_parse_datacite_extracts_key_fields() -> None:
     assert meta.entry_type == "misc"
     assert meta.source == "datacite"
     assert meta.pages == "1-10"
+
+
+def test_parse_datacite_uses_last_page_when_first_missing() -> None:
+    data = json.loads(json.dumps(_DATACITE_RESPONSE))
+    data["data"]["attributes"]["container"]["firstPage"] = ""
+    data["data"]["attributes"]["container"]["lastPage"] = "88"
+    meta = _parse_datacite(data)
+    assert meta.pages == "88"
 
 
 # ---------------------------------------------------------------------------
@@ -380,6 +410,29 @@ def test_resolve_doi_normalizes_url_format(tmp_path: Path, monkeypatch) -> None:
     # Should call CrossRef with bare DOI, not full URL
     assert any("10.48550" in u for u in captured_url)
     assert not any("https://doi.org" in u for u in captured_url)
+
+
+def test_resolve_doi_encodes_reserved_chars_in_api_path(
+    tmp_path: Path, monkeypatch
+) -> None:
+    tool = ResolveDOITool()
+    ctx = _make_context(tmp_path)
+
+    captured_url: list[str] = []
+
+    def _fake_get(url, **kwargs):
+        captured_url.append(url)
+        req = httpx.Request("GET", url)
+        return httpx.Response(200, json=_CROSSREF_RESPONSE, request=req)
+
+    monkeypatch.setattr("flavia.tools.research.doi_resolver.httpx.get", _fake_get)
+
+    tool.execute({"doi": "10.1234/test?query#frag"}, ctx)
+
+    crossref_urls = [u for u in captured_url if "crossref" in u]
+    assert crossref_urls
+    assert "10.1234/test%3Fquery%23frag" in crossref_urls[0]
+    assert "10.1234/test?query#frag" not in crossref_urls[0]
 
 
 def test_resolve_doi_crossref_404_falls_back_to_datacite(
