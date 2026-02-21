@@ -12,6 +12,7 @@ from .academic_search import (
     GetReferencesTool,
     SearchPapersTool,
 )
+from .doi_resolver import ResolveDOITool
 from .web_search import WebSearchTool
 
 __all__ = [
@@ -21,4 +22,5 @@ __all__ = [
     "GetCitationsTool",
     "GetReferencesTool",
     "FindSimilarPapersTool",
+    "ResolveDOITool",
 ]

@@ -143,6 +143,7 @@ OPENALEX_EMAIL=
 ### Task 9.3 -- DOI Metadata Resolution
 
 **Difficulty**: Easy | **Dependencies**: None
+**Status**: ✅ DONE (implemented on February 21, 2026)
 
 Create `tools/research/doi_resolver.py` with a tool for resolving DOIs to full bibliographic metadata using the CrossRef and DataCite REST APIs. This is a foundational tool used by Tasks 9.5 and 9.7 for generating citations and BibTeX entries.
 
