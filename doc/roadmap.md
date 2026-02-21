@@ -29,8 +29,8 @@ flavIA e um assistente de pesquisa academica baseado em LLM, projetado para tran
 
 | Tarefa | Area | Dificuldade | Descricao |
 |--------|------|-------------|-----------|
-| **9.3** DOI Metadata Resolution | Pesquisa | Easy | Resolver DOIs via CrossRef/DataCite, gerar BibTeX automatico |
 | **10.2** Send File Tool | Telegram | Easy | Ferramenta para enviar arquivos pelo Telegram |
+| **4.10** Batch OCR Processing in Catalog | CLI | Easy | Processamento OCR em lote no catalogo |
 | **4.5** Standard Default Agent | CLI | Medium | Agente built-in sempre disponivel como fallback |
 
 ### Recomendados para Proxima Sprint
@@ -40,7 +40,7 @@ flavIA e um assistente de pesquisa academica baseado em LLM, projetado para tran
 | **10.1** Structured Agent Responses | Telegram | Medium | Habilita acoes alem de texto (envio de arquivos) |
 | **10.3** Telegram File Delivery Handler | Telegram | Medium | Entrega de arquivos no chat |
 | **3.1** YAML Bot Configuration | Messaging | Medium | Base para multi-bot e per-conversation agents |
-| **9.1** Web Search Engine | Pesquisa | Medium | Busca na web multi-provider |
+| **9.7** BibTeX Reference Management | Pesquisa | Medium | Fecha o ciclo de citacoes e referencias no fluxo academico |
 
 ---
 
@@ -115,7 +115,7 @@ Suite completa de ferramentas para pesquisa web e academica.
 |----|--------|-------------|--------------|--------|
 | 9.1 | Web Search Engine | Medium | — | ✅ DONE |
 | 9.2 | Academic Database Search | Medium | — | ✅ DONE |
-| 9.3 | DOI Metadata Resolution | Easy | — |
+| 9.3 | DOI Metadata Resolution | Easy | — | ✅ DONE |
 | 9.4 | Scopus Integration | Medium | — |
 | 9.5 | Article Download & Integration | Hard | 9.2, 9.3, 1.5 (done) |
 | 9.6 | CAPES/Academic Network Access | Hard | 9.5, 9.4 |
@@ -163,13 +163,10 @@ Area 7 -- External Services:
   7.2 (Calendar) ── (independente)
 
 Area 9 -- Web & Academic Research:
-  9.1 (Web Search) ✅ DONE
-  9.2 (Academic Search) ✅ DONE
-  9.3 (DOI Resolution) ─────────────────────────────────┐
-                          ├── 9.5 (Article Download) ───┴── 9.6 (CAPES Access)
-  9.4 (Scopus) ───────────┤                             │
-                          └── 9.7 (BibTeX Management) ──┘
-  9.8 (Research Sessions) ── depende de 9.2, 9.5
+  9.4 (Scopus) ───────────┬── 9.6 (CAPES Access)
+  9.5 (Article Download) ─┘
+  9.7 (BibTeX Management) ── depende de 9.3 (done), 5.1 (done)
+  9.8 (Research Sessions) ── depende de 9.2 (done), 9.5
 
 Area 10 -- Telegram File Delivery:
   10.1 (Structured Responses) ──┬── 10.2 (Send File Tool)
@@ -183,9 +180,9 @@ Area 10 -- Telegram File Delivery:
 
 | Metrica | Valor |
 |---------|-------|
-| Tarefas pendentes | 25 |
+| Tarefas pendentes | 24 |
 | Areas ativas | 7 |
-| Easy | 3 pendentes |
+| Easy | 2 pendentes |
 | Medium | 14 pendentes |
 | Hard | 8 pendentes |
 
@@ -195,7 +192,7 @@ Area 10 -- Telegram File Delivery:
 
 Para o registro completo de funcionalidades ja implementadas, incluindo:
 - 4 areas 100% completas
-- 28 tarefas concluidas
+- 29 tarefas concluidas
 - Detalhes de implementacao
 
 Consulte o **[CHANGELOG](CHANGELOG.md)**.

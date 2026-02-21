@@ -1,6 +1,6 @@
 # Area 9: Web & Academic Research Tools
 
-flavIA is designed as an academic research assistant. Web search is now available (Task 9.1), and the remaining tasks in this area focus on academic database access, article retrieval, and reference management -- foundational capabilities for literature reviews, deep research, and scientifically rigorous work with correct citations.
+flavIA is designed as an academic research assistant. Core discovery and metadata tasks are already available (Tasks 9.1, 9.2, and 9.3), and the remaining tasks in this area focus on advanced database integrations, article retrieval, and reference/session management -- foundational capabilities for literature reviews, deep research, and scientifically rigorous work with correct citations.
 
 The general architecture follows the existing tool pattern: each tool is a `BaseTool` subclass registered in `ToolRegistry`, organized under a new `tools/research/` category. Web-fetched content integrates with the existing content system (`content/converters/`, `.converted/`) with additional metadata for provenance tracking and lifecycle management.
 
