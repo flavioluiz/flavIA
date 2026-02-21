@@ -133,6 +133,11 @@ def init_local_config(target_dir: Optional[Path] = None) -> bool:
 # Image analysis model (vision-capable)
 # IMAGE_VISION_MODEL=synthetic:hf:moonshotai/Kimi-K2.5
 
+# Academic search settings
+# ACADEMIC_SEARCH_PROVIDER=openalex
+# SEMANTIC_SCHOLAR_API_KEY=
+# OPENALEX_EMAIL=your@email.com
+
 # Telegram (only needed for flavia --telegram)
 # TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
 # Restrict bot access to specific Telegram user IDs (comma-separated)
@@ -204,7 +209,8 @@ main:
   # allow_converted_read: true   # maps to converted_access_mode: open
 
   # Tools available to this agent
-  # Keep write-capable tools (write_* and compile_latex) disabled unless
+  # Keep write-capable tools (write_*, compile_latex, refresh_catalog,
+  # conversion/fetch tools) disabled unless
   # permissions.write is explicitly configured for this agent.
   tools:
     - read_file
@@ -216,6 +222,7 @@ main:
     - get_catalog_summary
     - analyze_image
     - web_search
+    - search_papers
     - compact_context
     - spawn_agent
     - spawn_predefined_agent
@@ -234,6 +241,7 @@ main:
         - search_files
         - query_catalog
         - web_search
+        - search_papers
 
     summarizer:
       context: |

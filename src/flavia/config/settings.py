@@ -97,6 +97,11 @@ class Settings:
     brave_search_api_key: str = ""
     bing_search_api_key: str = ""
 
+    # Academic search settings
+    academic_search_provider: str = "openalex"
+    semantic_scholar_api_key: str = ""
+    openalex_email: str = ""
+
     # Content processing settings
     ocr_min_chars_per_page: int = 50  # Minimum characters per page for OCR
     transcription_timeout: int = 600  # Timeout for transcription in seconds
@@ -361,6 +366,10 @@ def load_settings() -> Settings:
         google_search_cx=os.getenv("GOOGLE_SEARCH_CX", ""),
         brave_search_api_key=os.getenv("BRAVE_SEARCH_API_KEY", ""),
         bing_search_api_key=os.getenv("BING_SEARCH_API_KEY", ""),
+        # Academic search settings
+        academic_search_provider=os.getenv("ACADEMIC_SEARCH_PROVIDER", "openalex"),
+        semantic_scholar_api_key=os.getenv("SEMANTIC_SCHOLAR_API_KEY", ""),
+        openalex_email=os.getenv("OPENALEX_EMAIL", ""),
         # Content processing settings
         ocr_min_chars_per_page=_load_int_env(
             "OCR_MIN_CHARS_PER_PAGE", default=50, minimum=1, maximum=1000

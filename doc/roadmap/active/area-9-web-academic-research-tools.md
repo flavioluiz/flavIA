@@ -76,6 +76,7 @@ The agent can then decide which URLs to read in full using the webpage converter
 ### Task 9.2 -- Academic Database Search
 
 **Difficulty**: Medium | **Dependencies**: None (enhanced by Task 9.5 for article download)
+**Status**: ✅ DONE (implemented on February 21, 2026)
 
 Create `tools/research/academic_search.py` with tools for searching open academic databases. These databases provide free APIs with rich metadata (titles, authors, abstracts, citations, DOIs, publication venues).
 
