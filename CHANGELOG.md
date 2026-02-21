@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **5 Content Conversion Agent Tools (Task 11.1-11.5)**: Complete upload/ingest loop for agents:
+  - `add_online_source`: Register URL (YouTube, webpage) in catalog without fetching
+  - `fetch_online_source`: Download URL and convert to markdown with auto-registration
+  - `convert_pdf`: Convert local PDF to markdown (simple extraction or Mistral OCR)
+  - `convert_office`: Convert Word/Excel/PPT/OpenDocument to markdown
+  - `transcribe_media`: Transcribe audio/video to markdown with optional frame extraction
+  - Shared helper module `_conversion_helpers.py` for permission checks and catalog updates
+  - All 5 tools added to `WRITE_CAPABLE_RUNTIME_TOOLS` in setup wizard
+  - Closes the agent loop: `web_search → fetch_online_source → search_chunks`
 - **Web Search Tool (Task 9.1)**: Multi-provider web search with configurable search engines:
   - `WebSearchTool` integrates with DuckDuckGo (default, no API key), Google Custom Search, Brave Search, and Bing Web Search
   - Parameters: `query` (required), `num_results` (1-20, default 10), `region` (optional), `time_range` (day/week/month/year), `provider` (override)

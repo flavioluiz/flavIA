@@ -48,7 +48,15 @@ RUNTIME_CORE_TOOLS = [
     "compact_context",
 ]
 SPAWN_TOOLS = ["spawn_agent", "spawn_predefined_agent"]
-WRITE_CAPABLE_RUNTIME_TOOLS = WRITE_TOOLS + ["compile_latex", "refresh_catalog"]
+WRITE_CAPABLE_RUNTIME_TOOLS = WRITE_TOOLS + [
+    "compile_latex",
+    "refresh_catalog",
+    "add_online_source",
+    "fetch_online_source",
+    "convert_pdf",
+    "convert_office",
+    "transcribe_media",
+]
 
 
 def _default_main_tools(main_agent_can_write: bool) -> list[str]:
