@@ -3,7 +3,7 @@
 import logging
 from typing import Optional
 
-from .base import BaseSearchProvider, SearchResponse, SearchResult
+from .base import BaseSearchProvider, SearchResponse, SearchResult, error_excerpt, query_preview
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +52,18 @@ class DuckDuckGoSearchProvider(BaseSearchProvider):
         time_range: Optional[str] = None,
     ) -> SearchResponse:
         """Search using DuckDuckGo."""
+        q_preview = query_preview(query)
+        logger.debug(
+            "DuckDuckGo search request query=%r num_results=%s region=%s time_range=%s",
+            q_preview,
+            num_results,
+            region,
+            time_range,
+        )
         try:
             from duckduckgo_search import DDGS
         except ImportError:
+            logger.info("DuckDuckGo search skipped: duckduckgo-search dependency is missing")
             return SearchResponse(
                 query=query,
                 provider=self.name,
@@ -93,7 +102,12 @@ class DuckDuckGoSearchProvider(BaseSearchProvider):
             err_text = str(e).strip()
             lowered = err_text.lower()
             if "ratelimit" in lowered or "rate limit" in lowered:
-                logger.warning("DuckDuckGo search rate limited")
+                logger.warning(
+                    "DuckDuckGo search rate limited query=%r region=%s time_range=%s",
+                    q_preview,
+                    ddgs_region,
+                    timelimit,
+                )
                 return SearchResponse(
                     query=query,
                     provider=self.name,
@@ -114,7 +128,15 @@ class DuckDuckGoSearchProvider(BaseSearchProvider):
                     ],
                 )
 
-            logger.warning("DuckDuckGo search failed (%s)", type(e).__name__)
+            logger.warning(
+                "DuckDuckGo search unexpected error type=%s query=%r region=%s "
+                "time_range=%s detail=%r",
+                type(e).__name__,
+                q_preview,
+                ddgs_region,
+                timelimit,
+                error_excerpt(e),
+            )
             return SearchResponse(
                 query=query,
                 provider=self.name,
@@ -140,6 +162,13 @@ class DuckDuckGoSearchProvider(BaseSearchProvider):
                 )
             )
 
+        logger.debug(
+            "DuckDuckGo search success query=%r results=%d region=%s time_range=%s",
+            q_preview,
+            len(results),
+            ddgs_region,
+            timelimit,
+        )
         return SearchResponse(
             query=query,
             results=results,

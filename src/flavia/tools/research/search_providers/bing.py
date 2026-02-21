@@ -5,7 +5,7 @@ from typing import Optional
 
 import httpx
 
-from .base import BaseSearchProvider, SearchResponse, SearchResult
+from .base import BaseSearchProvider, SearchResponse, SearchResult, error_excerpt, query_preview
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +45,17 @@ class BingSearchProvider(BaseSearchProvider):
         time_range: Optional[str] = None,
     ) -> SearchResponse:
         """Search using Bing Web Search API."""
+        q_preview = query_preview(query)
+        logger.debug(
+            "Bing search request query=%r num_results=%s region=%s time_range=%s",
+            q_preview,
+            num_results,
+            region,
+            time_range,
+        )
         api_key = self._get_api_key()
         if not api_key:
+            logger.info("Bing search skipped: BING_SEARCH_API_KEY is not configured")
             return SearchResponse(
                 query=query,
                 provider=self.name,
@@ -83,7 +92,15 @@ class BingSearchProvider(BaseSearchProvider):
             data = resp.json()
         except httpx.HTTPStatusError as e:
             status_code = e.response.status_code if e.response is not None else "unknown"
-            logger.warning("Bing search failed with HTTP status %s", status_code)
+            body_excerpt = error_excerpt(e.response.text if e.response is not None else "")
+            logger.warning(
+                "Bing search HTTP error status=%s query=%r region=%s time_range=%s body=%r",
+                status_code,
+                q_preview,
+                region,
+                time_range,
+                body_excerpt,
+            )
             return SearchResponse(
                 query=query,
                 provider=self.name,
@@ -97,8 +114,15 @@ class BingSearchProvider(BaseSearchProvider):
                     )
                 ],
             )
-        except httpx.RequestError:
-            logger.warning("Bing search failed due to network error")
+        except httpx.RequestError as e:
+            logger.warning(
+                "Bing search network error type=%s query=%r region=%s time_range=%s detail=%r",
+                type(e).__name__,
+                q_preview,
+                region,
+                time_range,
+                error_excerpt(e),
+            )
             return SearchResponse(
                 query=query,
                 provider=self.name,
@@ -113,7 +137,12 @@ class BingSearchProvider(BaseSearchProvider):
                 ],
             )
         except Exception as e:
-            logger.warning("Bing search failed (%s)", type(e).__name__)
+            logger.warning(
+                "Bing search unexpected error type=%s query=%r detail=%r",
+                type(e).__name__,
+                q_preview,
+                error_excerpt(e),
+            )
             return SearchResponse(
                 query=query,
                 provider=self.name,
@@ -142,6 +171,12 @@ class BingSearchProvider(BaseSearchProvider):
 
         total = data.get("webPages", {}).get("totalEstimatedMatches")
 
+        logger.debug(
+            "Bing search success query=%r results=%d total=%s",
+            q_preview,
+            len(results),
+            total,
+        )
         return SearchResponse(
             query=query,
             results=results,

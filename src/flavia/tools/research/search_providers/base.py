@@ -56,3 +56,21 @@ class BaseSearchProvider(ABC):
     def is_configured(self) -> bool:
         """Check if this provider is properly configured and ready to use."""
         pass
+
+
+def query_preview(query: str, max_len: int = 80) -> str:
+    """Return a compact query preview safe for logs."""
+    normalized = (query or "").strip().replace("\n", " ")
+    if len(normalized) <= max_len:
+        return normalized
+    return normalized[: max_len - 3] + "..."
+
+
+def error_excerpt(value: object, max_len: int = 220) -> str:
+    """Return a compact one-line excerpt from an error/detail value."""
+    if value is None:
+        return ""
+    text = str(value).strip().replace("\n", " ")
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 3] + "..."

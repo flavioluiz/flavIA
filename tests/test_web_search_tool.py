@@ -1,5 +1,6 @@
 """Tests for web_search tool and providers."""
 
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -9,6 +10,8 @@ from flavia.agent.context import AgentContext
 from flavia.agent.profile import AgentPermissions
 from flavia.tools import list_available_tools
 from flavia.tools.research.search_providers.base import SearchResponse, SearchResult
+from flavia.tools.research.search_providers.bing import BingSearchProvider
+from flavia.tools.research.search_providers.brave import BraveSearchProvider
 from flavia.tools.research.search_providers.duckduckgo import DuckDuckGoSearchProvider
 from flavia.tools.research.search_providers.google import GoogleSearchProvider
 from flavia.tools.research.web_search import WebSearchTool
@@ -262,3 +265,94 @@ def test_duckduckgo_rate_limit_returns_actionable_message(monkeypatch) -> None:
     assert "rate limited" in response.error_message.lower()
     assert response.results
     assert "rate limited" in response.results[0].snippet.lower()
+
+
+def test_brave_network_error_logs_diagnostics(monkeypatch, caplog) -> None:
+    provider = BraveSearchProvider()
+
+    class _StubSettings:
+        brave_search_api_key = "brave-test-key"
+
+    def _fake_get(*_args, **_kwargs):
+        req = httpx.Request("GET", "https://api.search.brave.com/res/v1/web/search")
+        raise httpx.ConnectError("dns failure", request=req)
+
+    monkeypatch.setattr("flavia.config.get_settings", lambda: _StubSettings())
+    monkeypatch.setattr("flavia.tools.research.search_providers.brave.httpx.get", _fake_get)
+
+    caplog.set_level(logging.WARNING, logger="flavia.tools.research.search_providers.brave")
+    provider.search("openai diagnostics")
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("Brave search network error" in msg for msg in messages)
+    assert any("ConnectError" in msg for msg in messages)
+
+
+def test_google_http_error_logs_diagnostics(monkeypatch, caplog) -> None:
+    provider = GoogleSearchProvider()
+
+    class _StubSettings:
+        google_search_api_key = "google-key"
+        google_search_cx = "google-cx"
+
+    def _fake_get(*_args, **_kwargs):
+        req = httpx.Request("GET", "https://www.googleapis.com/customsearch/v1")
+        resp = httpx.Response(429, request=req, text='{"error":"quota exceeded"}')
+        raise httpx.HTTPStatusError("429 Too Many Requests", request=req, response=resp)
+
+    monkeypatch.setattr("flavia.config.get_settings", lambda: _StubSettings())
+    monkeypatch.setattr("flavia.tools.research.search_providers.google.httpx.get", _fake_get)
+
+    caplog.set_level(logging.WARNING, logger="flavia.tools.research.search_providers.google")
+    provider.search("openai diagnostics")
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("Google search HTTP error" in msg for msg in messages)
+    assert any("status=429" in msg for msg in messages)
+
+
+def test_bing_network_error_logs_diagnostics(monkeypatch, caplog) -> None:
+    provider = BingSearchProvider()
+
+    class _StubSettings:
+        bing_search_api_key = "bing-key"
+
+    def _fake_get(*_args, **_kwargs):
+        req = httpx.Request("GET", "https://api.bing.microsoft.com/v7.0/search")
+        raise httpx.ReadTimeout("timeout", request=req)
+
+    monkeypatch.setattr("flavia.config.get_settings", lambda: _StubSettings())
+    monkeypatch.setattr("flavia.tools.research.search_providers.bing.httpx.get", _fake_get)
+
+    caplog.set_level(logging.WARNING, logger="flavia.tools.research.search_providers.bing")
+    provider.search("openai diagnostics")
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("Bing search network error" in msg for msg in messages)
+    assert any("ReadTimeout" in msg for msg in messages)
+
+
+def test_duckduckgo_rate_limit_logs_diagnostics(monkeypatch, caplog) -> None:
+    provider = DuckDuckGoSearchProvider()
+
+    class _FakeDDGS:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def text(self, *_args, **_kwargs):
+            raise RuntimeError("https://html.duckduckgo.com/html 202 Ratelimit")
+
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "duckduckgo_search",
+        SimpleNamespace(DDGS=_FakeDDGS),
+    )
+
+    caplog.set_level(logging.WARNING, logger="flavia.tools.research.search_providers.duckduckgo")
+    provider.search("openai diagnostics")
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("DuckDuckGo search rate limited" in msg for msg in messages)

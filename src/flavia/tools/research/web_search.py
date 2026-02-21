@@ -127,17 +127,28 @@ class WebSearchTool(BaseTool):
             )
 
         provider_order = self._build_provider_order(provider_name)
+        logger.debug(
+            "Web search provider order query=%r preferred=%s order=%s",
+            query[:80],
+            provider_name,
+            provider_order,
+        )
         attempts: list[str] = []
 
         for current_provider_name in provider_order:
             provider = get_provider(current_provider_name)
             if provider is None:
+                logger.warning(
+                    "Web search provider unavailable in build: %s",
+                    current_provider_name,
+                )
                 attempts.append(
                     f"`{current_provider_name}`: provider is not available in this build."
                 )
                 continue
 
             if not provider.is_configured():
+                logger.info("Web search provider not configured: %s", current_provider_name)
                 attempts.append(
                     f"`{current_provider_name}`: "
                     f"{self._provider_not_configured_reason(current_provider_name)}"
@@ -153,11 +164,24 @@ class WebSearchTool(BaseTool):
 
             error_message = self._extract_response_error(response)
             if error_message:
+                logger.warning(
+                    "Web search provider failed: provider=%s query=%r reason=%r",
+                    current_provider_name,
+                    query[:80],
+                    error_message,
+                )
                 attempts.append(f"`{current_provider_name}`: {error_message}")
                 continue
 
+            logger.debug(
+                "Web search provider succeeded: provider=%s query=%r results=%d",
+                current_provider_name,
+                query[:80],
+                len(response.results),
+            )
             return self._format_response(response, attempts=attempts if attempts else None)
 
+        logger.error("Web search unavailable query=%r attempts=%s", query[:80], attempts)
         return self._format_unavailable(query, attempts)
 
     def _build_provider_order(self, preferred_provider: str) -> list[str]:
