@@ -126,6 +126,21 @@ Notes:
   - `pip install -e '.[research]'` (from project repo root)
   - `pip install 'duckduckgo-search>=6.0'`
 
+## Academic search
+
+The academic research tools (`search_papers`, `get_paper_details`, `get_citations`, `get_references`, `find_similar_papers`) use OpenAlex and Semantic Scholar providers.
+
+```bash
+ACADEMIC_SEARCH_PROVIDER=openalex    # openalex | semantic_scholar
+SEMANTIC_SCHOLAR_API_KEY=            # optional (higher rate limits)
+OPENALEX_EMAIL=                      # optional (polite pool / higher limits)
+```
+
+Notes:
+- `openalex` is the default provider and does not require an API key.
+- `semantic_scholar` works without API key, but rate limits are stricter.
+- All academic research tools support `diagnostics=true` to include provider-order and fallback diagnostics in tool output.
+
 ## Agents
 
 Agent configuration lives in `agents.yaml`. It can be generated automatically by the wizard (`flavia --init`) or edited manually.
@@ -201,6 +216,11 @@ Legacy key (still accepted): `allow_converted_read: true|false` maps to `open|st
 | `search_chunks` | content | Hybrid semantic retrieval (vector + FTS) over indexed chunks with citations; supports `@arquivo` scoping and `retrieval_mode=exhaustive` |
 | `analyze_image` | content | Analyze an image with a vision-capable model and return a detailed description |
 | `web_search` | research | Search the web with DuckDuckGo, Google, Brave, or Bing and return titles, URLs, and snippets |
+| `search_papers` | research | Search OpenAlex/Semantic Scholar for papers with metadata (authors, year, venue, DOI, citations, abstract, open access) |
+| `get_paper_details` | research | Retrieve full metadata for a paper by DOI/OpenAlex/S2 ID (abstract, affiliations, topics, IDs, PDF URLs) |
+| `get_citations` | research | List papers that cite a given paper with optional sorting and provider fallback |
+| `get_references` | research | List references used by a given paper with provider fallback |
+| `find_similar_papers` | research | Find related/recommended papers from OpenAlex or Semantic Scholar |
 | `compile_latex` | academic | Compile `.tex` into PDF with log parsing and configurable passes |
 | `write_file` | write | Create or overwrite a file |
 | `edit_file` | write | Replace exact text in a file (single match required) |

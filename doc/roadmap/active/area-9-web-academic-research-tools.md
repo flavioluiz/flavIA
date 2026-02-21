@@ -95,11 +95,11 @@ Create `tools/research/academic_search.py` with tools for searching open academi
 
 | Tool | Description |
 |------|-------------|
-| `search_papers` | Search academic databases. Parameters: `query` (string), `databases` (list, default `["openalex"]`), `num_results` (int, default 10), `year_range` (tuple, optional), `fields` (list: "cs", "medicine", etc., optional), `sort_by` ("relevance"/"date"/"citations", default "relevance"). Returns structured results with title, authors, year, venue, DOI, abstract snippet, citation count, open access status. |
-| `get_paper_details` | Get full metadata for a specific paper. Parameters: `paper_id` (string -- DOI, OpenAlex ID, Semantic Scholar ID, or URL). Returns: full abstract, all authors with affiliations, references, citation count, related papers, available PDF URLs. |
-| `get_citations` | Get papers that cite a given paper. Parameters: `paper_id`, `num_results`, `sort_by`. |
-| `get_references` | Get papers referenced by a given paper. Parameters: `paper_id`, `num_results`. |
-| `find_similar_papers` | Find papers similar to a given paper. Parameters: `paper_id`, `num_results`. Uses Semantic Scholar's recommendations API or OpenAlex related works. |
+| `search_papers` | Search academic databases. Parameters: `query` (string), `num_results` (int, default 10), `year_range` (string `"YYYY"` or `"YYYY-YYYY"`), `fields` (string, optional), `sort_by` (`relevance`/`date`/`citations`), `provider` (`openalex`/`semantic_scholar`, optional), `diagnostics` (boolean, optional). |
+| `get_paper_details` | Get full metadata for a specific paper. Parameters: `paper_id` (DOI, OpenAlex ID, Semantic Scholar ID, or URL), optional `provider`, optional `diagnostics`. |
+| `get_citations` | Get papers that cite a given paper. Parameters: `paper_id`, `num_results`, `sort_by`, optional `provider`, optional `diagnostics`. |
+| `get_references` | Get papers referenced by a given paper. Parameters: `paper_id`, `num_results`, optional `provider`, optional `diagnostics`. |
+| `find_similar_papers` | Find papers similar to a given paper. Parameters: `paper_id`, `num_results`, optional `provider`, optional `diagnostics`. Uses Semantic Scholar recommendations API or OpenAlex related works. |
 
 **Output format** (for `search_papers`):
 ```
@@ -121,17 +121,11 @@ Database: OpenAlex | Results: 10 of 15,234
 [...]
 ```
 
-**Configuration** in `.flavia/services.yaml`:
-```yaml
-services:
-  academic_search:
-    default_databases: ["openalex", "semantic_scholar"]
-    semantic_scholar:
-      api_key: "${SEMANTIC_SCHOLAR_API_KEY}"  # optional, for higher rate limits
-    core:
-      api_key: "${CORE_API_KEY}"  # required for CORE API
-    openalex:
-      email: "${OPENALEX_EMAIL}"  # for polite pool (higher rate limits)
+**Configuration** in `.flavia/.env`:
+```bash
+ACADEMIC_SEARCH_PROVIDER=openalex
+SEMANTIC_SCHOLAR_API_KEY=
+OPENALEX_EMAIL=
 ```
 
 **Key files to modify/create**:
@@ -140,12 +134,9 @@ services:
 - `tools/research/academic_providers/base.py` (new -- `BaseAcademicProvider` ABC)
 - `tools/research/academic_providers/openalex.py` (new)
 - `tools/research/academic_providers/semantic_scholar.py` (new)
-- `tools/research/academic_providers/google_scholar.py` (new -- via `scholarly` library)
-- `tools/research/academic_providers/core.py` (new)
-- `tools/research/academic_providers/unpaywall.py` (new)
 - `tools/research/__init__.py` (register tools)
 
-**New dependencies** (optional extras): `scholarly` (for Google Scholar, use cautiously); all other APIs use `httpx`.
+**New dependencies**: APIs are integrated with `httpx` (already in the project).
 
 ---
 

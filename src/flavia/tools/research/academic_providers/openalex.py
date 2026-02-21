@@ -302,9 +302,23 @@ class OpenAlexProvider(BaseAcademicProvider):
             )
             resp.raise_for_status()
             data = resp.json()
-        except (httpx.HTTPStatusError, httpx.RequestError, Exception) as e:
+        except httpx.HTTPStatusError as e:
+            status_code = (
+                e.response.status_code if e.response is not None else "unknown"
+            )
             logger.warning(
-                "OpenAlex get_citations error type=%s paper_id=%r detail=%r",
+                "OpenAlex get_citations HTTP error status=%s paper_id=%r",
+                status_code,
+                paper_id,
+            )
+            return CitationResponse(
+                paper_id=paper_id,
+                provider=self.name,
+                error_message=f"OpenAlex citation lookup failed (HTTP {status_code}).",
+            )
+        except httpx.RequestError as e:
+            logger.warning(
+                "OpenAlex get_citations network error type=%s paper_id=%r detail=%r",
                 type(e).__name__,
                 paper_id,
                 error_excerpt(e),
@@ -312,7 +326,22 @@ class OpenAlexProvider(BaseAcademicProvider):
             return CitationResponse(
                 paper_id=paper_id,
                 provider=self.name,
-                error_message="OpenAlex citation lookup failed.",
+                error_message=(
+                    "OpenAlex citation lookup failed due to a network error "
+                    f"({type(e).__name__})."
+                ),
+            )
+        except Exception as e:
+            logger.warning(
+                "OpenAlex get_citations unexpected error type=%s paper_id=%r detail=%r",
+                type(e).__name__,
+                paper_id,
+                error_excerpt(e),
+            )
+            return CitationResponse(
+                paper_id=paper_id,
+                provider=self.name,
+                error_message="OpenAlex citation lookup failed due to an unexpected error.",
             )
 
         results = []
@@ -362,9 +391,23 @@ class OpenAlexProvider(BaseAcademicProvider):
             )
             resp.raise_for_status()
             data = resp.json()
-        except (httpx.HTTPStatusError, httpx.RequestError, Exception) as e:
+        except httpx.HTTPStatusError as e:
+            status_code = (
+                e.response.status_code if e.response is not None else "unknown"
+            )
             logger.warning(
-                "OpenAlex get_references error type=%s paper_id=%r detail=%r",
+                "OpenAlex get_references HTTP error status=%s paper_id=%r",
+                status_code,
+                paper_id,
+            )
+            return CitationResponse(
+                paper_id=paper_id,
+                provider=self.name,
+                error_message=f"OpenAlex reference lookup failed (HTTP {status_code}).",
+            )
+        except httpx.RequestError as e:
+            logger.warning(
+                "OpenAlex get_references network error type=%s paper_id=%r detail=%r",
                 type(e).__name__,
                 paper_id,
                 error_excerpt(e),
@@ -372,7 +415,22 @@ class OpenAlexProvider(BaseAcademicProvider):
             return CitationResponse(
                 paper_id=paper_id,
                 provider=self.name,
-                error_message="OpenAlex reference lookup failed.",
+                error_message=(
+                    "OpenAlex reference lookup failed due to a network error "
+                    f"({type(e).__name__})."
+                ),
+            )
+        except Exception as e:
+            logger.warning(
+                "OpenAlex get_references unexpected error type=%s paper_id=%r detail=%r",
+                type(e).__name__,
+                paper_id,
+                error_excerpt(e),
+            )
+            return CitationResponse(
+                paper_id=paper_id,
+                provider=self.name,
+                error_message="OpenAlex reference lookup failed due to an unexpected error.",
             )
 
         results = []
@@ -421,9 +479,23 @@ class OpenAlexProvider(BaseAcademicProvider):
             )
             resp.raise_for_status()
             data = resp.json()
-        except (httpx.HTTPStatusError, httpx.RequestError, Exception) as e:
+        except httpx.HTTPStatusError as e:
+            status_code = (
+                e.response.status_code if e.response is not None else "unknown"
+            )
             logger.warning(
-                "OpenAlex find_similar error type=%s paper_id=%r detail=%r",
+                "OpenAlex find_similar HTTP error status=%s paper_id=%r",
+                status_code,
+                paper_id,
+            )
+            return AcademicSearchResponse(
+                query=f"similar to {paper_id}",
+                provider=self.name,
+                error_message=f"OpenAlex similar papers lookup failed (HTTP {status_code}).",
+            )
+        except httpx.RequestError as e:
+            logger.warning(
+                "OpenAlex find_similar network error type=%s paper_id=%r detail=%r",
                 type(e).__name__,
                 paper_id,
                 error_excerpt(e),
@@ -431,7 +503,22 @@ class OpenAlexProvider(BaseAcademicProvider):
             return AcademicSearchResponse(
                 query=f"similar to {paper_id}",
                 provider=self.name,
-                error_message="OpenAlex similar papers lookup failed.",
+                error_message=(
+                    "OpenAlex similar papers lookup failed due to a network error "
+                    f"({type(e).__name__})."
+                ),
+            )
+        except Exception as e:
+            logger.warning(
+                "OpenAlex find_similar unexpected error type=%s paper_id=%r detail=%r",
+                type(e).__name__,
+                paper_id,
+                error_excerpt(e),
+            )
+            return AcademicSearchResponse(
+                query=f"similar to {paper_id}",
+                provider=self.name,
+                error_message="OpenAlex similar papers lookup failed due to an unexpected error.",
             )
 
         results = []

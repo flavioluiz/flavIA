@@ -245,6 +245,71 @@ def test_search_papers_fallback_returns_results_with_attempt_log(
     assert "HTTP 503" in output
 
 
+def test_search_papers_diagnostics_mode_includes_provider_order(
+    tmp_path: Path, monkeypatch
+) -> None:
+    tool = SearchPapersTool()
+    ctx = _make_context(tmp_path)
+
+    class _FailingProvider:
+        def is_configured(self) -> bool:
+            return True
+
+        def search(
+            self,
+            query,
+            num_results=10,
+            year_range=None,
+            fields=None,
+            sort_by="relevance",
+        ):
+            return AcademicSearchResponse(
+                query=query,
+                provider="openalex",
+                error_message="OpenAlex search failed (HTTP 503).",
+            )
+
+    class _WorkingProvider:
+        def is_configured(self) -> bool:
+            return True
+
+        def search(
+            self,
+            query,
+            num_results=10,
+            year_range=None,
+            fields=None,
+            sort_by="relevance",
+        ):
+            return AcademicSearchResponse(
+                query=query,
+                provider="semantic_scholar",
+                results=[_fake_paper()],
+                total_results=1,
+            )
+
+    def _fake_get_provider(name: str):
+        if name == "openalex":
+            return _FailingProvider()
+        if name == "semantic_scholar":
+            return _WorkingProvider()
+        return None
+
+    monkeypatch.setattr(
+        "flavia.tools.research.academic_search.get_academic_provider",
+        _fake_get_provider,
+    )
+
+    output = tool.execute(
+        {"query": "fallback diagnostics", "provider": "openalex", "diagnostics": True},
+        ctx,
+    )
+
+    assert "_Diagnostics:_" in output
+    assert "Provider order: openalex, semantic_scholar" in output
+    assert "Failed attempt:" in output
+
+
 def test_search_papers_all_providers_unavailable_has_actionable_error(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -370,6 +435,33 @@ def test_get_paper_details_detects_openalex_id(tmp_path: Path, monkeypatch) -> N
     assert captured_providers[0] == "openalex"
 
 
+def test_get_paper_details_coerces_non_string_id(tmp_path: Path, monkeypatch) -> None:
+    tool = GetPaperDetailsTool()
+    ctx = _make_context(tmp_path)
+    captured_ids: list[str] = []
+
+    class _FakeProvider:
+        def is_configured(self) -> bool:
+            return True
+
+        def get_details(self, paper_id):
+            captured_ids.append(paper_id)
+            return PaperDetailResponse(
+                paper=_fake_paper_detail(),
+                provider="openalex",
+            )
+
+    monkeypatch.setattr(
+        "flavia.tools.research.academic_search.get_academic_provider",
+        lambda _name: _FakeProvider(),
+    )
+
+    output = tool.execute({"paper_id": 12345}, ctx)
+
+    assert captured_ids[0] == "12345"
+    assert "# Test Paper" in output
+
+
 # --- GetCitationsTool tests ---
 
 
@@ -402,6 +494,15 @@ def test_get_citations_formats_output(tmp_path: Path, monkeypatch) -> None:
     assert "Citing Paper A" in output
     assert "Citing Paper B" in output
     assert "100" in output
+
+
+def test_get_citations_invalid_provider_returns_error(tmp_path: Path) -> None:
+    tool = GetCitationsTool()
+    ctx = _make_context(tmp_path)
+
+    output = tool.execute({"paper_id": "10.1234/test", "provider": "invalid"}, ctx)
+
+    assert "Error: unknown academic search provider 'invalid'" in output
 
 
 # --- GetReferencesTool tests ---
@@ -560,6 +661,67 @@ def test_semantic_scholar_api_key_not_leaked_in_error(monkeypatch) -> None:
     assert "HTTP 429" in response.error_message
 
 
+def test_openalex_get_citations_http_error_logs_diagnostics(monkeypatch, caplog) -> None:
+    from flavia.tools.research.academic_providers.openalex import OpenAlexProvider
+
+    provider = OpenAlexProvider()
+
+    def _fake_get(*_args, **_kwargs):
+        req = httpx.Request("GET", "https://api.openalex.org/works")
+        resp = httpx.Response(502, request=req)
+        raise httpx.HTTPStatusError("502 Bad Gateway", request=req, response=resp)
+
+    monkeypatch.setattr(
+        "flavia.tools.research.academic_providers.openalex.httpx.get", _fake_get
+    )
+    caplog.set_level(
+        logging.WARNING, logger="flavia.tools.research.academic_providers.openalex"
+    )
+
+    response = provider.get_citations("W1234567890")
+
+    assert response.error_message is not None
+    assert "HTTP 502" in response.error_message
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("OpenAlex get_citations HTTP error" in msg for msg in messages)
+    assert any("status=502" in msg for msg in messages)
+
+
+def test_semantic_scholar_find_similar_network_error_logs_diagnostics(
+    monkeypatch, caplog
+) -> None:
+    from flavia.tools.research.academic_providers.semantic_scholar import (
+        SemanticScholarProvider,
+    )
+
+    provider = SemanticScholarProvider()
+
+    def _fake_get(*_args, **_kwargs):
+        req = httpx.Request(
+            "GET",
+            "https://api.semanticscholar.org/recommendations/v1/papers/forpaper/DOI:10.1234/test",
+        )
+        raise httpx.ConnectError("dns failure", request=req)
+
+    monkeypatch.setattr(
+        "flavia.tools.research.academic_providers.semantic_scholar.httpx.get",
+        _fake_get,
+    )
+    caplog.set_level(
+        logging.WARNING,
+        logger="flavia.tools.research.academic_providers.semantic_scholar",
+    )
+
+    response = provider.find_similar("10.1234/test")
+
+    assert response.error_message is not None
+    assert "network error" in response.error_message
+    assert "ConnectError" in response.error_message
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("Semantic Scholar find_similar network error" in msg for msg in messages)
+    assert any("ConnectError" in msg for msg in messages)
+
+
 def test_openalex_abstract_reconstruction() -> None:
     from flavia.tools.research.academic_providers.openalex import _reconstruct_abstract
 
@@ -585,10 +747,13 @@ def test_year_range_parsing() -> None:
     from flavia.tools.research.academic_search import _parse_year_range
 
     assert _parse_year_range("2020-2024") == (2020, 2024)
+    assert _parse_year_range("2024-2020") == (2020, 2024)
     assert _parse_year_range("2023") == (2023, 2023)
     assert _parse_year_range("") is None
     assert _parse_year_range(None) is None
     assert _parse_year_range("invalid") is None
+    assert _parse_year_range("900-2020") is None
+    assert _parse_year_range("2020-2201") is None
 
 
 def test_response_formatting_includes_paper_metadata(

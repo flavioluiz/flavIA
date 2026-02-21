@@ -17,24 +17,66 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 VALID_SORT_OPTIONS = ["relevance", "date", "citations"]
+MIN_PUBLICATION_YEAR = 1000
+MAX_PUBLICATION_YEAR = 2100
 
 
-def _parse_year_range(value: Optional[str]) -> Optional[tuple[int, int]]:
+def _normalize_text_arg(value: Any) -> str:
+    """Normalize a tool arg into a stripped string."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
+
+
+def _parse_bool_arg(value: Any, default: bool = False) -> bool:
+    """Coerce common boolean-like values from tool args safely."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "n", "off", ""}:
+            return False
+    return bool(value)
+
+
+def _normalize_provider_name(value: Any) -> str:
+    """Normalize provider arg to lowercase token."""
+    return _normalize_text_arg(value).lower()
+
+
+def _parse_year_range(value: Any) -> Optional[tuple[int, int]]:
     """Parse a year range string like '2020-2024' into a tuple."""
-    if not value:
+    normalized_value = _normalize_text_arg(value)
+    if not normalized_value:
         return None
-    value = value.strip()
-    if "-" not in value:
+    if "-" not in normalized_value:
         try:
-            year = int(value)
+            year = int(normalized_value)
+            if year < MIN_PUBLICATION_YEAR or year > MAX_PUBLICATION_YEAR:
+                return None
             return (year, year)
         except ValueError:
             return None
-    parts = value.split("-", 1)
+    parts = normalized_value.split("-", 1)
     try:
-        return (int(parts[0].strip()), int(parts[1].strip()))
+        start_year = int(parts[0].strip())
+        end_year = int(parts[1].strip())
     except ValueError:
         return None
+    if start_year > end_year:
+        start_year, end_year = end_year, start_year
+    if (
+        start_year < MIN_PUBLICATION_YEAR
+        or end_year > MAX_PUBLICATION_YEAR
+    ):
+        return None
+    return (start_year, end_year)
 
 
 def _get_default_provider() -> str:
@@ -56,6 +98,64 @@ def _build_provider_order(preferred: str) -> list[str]:
         if name not in ordered:
             ordered.append(name)
     return ordered
+
+
+def _provider_not_configured_reason(provider_name: str) -> str:
+    """Get configuration hint for an unavailable provider."""
+    if provider_name == "openalex":
+        return "OpenAlex provider is not configured in this runtime."
+    if provider_name == "semantic_scholar":
+        return (
+            "Semantic Scholar provider is not configured in this runtime "
+            "(API key is optional; set `SEMANTIC_SCHOLAR_API_KEY` for higher limits)."
+        )
+    return "provider is not configured."
+
+
+def _validate_provider_name(provider_name: str) -> Optional[str]:
+    """Validate provider name and return an actionable error when invalid."""
+    if provider_name in ACADEMIC_PROVIDERS:
+        return None
+    return (
+        f"Error: unknown academic search provider '{provider_name}'. "
+        f"Available providers: {', '.join(ACADEMIC_PROVIDERS.keys())}"
+    )
+
+
+def _resolve_provider_name(
+    raw_provider: Any,
+    fallback_provider: str,
+) -> tuple[str, Optional[str]]:
+    """Resolve provider from args/defaults with safe fallback."""
+    requested_provider = _normalize_provider_name(raw_provider)
+    if requested_provider:
+        return requested_provider, _validate_provider_name(requested_provider)
+
+    resolved_fallback = _normalize_provider_name(fallback_provider) or "openalex"
+    if resolved_fallback not in ACADEMIC_PROVIDERS:
+        logger.warning(
+            "Invalid academic provider fallback=%r. Falling back to openalex.",
+            resolved_fallback,
+        )
+        return "openalex", None
+    return resolved_fallback, None
+
+
+def _diagnostics_lines(
+    provider_order: list[str],
+    attempts: list[str],
+    selected_provider: Optional[str] = None,
+) -> list[str]:
+    """Build a diagnostics block for provider attempts/order."""
+    lines = ["_Diagnostics:_", f"- Provider order: {', '.join(provider_order)}"]
+    if selected_provider:
+        lines.append(f"- Provider selected: {selected_provider}")
+    if attempts:
+        for attempt in attempts:
+            lines.append(f"- Failed attempt: {attempt}")
+    else:
+        lines.append("- No provider failures recorded.")
+    return lines
 
 
 def _format_paper_result(paper) -> str:
@@ -220,11 +320,21 @@ class SearchPapersTool(BaseTool):
                     required=False,
                     enum=list(ACADEMIC_PROVIDERS.keys()),
                 ),
+                ToolParameter(
+                    name="diagnostics",
+                    type="boolean",
+                    description=(
+                        "When true, include provider-order diagnostics and detailed "
+                        "fallback attempts in the tool output."
+                    ),
+                    required=False,
+                    default=False,
+                ),
             ],
         )
 
     def execute(self, args: dict[str, Any], agent_context: "AgentContext") -> str:
-        query = args.get("query", "").strip()
+        query = _normalize_text_arg(args.get("query"))
         if not query:
             return "Error: search query is required."
 
@@ -238,9 +348,7 @@ class SearchPapersTool(BaseTool):
 
         year_range = _parse_year_range(args.get("year_range"))
 
-        fields = args.get("fields")
-        if isinstance(fields, str):
-            fields = fields.strip() or None
+        fields = _normalize_text_arg(args.get("fields")) or None
 
         sort_by = args.get("sort_by", "relevance")
         if isinstance(sort_by, str):
@@ -249,19 +357,14 @@ class SearchPapersTool(BaseTool):
             return f"Error: invalid sort_by '{sort_by}'. Use: {', '.join(VALID_SORT_OPTIONS)}"
 
         # Determine provider
-        provider_name = args.get("provider")
-        if isinstance(provider_name, str):
-            provider_name = provider_name.strip().lower()
-        if not provider_name:
-            provider_name = _get_default_provider()
-        if not provider_name:
-            provider_name = "openalex"
+        diagnostics = _parse_bool_arg(args.get("diagnostics"), default=False)
 
-        if provider_name not in ACADEMIC_PROVIDERS:
-            return (
-                f"Error: unknown academic search provider '{provider_name}'. "
-                f"Available providers: {', '.join(ACADEMIC_PROVIDERS.keys())}"
-            )
+        provider_name, provider_error = _resolve_provider_name(
+            args.get("provider"),
+            _get_default_provider() or "openalex",
+        )
+        if provider_error:
+            return provider_error
 
         provider_order = _build_provider_order(provider_name)
         logger.debug(
@@ -279,7 +382,9 @@ class SearchPapersTool(BaseTool):
                 continue
 
             if not provider.is_configured():
-                attempts.append(f"`{current_name}`: provider is not configured.")
+                attempts.append(
+                    f"`{current_name}`: {_provider_not_configured_reason(current_name)}"
+                )
                 continue
 
             response = provider.search(
@@ -300,26 +405,70 @@ class SearchPapersTool(BaseTool):
                 attempts.append(f"`{current_name}`: {response.error_message}")
                 continue
 
-            return self._format_response(response, attempts=attempts if attempts else None)
+            return self._format_response(
+                response,
+                attempts=attempts if attempts else None,
+                diagnostics=diagnostics,
+                provider_order=provider_order,
+            )
 
-        return self._format_unavailable(query, attempts)
+        return self._format_unavailable(
+            query,
+            attempts,
+            diagnostics=diagnostics,
+            provider_order=provider_order,
+        )
 
-    def _format_response(self, response, attempts: Optional[list[str]] = None) -> str:
+    def _format_response(
+        self,
+        response,
+        attempts: Optional[list[str]] = None,
+        diagnostics: bool = False,
+        provider_order: Optional[list[str]] = None,
+    ) -> str:
+        all_attempts = attempts or []
+        resolved_provider_order = provider_order or [response.provider]
         if not response.results:
             if attempts:
-                return "\n".join([
+                lines = [
                     f"No results found for: {response.query}",
                     "",
                     "_Provider fallback used:_",
-                    *[f"- {a}" for a in attempts],
+                    *[f"- {a}" for a in all_attempts],
+                ]
+                if diagnostics:
+                    lines.extend([""] + _diagnostics_lines(
+                        resolved_provider_order,
+                        all_attempts,
+                        selected_provider=response.provider,
+                    ))
+                return "\n".join(lines)
+            if diagnostics:
+                return "\n".join([
+                    f"No results found for: {response.query}",
+                    "",
+                    *_diagnostics_lines(
+                        resolved_provider_order,
+                        [],
+                        selected_provider=response.provider,
+                    ),
                 ])
             return f"No results found for: {response.query}"
 
         lines = [f"**Academic Search Results** ({response.provider})\n"]
-        if attempts:
+        if all_attempts:
             lines.append("_Provider fallback used:_")
-            for a in attempts:
+            for a in all_attempts:
                 lines.append(f"- {a}")
+            lines.append("")
+        if diagnostics:
+            lines.extend(
+                _diagnostics_lines(
+                    resolved_provider_order,
+                    all_attempts,
+                    selected_provider=response.provider,
+                )
+            )
             lines.append("")
 
         for paper in response.results:
@@ -333,11 +482,24 @@ class SearchPapersTool(BaseTool):
 
         return "\n".join(lines)
 
-    def _format_unavailable(self, query: str, attempts: list[str]) -> str:
+    def _format_unavailable(
+        self,
+        query: str,
+        attempts: list[str],
+        diagnostics: bool = False,
+        provider_order: Optional[list[str]] = None,
+    ) -> str:
         lines = [f"Error: academic search unavailable for query: {query}", ""]
         lines.append("Attempts:")
         for a in attempts:
             lines.append(f"- {a}")
+        if diagnostics:
+            lines.extend([""] + _diagnostics_lines(provider_order or [], attempts))
+        else:
+            lines.extend([
+                "",
+                "Tip: pass `diagnostics=true` to include provider-order diagnostics.",
+            ])
         lines.extend([
             "",
             "How to fix:",
@@ -383,20 +545,31 @@ class GetPaperDetailsTool(BaseTool):
                     required=False,
                     enum=list(ACADEMIC_PROVIDERS.keys()),
                 ),
+                ToolParameter(
+                    name="diagnostics",
+                    type="boolean",
+                    description=(
+                        "When true, include provider-order diagnostics and detailed "
+                        "fallback attempts in the tool output."
+                    ),
+                    required=False,
+                    default=False,
+                ),
             ],
         )
 
     def execute(self, args: dict[str, Any], agent_context: "AgentContext") -> str:
-        paper_id = args.get("paper_id", "").strip()
+        paper_id = _normalize_text_arg(args.get("paper_id"))
         if not paper_id:
             return "Error: paper_id is required."
 
-        provider_name = args.get("provider")
-        if isinstance(provider_name, str):
-            provider_name = provider_name.strip().lower()
-
-        if not provider_name:
-            provider_name = self._detect_provider(paper_id)
+        diagnostics = _parse_bool_arg(args.get("diagnostics"), default=False)
+        provider_name, provider_error = _resolve_provider_name(
+            args.get("provider"),
+            self._detect_provider(paper_id),
+        )
+        if provider_error:
+            return provider_error
 
         provider_order = _build_provider_order(provider_name)
         attempts: list[str] = []
@@ -407,6 +580,12 @@ class GetPaperDetailsTool(BaseTool):
                 attempts.append(f"`{current_name}`: provider is not available.")
                 continue
 
+            if not provider.is_configured():
+                attempts.append(
+                    f"`{current_name}`: {_provider_not_configured_reason(current_name)}"
+                )
+                continue
+
             response = provider.get_details(paper_id)
 
             if response.error_message:
@@ -415,23 +594,42 @@ class GetPaperDetailsTool(BaseTool):
 
             if response.paper:
                 result = _format_paper_detail(response.paper)
+                metadata_lines: list[str] = []
                 if attempts:
-                    result = "\n".join([
+                    metadata_lines.extend([
                         "_Provider fallback used:_",
                         *[f"- {a}" for a in attempts],
-                        "",
-                        result,
                     ])
+                if diagnostics:
+                    if metadata_lines:
+                        metadata_lines.append("")
+                    metadata_lines.extend(
+                        _diagnostics_lines(
+                            provider_order,
+                            attempts,
+                            selected_provider=response.provider,
+                        )
+                    )
+                if metadata_lines:
+                    result = "\n".join([*metadata_lines, "", result])
                 return result
 
             attempts.append(f"`{current_name}`: paper not found.")
 
-        return "\n".join([
+        lines = [
             f"Error: could not find paper: {paper_id}",
             "",
             "Attempts:",
             *[f"- {a}" for a in attempts],
-        ])
+        ]
+        if diagnostics:
+            lines.extend([""] + _diagnostics_lines(provider_order, attempts))
+        else:
+            lines.extend([
+                "",
+                "Tip: pass `diagnostics=true` to include provider-order diagnostics.",
+            ])
+        return "\n".join(lines)
 
     def _detect_provider(self, paper_id: str) -> str:
         """Detect the best provider for a given paper_id format."""
@@ -484,11 +682,21 @@ class GetCitationsTool(BaseTool):
                     required=False,
                     enum=list(ACADEMIC_PROVIDERS.keys()),
                 ),
+                ToolParameter(
+                    name="diagnostics",
+                    type="boolean",
+                    description=(
+                        "When true, include provider-order diagnostics and detailed "
+                        "fallback attempts in the tool output."
+                    ),
+                    required=False,
+                    default=False,
+                ),
             ],
         )
 
     def execute(self, args: dict[str, Any], agent_context: "AgentContext") -> str:
-        paper_id = args.get("paper_id", "").strip()
+        paper_id = _normalize_text_arg(args.get("paper_id"))
         if not paper_id:
             return "Error: paper_id is required."
 
@@ -506,11 +714,13 @@ class GetCitationsTool(BaseTool):
         if sort_by not in VALID_SORT_OPTIONS:
             sort_by = "relevance"
 
-        provider_name = args.get("provider")
-        if isinstance(provider_name, str):
-            provider_name = provider_name.strip().lower()
-        if not provider_name:
-            provider_name = _get_default_provider() or "openalex"
+        diagnostics = _parse_bool_arg(args.get("diagnostics"), default=False)
+        provider_name, provider_error = _resolve_provider_name(
+            args.get("provider"),
+            _get_default_provider() or "openalex",
+        )
+        if provider_error:
+            return provider_error
 
         provider_order = _build_provider_order(provider_name)
         attempts: list[str] = []
@@ -519,6 +729,12 @@ class GetCitationsTool(BaseTool):
             provider = get_academic_provider(current_name)
             if provider is None:
                 attempts.append(f"`{current_name}`: provider is not available.")
+                continue
+
+            if not provider.is_configured():
+                attempts.append(
+                    f"`{current_name}`: {_provider_not_configured_reason(current_name)}"
+                )
                 continue
 
             response = provider.get_citations(
@@ -531,21 +747,51 @@ class GetCitationsTool(BaseTool):
                 attempts.append(f"`{current_name}`: {response.error_message}")
                 continue
 
-            return self._format_response(paper_id, response, attempts)
+            return self._format_response(
+                paper_id,
+                response,
+                attempts,
+                diagnostics=diagnostics,
+                provider_order=provider_order,
+            )
 
-        return "\n".join([
+        lines = [
             f"Error: could not get citations for: {paper_id}",
             "",
             "Attempts:",
             *[f"- {a}" for a in attempts],
-        ])
+        ]
+        if diagnostics:
+            lines.extend([""] + _diagnostics_lines(provider_order, attempts))
+        else:
+            lines.extend([
+                "",
+                "Tip: pass `diagnostics=true` to include provider-order diagnostics.",
+            ])
+        return "\n".join(lines)
 
-    def _format_response(self, paper_id: str, response, attempts: list[str]) -> str:
+    def _format_response(
+        self,
+        paper_id: str,
+        response,
+        attempts: list[str],
+        diagnostics: bool = False,
+        provider_order: Optional[list[str]] = None,
+    ) -> str:
         lines = [f"**Citations of {paper_id}** ({response.provider})\n"]
         if attempts:
             lines.append("_Provider fallback used:_")
             for a in attempts:
                 lines.append(f"- {a}")
+            lines.append("")
+        if diagnostics:
+            lines.extend(
+                _diagnostics_lines(
+                    provider_order or [response.provider],
+                    attempts,
+                    selected_provider=response.provider,
+                )
+            )
             lines.append("")
 
         if not response.citations:
@@ -599,11 +845,21 @@ class GetReferencesTool(BaseTool):
                     required=False,
                     enum=list(ACADEMIC_PROVIDERS.keys()),
                 ),
+                ToolParameter(
+                    name="diagnostics",
+                    type="boolean",
+                    description=(
+                        "When true, include provider-order diagnostics and detailed "
+                        "fallback attempts in the tool output."
+                    ),
+                    required=False,
+                    default=False,
+                ),
             ],
         )
 
     def execute(self, args: dict[str, Any], agent_context: "AgentContext") -> str:
-        paper_id = args.get("paper_id", "").strip()
+        paper_id = _normalize_text_arg(args.get("paper_id"))
         if not paper_id:
             return "Error: paper_id is required."
 
@@ -615,11 +871,13 @@ class GetReferencesTool(BaseTool):
                 num_results = 10
         num_results = max(1, min(num_results, 100))
 
-        provider_name = args.get("provider")
-        if isinstance(provider_name, str):
-            provider_name = provider_name.strip().lower()
-        if not provider_name:
-            provider_name = _get_default_provider() or "openalex"
+        diagnostics = _parse_bool_arg(args.get("diagnostics"), default=False)
+        provider_name, provider_error = _resolve_provider_name(
+            args.get("provider"),
+            _get_default_provider() or "openalex",
+        )
+        if provider_error:
+            return provider_error
 
         provider_order = _build_provider_order(provider_name)
         attempts: list[str] = []
@@ -628,6 +886,12 @@ class GetReferencesTool(BaseTool):
             provider = get_academic_provider(current_name)
             if provider is None:
                 attempts.append(f"`{current_name}`: provider is not available.")
+                continue
+
+            if not provider.is_configured():
+                attempts.append(
+                    f"`{current_name}`: {_provider_not_configured_reason(current_name)}"
+                )
                 continue
 
             response = provider.get_references(
@@ -639,21 +903,51 @@ class GetReferencesTool(BaseTool):
                 attempts.append(f"`{current_name}`: {response.error_message}")
                 continue
 
-            return self._format_response(paper_id, response, attempts)
+            return self._format_response(
+                paper_id,
+                response,
+                attempts,
+                diagnostics=diagnostics,
+                provider_order=provider_order,
+            )
 
-        return "\n".join([
+        lines = [
             f"Error: could not get references for: {paper_id}",
             "",
             "Attempts:",
             *[f"- {a}" for a in attempts],
-        ])
+        ]
+        if diagnostics:
+            lines.extend([""] + _diagnostics_lines(provider_order, attempts))
+        else:
+            lines.extend([
+                "",
+                "Tip: pass `diagnostics=true` to include provider-order diagnostics.",
+            ])
+        return "\n".join(lines)
 
-    def _format_response(self, paper_id: str, response, attempts: list[str]) -> str:
+    def _format_response(
+        self,
+        paper_id: str,
+        response,
+        attempts: list[str],
+        diagnostics: bool = False,
+        provider_order: Optional[list[str]] = None,
+    ) -> str:
         lines = [f"**References of {paper_id}** ({response.provider})\n"]
         if attempts:
             lines.append("_Provider fallback used:_")
             for a in attempts:
                 lines.append(f"- {a}")
+            lines.append("")
+        if diagnostics:
+            lines.extend(
+                _diagnostics_lines(
+                    provider_order or [response.provider],
+                    attempts,
+                    selected_provider=response.provider,
+                )
+            )
             lines.append("")
 
         if not response.citations:
@@ -707,11 +1001,21 @@ class FindSimilarPapersTool(BaseTool):
                     required=False,
                     enum=list(ACADEMIC_PROVIDERS.keys()),
                 ),
+                ToolParameter(
+                    name="diagnostics",
+                    type="boolean",
+                    description=(
+                        "When true, include provider-order diagnostics and detailed "
+                        "fallback attempts in the tool output."
+                    ),
+                    required=False,
+                    default=False,
+                ),
             ],
         )
 
     def execute(self, args: dict[str, Any], agent_context: "AgentContext") -> str:
-        paper_id = args.get("paper_id", "").strip()
+        paper_id = _normalize_text_arg(args.get("paper_id"))
         if not paper_id:
             return "Error: paper_id is required."
 
@@ -723,11 +1027,13 @@ class FindSimilarPapersTool(BaseTool):
                 num_results = 10
         num_results = max(1, min(num_results, 50))
 
-        provider_name = args.get("provider")
-        if isinstance(provider_name, str):
-            provider_name = provider_name.strip().lower()
-        if not provider_name:
-            provider_name = _get_default_provider() or "openalex"
+        diagnostics = _parse_bool_arg(args.get("diagnostics"), default=False)
+        provider_name, provider_error = _resolve_provider_name(
+            args.get("provider"),
+            _get_default_provider() or "openalex",
+        )
+        if provider_error:
+            return provider_error
 
         provider_order = _build_provider_order(provider_name)
         attempts: list[str] = []
@@ -736,6 +1042,12 @@ class FindSimilarPapersTool(BaseTool):
             provider = get_academic_provider(current_name)
             if provider is None:
                 attempts.append(f"`{current_name}`: provider is not available.")
+                continue
+
+            if not provider.is_configured():
+                attempts.append(
+                    f"`{current_name}`: {_provider_not_configured_reason(current_name)}"
+                )
                 continue
 
             response = provider.find_similar(
@@ -747,21 +1059,51 @@ class FindSimilarPapersTool(BaseTool):
                 attempts.append(f"`{current_name}`: {response.error_message}")
                 continue
 
-            return self._format_response(paper_id, response, attempts)
+            return self._format_response(
+                paper_id,
+                response,
+                attempts,
+                diagnostics=diagnostics,
+                provider_order=provider_order,
+            )
 
-        return "\n".join([
+        lines = [
             f"Error: could not find similar papers for: {paper_id}",
             "",
             "Attempts:",
             *[f"- {a}" for a in attempts],
-        ])
+        ]
+        if diagnostics:
+            lines.extend([""] + _diagnostics_lines(provider_order, attempts))
+        else:
+            lines.extend([
+                "",
+                "Tip: pass `diagnostics=true` to include provider-order diagnostics.",
+            ])
+        return "\n".join(lines)
 
-    def _format_response(self, paper_id: str, response, attempts: list[str]) -> str:
+    def _format_response(
+        self,
+        paper_id: str,
+        response,
+        attempts: list[str],
+        diagnostics: bool = False,
+        provider_order: Optional[list[str]] = None,
+    ) -> str:
         lines = [f"**Papers Similar to {paper_id}** ({response.provider})\n"]
         if attempts:
             lines.append("_Provider fallback used:_")
             for a in attempts:
                 lines.append(f"- {a}")
+            lines.append("")
+        if diagnostics:
+            lines.extend(
+                _diagnostics_lines(
+                    provider_order or [response.provider],
+                    attempts,
+                    selected_provider=response.provider,
+                )
+            )
             lines.append("")
 
         if not response.results:

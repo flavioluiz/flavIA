@@ -114,7 +114,7 @@ Suite completa de ferramentas para pesquisa web e academica.
 | ID | Tarefa | Dificuldade | Dependencias | Status |
 |----|--------|-------------|--------------|--------|
 | 9.1 | Web Search Engine | Medium | — | ✅ DONE |
-| 9.2 | Academic Database Search | Medium | — |
+| 9.2 | Academic Database Search | Medium | — | ✅ DONE |
 | 9.3 | DOI Metadata Resolution | Easy | — |
 | 9.4 | Scopus Integration | Medium | — |
 | 9.5 | Article Download & Integration | Hard | 9.2, 9.3, 1.5 (done) |
@@ -164,8 +164,9 @@ Area 7 -- External Services:
 
 Area 9 -- Web & Academic Research:
   9.1 (Web Search) ✅ DONE
+  9.2 (Academic Search) ✅ DONE
   9.3 (DOI Resolution) ─────────────────────────────────┐
-  9.2 (Academic Search) ──┬── 9.5 (Article Download) ───┴── 9.6 (CAPES Access)
+                          ├── 9.5 (Article Download) ───┴── 9.6 (CAPES Access)
   9.4 (Scopus) ───────────┤                             │
                           └── 9.7 (BibTeX Management) ──┘
   9.8 (Research Sessions) ── depende de 9.2, 9.5
@@ -182,10 +183,10 @@ Area 10 -- Telegram File Delivery:
 
 | Metrica | Valor |
 |---------|-------|
-| Tarefas pendentes | 26 |
+| Tarefas pendentes | 25 |
 | Areas ativas | 7 |
 | Easy | 3 pendentes |
-| Medium | 15 pendentes |
+| Medium | 14 pendentes |
 | Hard | 8 pendentes |
 
 ---
