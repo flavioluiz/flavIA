@@ -39,8 +39,8 @@ flavIA e um assistente de pesquisa academica baseado em LLM, projetado para tran
 |--------|------|-------------|-------|
 | **10.1** Structured Agent Responses | Telegram | Medium | Habilita acoes alem de texto (envio de arquivos) |
 | **10.3** Telegram File Delivery Handler | Telegram | Medium | Entrega de arquivos no chat |
-| **3.3** Multi-Bot Support | Messaging | Medium | Suportar multiplos bots do Telegram em paralelo |
 | **9.7** BibTeX Reference Management | Pesquisa | Medium | Fecha o ciclo de citacoes e referencias no fluxo academico |
+| **3.4** Abstract Messaging Interface | Messaging | Hard | Base para integrar WhatsApp e API web |
 
 ---
 
@@ -66,7 +66,7 @@ Transformar a integracao Telegram em um framework multi-plataforma.
 |----|--------|-------------|--------------|--------|
 | 3.1 | YAML Bot Configuration | Medium | — | ✅ DONE |
 | 3.2 | Per-Conversation Agents | Medium | 3.1 | ✅ DONE |
-| 3.3 | Multi-Bot Support | Medium | 3.1, 3.2 | |
+| 3.3 | Multi-Bot Support | Medium | 3.1, 3.2 | ✅ DONE |
 | 3.4 | Abstract Messaging Interface | Hard | 3.1, 3.2 | |
 | 3.5 | WhatsApp Integration | Hard | 3.4 | |
 | 3.6 | Web API Interface | Medium | 3.4 | |
@@ -144,10 +144,10 @@ Area 2 -- Agent System:
                               └── 2.3 (Meta-Agent)
 
 Area 3 -- Messaging Platforms:
-  3.1 (YAML Bot Config) ✅ ──┬── 3.2 (Per-Conv Agent) ✅
-                             ├── 3.3 (Multi-Bot)
-                             └── 3.4 (Abstract Interface) ──┬── 3.5 (WhatsApp)
-                                                            └── 3.6 (Web API)
+   3.1 (YAML Bot Config) ✅ ──┬── 3.2 (Per-Conv Agent) ✅
+                              ├── 3.3 (Multi-Bot) ✅
+                              └── 3.4 (Abstract Interface) ──┬── 3.5 (WhatsApp)
+                                                             └── 3.6 (Web API)
 
 Area 4 -- CLI:
   4.5 (Standard Default Agent) ── (independente)

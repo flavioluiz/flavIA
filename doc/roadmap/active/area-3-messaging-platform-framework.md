@@ -74,18 +74,20 @@ Implementation: The `_get_or_create_agent()` method looks up the bot's configure
 
 ---
 
-### Task 3.3 -- Multi-Bot Support
+### Task 3.3 -- Multi-Bot Support ✅
 
-**Difficulty**: Medium | **Dependencies**: Task 3.1, Task 3.2
+**Difficulty**: Medium | **Dependencies**: Task 3.1, Task 3.2 | **Status**: Done
 
 Allow multiple bot instances to run simultaneously from the same `.flavia/` directory. Each entry in `bots.yaml` maps to a separate bot instance.
 
-The `--telegram` flag would start all configured Telegram bots by default, or `--telegram <bot-name>` for a specific one. Use `asyncio.gather()` or equivalent to run multiple bots concurrently in the same process.
+The `--telegram` flag starts all configured Telegram bots by default, or `--telegram <bot-name>` for a specific one. Uses `asyncio.gather()` to run multiple bots concurrently in the same process.
 
-**Key files to modify**:
-- `cli.py` -- update `--telegram` dispatch to support bot selection
-- `interfaces/telegram_interface.py` -- support multiple concurrent instances
-- Consider a new `interfaces/bot_runner.py` utility for managing multiple bots
+**Key files modified/created**:
+- `interfaces/bot_runner.py` (new) -- async bot runner utilities with `_run_multiple_bots_async()` and `run_telegram_bots()`
+- `cli.py` -- updated `--telegram` argument to accept optional `bot_name` parameter
+- `interfaces/__init__.py` -- export `run_telegram_bots()` for backward compatibility
+
+**See documentation**: [Task 3.3 Details](../completed/task-3.3-multi-bot-support.md)
 
 ---
 

@@ -54,19 +54,39 @@ bots:
       allowed_users: [111111111, 222222222]
       allow_all: false
 
-  public-bot:
-    platform: telegram
-    token: "${PUBLIC_BOT_TOKEN}"
-    default_agent: main
-    allowed_agents: all
-    access:
-      allow_all: true
+   public-bot:
+     platform: telegram
+     token: "${PUBLIC_BOT_TOKEN}"
+     default_agent: main
+     allowed_agents: all
+     access:
+       allow_all: true
+ ```
+
+### Running multiple bots
+
+You can run all configured Telegram bots simultaneously:
+
+```bash
+flavia --telegram
 ```
 
-Current status: `flavia --telegram` runs the first configured Telegram bot.
-Parallel multi-bot runtime is planned for roadmap task `3.3`.
+Or run a specific bot by name:
 
-## Bot commands
+```bash
+flavia --telegram research-bot
+flavia --telegram public-bot
+```
+
+All bots run concurrently in the same process, each with independent:
+- Bot token and Telegram API connection
+- Agent configuration (default_agent, allowed_agents)
+- User access control list
+- Per-user conversation state and agent switch history
+
+Press Ctrl+C to stop all running bots gracefully.
+
+ ## Bot commands
 
 | Command | Description |
 |---------|-------------|

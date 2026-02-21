@@ -65,8 +65,10 @@ def parse_args() -> argparse.Namespace:
     # Mode selection
     parser.add_argument(
         "--telegram",
-        action="store_true",
-        help="Run as Telegram bot instead of CLI",
+        nargs="?",
+        const="all",
+        metavar="BOT_NAME",
+        help="Run as Telegram bot (all bots by default, or specify BOT_NAME)",
     )
 
     # Model selection
@@ -536,9 +538,7 @@ def run_catalog_update(
                 deps_ok, missing = converter.check_dependencies()
                 if not deps_ok:
                     skipped_count += 1
-                    print(
-                        f"  Skipping {entry.path}: missing dependencies ({', '.join(missing)})"
-                    )
+                    print(f"  Skipping {entry.path}: missing dependencies ({', '.join(missing)})")
                     continue
 
                 try:
@@ -717,15 +717,22 @@ def main() -> int:
     if args.telegram:
         from flavia.setup.telegram_wizard import prompt_telegram_setup_if_needed
 
-        if not prompt_telegram_setup_if_needed():
-            return 1
-        # Reload settings after potential telegram setup
-        settings = load_settings()
-        settings = apply_args_to_settings(args, settings)
-        _ensure_default_connection_checked_once(settings)
-        from flavia.interfaces import run_telegram_bot
+        # Check if any telegram bot is configured
+        telegram_bots = settings.bot_registry.get_telegram_bots()
+        if not telegram_bots:
+            if not prompt_telegram_setup_if_needed():
+                return 1
+            # Reload settings after setup
+            settings = load_settings()
+            settings = apply_args_to_settings(args, settings)
 
-        run_telegram_bot(settings, bot_config=settings.bot_registry.get_first_telegram_bot())
+        _ensure_default_connection_checked_once(settings)
+
+        from flavia.interfaces import run_telegram_bots
+
+        # Parse bot_name: "all" or None means run all bots
+        bot_name = args.telegram if args.telegram != "all" else None
+        run_telegram_bots(settings, bot_name=bot_name)
     else:
         _ensure_default_connection_checked_once(settings)
         from flavia.interfaces import run_cli
