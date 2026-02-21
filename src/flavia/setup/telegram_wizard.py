@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Optional
 
 from rich.console import Console
-from rich.panel import Panel
 from rich.markdown import Markdown
+from rich.panel import Panel
 
 from flavia.setup.prompt_utils import safe_confirm, safe_prompt
 
@@ -110,18 +110,20 @@ def test_bot_token(token: str) -> tuple[bool, str]:
 def _write_bots_yaml(
     config_dir: Path,
     bot_name: str,
+    token_env_var: str,
     user_ids: list[int],
     allow_all: bool,
 ) -> Path:
     """
     Write or update a bot entry in bots.yaml.
 
-    The token is referenced via ${TELEGRAM_BOT_TOKEN} to keep secrets in .env.
+    The token is referenced via ${...} env vars to keep secrets in .env.
     Structural config (access control, agent) lives in bots.yaml.
 
     Args:
         config_dir: Directory where bots.yaml resides
         bot_name: Bot ID key in the YAML
+        token_env_var: Env var name holding this bot's token
         user_ids: List of allowed Telegram user IDs (empty = unrestricted if allow_all)
         allow_all: True for public access
 
@@ -145,7 +147,7 @@ def _write_bots_yaml(
 
     bots_section[bot_name] = {
         "platform": "telegram",
-        "token": "${TELEGRAM_BOT_TOKEN}",
+        "token": f"${{{token_env_var}}}",
         "default_agent": "main",
         "allowed_agents": "all",
         "access": {
@@ -163,6 +165,18 @@ def _write_bots_yaml(
     )
     bots_path.write_text(header + yaml.dump(existing, default_flow_style=False), encoding="utf-8")
     return bots_path
+
+
+def _token_env_var_for_bot_name(bot_name: str) -> str:
+    """
+    Build a stable env var name for a bot token.
+
+    Uses legacy TELEGRAM_BOT_TOKEN for "default" to preserve backward compatibility.
+    """
+    normalized = re.sub(r"[^A-Za-z0-9]+", "_", (bot_name or "").strip()).strip("_").upper()
+    if not normalized or normalized == "DEFAULT":
+        return "TELEGRAM_BOT_TOKEN"
+    return f"TELEGRAM_BOT_TOKEN_{normalized}"
 
 
 def _get_config_file_path(location: str, target_dir: Optional[Path] = None) -> Path:
@@ -224,7 +238,9 @@ def _update_env_file(env_path: Path, updates: dict[str, Optional[str]]) -> None:
             # Add a blank line before new telegram config if needed
             if new_lines and not new_lines[-1].strip().startswith("#") and new_lines[-1].strip():
                 new_lines.append("")
-            if key == "TELEGRAM_BOT_TOKEN" and not any("Telegram" in l for l in new_lines):
+            if key == "TELEGRAM_BOT_TOKEN" and not any(
+                "Telegram" in line_text for line_text in new_lines
+            ):
                 new_lines.append("# Telegram bot configuration")
             new_lines.append(f"{key}={value}")
 
@@ -325,7 +341,8 @@ def run_telegram_wizard(target_dir: Optional[Path] = None) -> bool:
 
             if valid_ids:
                 user_ids = valid_ids
-                console.print(f"[green]Will allow {len(user_ids)} user(s): {', '.join(map(str, user_ids))}[/green]")
+                ids_preview = ", ".join(map(str, user_ids))
+                console.print(f"[green]Will allow {len(user_ids)} user(s): {ids_preview}[/green]")
                 break
             else:
                 console.print("[yellow]No valid user IDs entered.[/yellow]")
@@ -367,9 +384,11 @@ def run_telegram_wizard(target_dir: Optional[Path] = None) -> bool:
     choice = safe_prompt("Enter number", default="1")
     location = "global" if choice == "2" else "local"
 
+    token_env_var = _token_env_var_for_bot_name(bot_name)
+
     # Prepare .env updates (token secret stays here)
     updates: dict[str, Optional[str]] = {
-        "TELEGRAM_BOT_TOKEN": token,
+        token_env_var: token,
     }
 
     if user_ids:
@@ -383,17 +402,22 @@ def run_telegram_wizard(target_dir: Optional[Path] = None) -> bool:
     env_path = _get_config_file_path(location, target_dir)
     _update_env_file(env_path, updates)
 
-    # Save bots.yaml (structural config with ${TELEGRAM_BOT_TOKEN} reference)
+    # Save bots.yaml (structural config with per-bot ${...} token reference)
     config_dir = env_path.parent
-    bots_path = _write_bots_yaml(config_dir, bot_name, user_ids, allow_all)
+    bots_path = _write_bots_yaml(config_dir, bot_name, token_env_var, user_ids, allow_all)
+
+    access_label = (
+        f"Restricted to {len(user_ids)} user(s)" if user_ids else "[yellow]Public[/yellow]"
+    )
 
     console.print(
         Panel.fit(
             "[bold green]Telegram bot configured![/bold green]\n\n"
             f"Token saved to: [cyan]{env_path}[/cyan]\n"
+            f"Token env var: [cyan]{token_env_var}[/cyan]\n"
             f"Bot config saved to: [cyan]{bots_path}[/cyan]\n\n"
             f"Bot name: [bold]{bot_name}[/bold]\n"
-            f"Access: {'Restricted to ' + str(len(user_ids)) + ' user(s)' if user_ids else '[yellow]Public[/yellow]'}\n\n"
+            f"Access: {access_label}\n\n"
             "[bold]To start the bot:[/bold]\n"
             "  flavia --telegram",
             title="Success",

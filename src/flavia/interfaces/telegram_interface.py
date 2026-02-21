@@ -3,9 +3,9 @@
 import logging
 from typing import Optional
 
+from flavia.agent import AgentProfile, RecursiveAgent
 from flavia.config import Settings
 from flavia.config.bots import BotConfig
-from flavia.agent import RecursiveAgent, AgentProfile
 
 logger = logging.getLogger(__name__)
 
@@ -98,19 +98,50 @@ class TelegramBot:
             return self.bot_config.default_agent
         return "main"
 
+    def _all_agent_configs(self) -> dict[str, dict]:
+        """Return top-level agents plus main.subagents promoted as selectable agents."""
+        all_configs: dict[str, dict] = {}
+
+        for name, cfg in self.settings.agents_config.items():
+            if isinstance(cfg, dict):
+                all_configs[name] = cfg
+
+        main_cfg = self.settings.agents_config.get("main")
+        if not isinstance(main_cfg, dict):
+            return all_configs
+
+        subagents = main_cfg.get("subagents", {})
+        if not isinstance(subagents, dict):
+            return all_configs
+
+        for name, cfg in subagents.items():
+            if not isinstance(cfg, dict):
+                continue
+            if name in all_configs:
+                continue
+            promoted = cfg.copy()
+            if "model" not in promoted and "model" in main_cfg:
+                promoted["model"] = main_cfg["model"]
+            promoted.pop("subagents", None)
+            all_configs[name] = promoted
+
+        return all_configs
+
     def _available_agents(self) -> list[str]:
         """Return agent names this bot permits, filtered by allowed_agents."""
-        all_names = list(self.settings.agents_config.keys())
+        all_configs = self._all_agent_configs()
+        all_names = list(all_configs.keys())
         if self.bot_config and self.bot_config.allowed_agents is not None:
-            return [a for a in self.bot_config.allowed_agents if a in all_names]
+            return [a for a in self.bot_config.allowed_agents if a in all_configs]
         return all_names
 
     def _get_or_create_agent(self, user_id: int) -> RecursiveAgent:
         """Get or create an agent for a user."""
         if user_id not in self.agents:
             agent_name = self._user_agents.get(user_id, self._default_agent_name)
-            if agent_name in self.settings.agents_config:
-                config = self.settings.agents_config[agent_name]
+            all_configs = self._all_agent_configs()
+            config = all_configs.get(agent_name)
+            if config:
                 profile = AgentProfile.from_config(config)
                 if "path" not in config:
                     profile.base_dir = self.settings.base_dir
@@ -199,6 +230,21 @@ class TelegramBot:
             suffix,
         )
 
+    async def _safe_send_typing(self, update) -> None:
+        """Best-effort typing indicator that never aborts request handling."""
+        try:
+            await update.message.chat.send_action("typing")
+        except Exception as e:
+            self._log_event(update, "typing:error", str(e)[:160])
+
+    async def _error_handler(self, update, context) -> None:
+        """Application-level fallback for unhandled Telegram callback errors."""
+        err = getattr(context, "error", None)
+        if err is None:
+            logger.error("Unhandled Telegram callback error (unknown).")
+            return
+        logger.error("Unhandled Telegram callback error: %s", str(err)[:300])
+
     async def _whoami_command(self, update, context) -> None:
         """Show IDs needed for Telegram whitelist configuration."""
         self._log_event(update, "command:/whoami")
@@ -273,9 +319,8 @@ class TelegramBot:
         before_tokens = agent.last_prompt_tokens
         max_tokens = agent.max_context_tokens
 
-        await update.message.chat.send_action("typing")
-
         try:
+            await self._safe_send_typing(update)
             summary = agent.compact_conversation()
             if not summary:
                 await update.message.reply_text("Nothing to compact (conversation is empty).")
@@ -337,8 +382,9 @@ class TelegramBot:
             return
 
         name = args[0]
+        all_configs = self._all_agent_configs()
 
-        if name not in self.settings.agents_config:
+        if name not in all_configs:
             available = self._available_agents()
             available_str = ", ".join(available) if available else "(none)"
             await update.message.reply_text(
@@ -387,9 +433,9 @@ class TelegramBot:
             "message:received",
             f'text="{self._message_preview(user_message)}"',
         )
-        await update.message.chat.send_action("typing")
 
         try:
+            await self._safe_send_typing(update)
             agent = self._get_or_create_agent(user_id)
             response = agent.run(user_message)
             response += _build_token_footer(agent)
@@ -410,7 +456,10 @@ class TelegramBot:
         except Exception as e:
             self._log_event(update, "message:error", str(e)[:200])
             logger.error(f"Error: {e}")
-            await update.message.reply_text(f"Error: {str(e)[:200]}")
+            try:
+                await update.message.reply_text(f"Error: {str(e)[:200]}")
+            except Exception as reply_error:
+                self._log_event(update, "message:error:reply_failed", str(reply_error)[:200])
 
     def run(self) -> None:
         """Run the Telegram bot."""
@@ -466,6 +515,7 @@ class TelegramBot:
         app.add_handler(
             self.MessageHandler(self.filters.TEXT & ~self.filters.COMMAND, self._handle_message)
         )
+        app.add_error_handler(self._error_handler)
 
         logger.info("Bot running. Press Ctrl+C to stop.")
         app.run_polling(allowed_updates=["message"])

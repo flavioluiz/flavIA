@@ -8,31 +8,34 @@ from flavia.interfaces.telegram_interface import TelegramBot
 
 
 class _DummyChat:
-    def __init__(self):
+    def __init__(self, fail_on_action: bool = False):
         self.actions: list[str] = []
+        self.fail_on_action = fail_on_action
 
     async def send_action(self, action: str) -> None:
+        if self.fail_on_action:
+            raise RuntimeError("transient telegram network error")
         self.actions.append(action)
 
 
 class _DummyMessage:
-    def __init__(self):
+    def __init__(self, fail_on_action: bool = False):
         self.replies: list[str] = []
-        self.chat = _DummyChat()
+        self.chat = _DummyChat(fail_on_action=fail_on_action)
 
     async def reply_text(self, text: str) -> None:
         self.replies.append(text)
 
 
 class _DummyUpdate:
-    def __init__(self, user_id: int = 123, chat_id: int = 456):
+    def __init__(self, user_id: int = 123, chat_id: int = 456, fail_on_action: bool = False):
         self.effective_user = SimpleNamespace(
             id=user_id,
             username="test-user",
             full_name="Test User",
         )
         self.effective_chat = SimpleNamespace(id=chat_id)
-        self.message = _DummyMessage()
+        self.message = _DummyMessage(fail_on_action=fail_on_action)
 
 
 class _CompactAgent:
@@ -102,3 +105,16 @@ def test_compact_command_handles_empty_conversation():
     assert agent.compaction_calls == 1
     assert update.message.chat.actions == ["typing"]
     assert update.message.replies == ["Nothing to compact (conversation is empty)."]
+
+
+def test_compact_command_continues_when_typing_indicator_fails():
+    bot = _make_bot()
+    update = _DummyUpdate(user_id=42, fail_on_action=True)
+    agent = _CompactAgent(summary="Compacted summary")
+    bot.agents[42] = agent
+
+    asyncio.run(bot._compact_command(update, context=None))
+
+    assert agent.compaction_calls == 1
+    assert update.message.replies
+    assert "Conversation compacted." in update.message.replies[0]

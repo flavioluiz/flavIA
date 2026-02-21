@@ -48,3 +48,48 @@ def test_test_bot_token_masks_token_in_connection_errors(monkeypatch):
     assert success is False
     assert token not in message
     assert "***" in message
+
+
+def test_token_env_var_for_bot_name_supports_multiple_bots():
+    assert telegram_wizard._token_env_var_for_bot_name("default") == "TELEGRAM_BOT_TOKEN"
+    assert (
+        telegram_wizard._token_env_var_for_bot_name("ironic-bot")
+        == "TELEGRAM_BOT_TOKEN_IRONIC_BOT"
+    )
+    assert (
+        telegram_wizard._token_env_var_for_bot_name("Research Bot 2")
+        == "TELEGRAM_BOT_TOKEN_RESEARCH_BOT_2"
+    )
+
+
+def test_write_bots_yaml_uses_bot_specific_token_env_var(tmp_path):
+    cfg = tmp_path / ".flavia"
+    cfg.mkdir(parents=True, exist_ok=True)
+
+    bots_path = telegram_wizard._write_bots_yaml(
+        cfg,
+        bot_name="ironic-bot",
+        token_env_var="TELEGRAM_BOT_TOKEN_IRONIC_BOT",
+        user_ids=[123],
+        allow_all=False,
+    )
+    content = bots_path.read_text(encoding="utf-8")
+
+    assert "${TELEGRAM_BOT_TOKEN_IRONIC_BOT}" in content
+    assert "ironic-bot:" in content
+
+
+def test_update_env_file_preserves_existing_other_bot_tokens(tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text("TELEGRAM_BOT_TOKEN=old-default\n", encoding="utf-8")
+
+    telegram_wizard._update_env_file(
+        env_path,
+        {
+            "TELEGRAM_BOT_TOKEN_IRONIC_BOT": "new-ironic-token",
+        },
+    )
+    content = env_path.read_text(encoding="utf-8")
+
+    assert "TELEGRAM_BOT_TOKEN=old-default" in content
+    assert "TELEGRAM_BOT_TOKEN_IRONIC_BOT=new-ironic-token" in content

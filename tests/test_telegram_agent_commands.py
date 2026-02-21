@@ -3,10 +3,9 @@
 import asyncio
 from types import SimpleNamespace
 
-from flavia.config.bots import BotConfig, BotAccessConfig
+from flavia.config.bots import BotAccessConfig, BotConfig
 from flavia.config.settings import Settings
 from flavia.interfaces.telegram_interface import TelegramBot
-
 
 # ---------------------------------------------------------------------------
 # Test doubles
@@ -116,6 +115,45 @@ def test_agents_command_marks_active_agent():
     assert "main (active)" not in reply
 
 
+def test_agents_command_lists_subagents_from_main():
+    bot = _make_bot(
+        agents_config={
+            "main": {
+                "subagents": {
+                    "ironic": {"context": "ironic style"},
+                }
+            }
+        }
+    )
+    update = _DummyUpdate()
+
+    asyncio.run(bot._agents_command(update, context=None))
+
+    reply = update.message.replies[0]
+    assert "main" in reply
+    assert "ironic" in reply
+
+
+def test_agents_command_filters_allowed_subagent():
+    bot = _make_bot(
+        agents_config={
+            "main": {
+                "subagents": {
+                    "ironic": {"context": "ironic style"},
+                }
+            }
+        },
+        bot_config=_bot_config(allowed_agents=["ironic"]),
+    )
+    update = _DummyUpdate()
+
+    asyncio.run(bot._agents_command(update, context=None))
+
+    reply = update.message.replies[0]
+    assert "ironic" in reply
+    assert "main" not in reply
+
+
 # ---------------------------------------------------------------------------
 # /agent tests
 # ---------------------------------------------------------------------------
@@ -183,6 +221,27 @@ def test_agent_command_already_current():
     reply = update.message.replies[0]
     assert "Already using" in reply
     assert "main" in reply
+
+
+def test_agent_command_switches_to_subagent():
+    bot = _make_bot(
+        agents_config={
+            "main": {
+                "subagents": {
+                    "ironic": {"context": "ironic style"},
+                }
+            }
+        }
+    )
+    update = _DummyUpdate(user_id=123)
+    ctx = _DummyContext(args=["ironic"])
+
+    asyncio.run(bot._agent_command(update, ctx))
+
+    assert bot._user_agents[123] == "ironic"
+    reply = update.message.replies[0]
+    assert "Switched" in reply
+    assert "ironic" in reply
 
 
 def test_agent_switch_resets_conversation():
