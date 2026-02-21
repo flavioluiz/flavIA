@@ -175,3 +175,129 @@ def test_init_local_config_uses_broad_read_only_toolset(tmp_path):
     assert "- search_chunks" in agents_data
     assert "- refresh_catalog" not in agents_data
     assert "- compile_latex" not in agents_data
+
+
+def test_init_local_config_creates_bots_yaml(tmp_path):
+    """init_local_config should create a bots.yaml template."""
+    ok = init_local_config(tmp_path)
+    assert ok is True
+
+    bots_yaml = tmp_path / ".flavia" / "bots.yaml"
+    assert bots_yaml.exists()
+    content = bots_yaml.read_text(encoding="utf-8")
+    assert "bots:" in content
+    assert "${TELEGRAM_BOT_TOKEN}" in content
+
+
+# ---------------------------------------------------------------------------
+# Bot registry integration tests
+# ---------------------------------------------------------------------------
+
+
+def test_load_bots_from_yaml(tmp_path, monkeypatch):
+    """bots.yaml loads and syncs to legacy telegram fields."""
+    import textwrap
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "legacy:token")
+    monkeypatch.delenv("TELEGRAM_ALLOWED_USER_IDS", raising=False)
+    monkeypatch.delenv("TELEGRAM_ALLOW_ALL_USERS", raising=False)
+
+    local_dir = tmp_path / ".flavia"
+    local_dir.mkdir()
+    bots_yaml = local_dir / "bots.yaml"
+    bots_yaml.write_text(
+        textwrap.dedent("""\
+            bots:
+              my-bot:
+                platform: telegram
+                token: "${TELEGRAM_BOT_TOKEN}"
+                default_agent: main
+                access:
+                  allowed_users: [999]
+                  allow_all: false
+        """),
+        encoding="utf-8",
+    )
+
+    settings = load_settings()
+
+    assert "my-bot" in settings.bot_registry.bots
+    bot = settings.bot_registry.bots["my-bot"]
+    assert bot.token == "legacy:token"
+    assert bot.access.allowed_users == [999]
+    # Legacy fields should be synced
+    assert 999 in settings.telegram_allowed_users
+    assert settings.telegram_token == "legacy:token"
+
+
+def test_bots_yaml_missing_falls_back_to_env(tmp_path, monkeypatch):
+    """When no bots.yaml exists, env vars create a fallback bot config."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "env:fallback")
+    monkeypatch.setenv("TELEGRAM_ALLOWED_USER_IDS", "777")
+    monkeypatch.delenv("TELEGRAM_ALLOW_ALL_USERS", raising=False)
+
+    settings = load_settings()
+
+    # Fallback bot should be created from env vars
+    first_tg = settings.bot_registry.get_first_telegram_bot()
+    assert first_tg is not None
+    assert first_tg.token == "env:fallback"
+    assert 777 in first_tg.access.allowed_users
+    assert settings.telegram_token == "env:fallback"
+
+
+def test_bots_yaml_overrides_env_vars(tmp_path, monkeypatch):
+    """bots.yaml token takes precedence over TELEGRAM_BOT_TOKEN for bot_config."""
+    import textwrap
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("YAML_BOT_TOKEN", "yaml:secret")
+    monkeypatch.delenv("TELEGRAM_ALLOWED_USER_IDS", raising=False)
+    monkeypatch.delenv("TELEGRAM_ALLOW_ALL_USERS", raising=False)
+
+    local_dir = tmp_path / ".flavia"
+    local_dir.mkdir()
+    bots_yaml = local_dir / "bots.yaml"
+    bots_yaml.write_text(
+        textwrap.dedent("""\
+            bots:
+              primary:
+                platform: telegram
+                token: "${YAML_BOT_TOKEN}"
+                default_agent: main
+                access:
+                  allow_all: true
+        """),
+        encoding="utf-8",
+    )
+
+    settings = load_settings()
+
+    first_tg = settings.bot_registry.get_first_telegram_bot()
+    assert first_tg is not None
+    assert first_tg.token == "yaml:secret"
+    assert first_tg.access.allow_all is True
+
+
+def test_empty_bots_yaml_falls_back_to_env(tmp_path, monkeypatch):
+    """bots: {} in YAML should trigger env-var fallback."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "env:tok")
+    monkeypatch.delenv("TELEGRAM_ALLOWED_USER_IDS", raising=False)
+    monkeypatch.delenv("TELEGRAM_ALLOW_ALL_USERS", raising=False)
+
+    local_dir = tmp_path / ".flavia"
+    local_dir.mkdir()
+    (local_dir / "bots.yaml").write_text("bots: {}\n", encoding="utf-8")
+
+    settings = load_settings()
+
+    first_tg = settings.bot_registry.get_first_telegram_bot()
+    assert first_tg is not None
+    assert first_tg.token == "env:tok"

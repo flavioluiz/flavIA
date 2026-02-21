@@ -725,7 +725,7 @@ def main() -> int:
         _ensure_default_connection_checked_once(settings)
         from flavia.interfaces import run_telegram_bot
 
-        run_telegram_bot(settings)
+        run_telegram_bot(settings, bot_config=settings.bot_registry.get_first_telegram_bot())
     else:
         _ensure_default_connection_checked_once(settings)
         from flavia.interfaces import run_cli

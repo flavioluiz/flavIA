@@ -56,7 +56,9 @@ class _CompactAgent:
 def _make_bot() -> TelegramBot:
     bot = TelegramBot.__new__(TelegramBot)
     bot.settings = Settings(telegram_allow_all_users=True)
+    bot.bot_config = None
     bot.agents = {}
+    bot._user_agents = {}
     return bot
 
 

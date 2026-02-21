@@ -23,7 +23,96 @@ The wizard guides you through:
    - Search for `@userinfobot` on Telegram
    - Send any message to get your ID
 
-## Manual configuration
+## YAML configuration (recommended)
+
+For richer control, use `.flavia/bots.yaml` (created automatically by `--setup-telegram` or `--init`):
+
+```yaml
+bots:
+  default:
+    platform: telegram
+    token: "${TELEGRAM_BOT_TOKEN}"   # references .env secret
+    default_agent: main
+    allowed_agents: all              # or a list: [main, researcher]
+    access:
+      allowed_users: [123456789]     # restrict to these user IDs
+      allow_all: false               # true = public bot
+```
+
+The token secret stays in `.env`; structural config lives in `bots.yaml`.
+
+### Multi-bot example
+
+```yaml
+bots:
+  research-bot:
+    platform: telegram
+    token: "${RESEARCH_BOT_TOKEN}"
+    default_agent: researcher
+    allowed_agents: [researcher, summarizer]
+    access:
+      allowed_users: [111111111, 222222222]
+      allow_all: false
+
+  public-bot:
+    platform: telegram
+    token: "${PUBLIC_BOT_TOKEN}"
+    default_agent: main
+    allowed_agents: all
+    access:
+      allow_all: true
+```
+
+## Bot commands
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Show welcome message and your Telegram user/chat IDs |
+| `/help` | Show all available commands |
+| `/whoami` | Show your user ID and chat ID |
+| `/reset` | Reset your conversation context (keeps current agent) |
+| `/compact` | Summarize and compact the conversation context |
+| `/agents` | List available agents for this bot |
+| `/agent <name>` | Switch to a different agent (resets conversation history) |
+
+### Agent switching examples
+
+```
+/agents
+# Available agents:
+# - main (active)
+# - researcher
+
+/agent researcher
+# Switched to agent 'researcher'. Conversation has been reset.
+
+/agent secret
+# Agent 'secret' is not allowed for this bot. Allowed: main, researcher
+
+/agent ghost
+# Unknown agent 'ghost'. Available: main, researcher
+```
+
+### `allowed_agents`
+
+Controls which agents a bot's users can switch to via `/agent <name>`:
+
+- `all` (default, or omit the field): no restriction
+- `[main, researcher]`: only those agent names are permitted
+
+### Backward compatibility
+
+If `bots.yaml` is absent or has `bots: {}`, flavIA falls back to the legacy environment variables:
+
+```bash
+TELEGRAM_BOT_TOKEN=123456789:ABCdefGHI...
+TELEGRAM_ALLOWED_USER_IDS=123456789,987654321
+TELEGRAM_ALLOW_ALL_USERS=true
+```
+
+Existing setups continue to work without any changes.
+
+## Manual configuration (legacy)
 
 In `.flavia/.env`:
 

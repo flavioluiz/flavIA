@@ -1,0 +1,41 @@
+# flavIA Default Bot Configuration
+#
+# This file ships with the package and serves as documentation.
+# An empty 'bots' section triggers env-var fallback (TELEGRAM_BOT_TOKEN etc.)
+#
+# To configure a Telegram bot, either:
+#   1. Run 'flavia --setup-telegram' (recommended)
+#   2. Copy this template to .flavia/bots.yaml and uncomment/edit the example
+#
+# Schema:
+#   bots:
+#     <bot-id>:
+#       platform: telegram
+#       token: "${TELEGRAM_BOT_TOKEN}"   # ${VAR} → reads from environment
+#       default_agent: main
+#       allowed_agents: [main, researcher]  # or "all" (default: all allowed)
+#       access:
+#         allowed_users: [123456789]     # Telegram user IDs
+#         allow_all: false               # true = public bot (no whitelist)
+#
+# Multi-bot example:
+#   bots:
+#     research-bot:
+#       platform: telegram
+#       token: "${RESEARCH_BOT_TOKEN}"
+#       default_agent: researcher
+#       allowed_agents: [researcher, summarizer]
+#       access:
+#         allowed_users: [111111111, 222222222]
+#         allow_all: false
+#
+#     public-bot:
+#       platform: telegram
+#       token: "${PUBLIC_BOT_TOKEN}"
+#       default_agent: main
+#       allowed_agents: all
+#       access:
+#         allow_all: true
+
+# Empty registry — falls back to TELEGRAM_BOT_TOKEN env var
+bots: {}

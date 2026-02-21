@@ -16,6 +16,13 @@ from .providers import (
     create_fallback_provider,
     merge_providers,
 )
+from .bots import (
+    BotConfig,
+    BotRegistry,
+    load_bots_from_file,
+    create_fallback_telegram_bot,
+    merge_bot_registries,
+)
 
 
 @dataclass
@@ -114,6 +121,9 @@ class Settings:
 
     # Provider registry (new multi-provider system)
     providers: ProviderRegistry = field(default_factory=ProviderRegistry)
+
+    # Bot registry (new multi-bot system)
+    bot_registry: BotRegistry = field(default_factory=BotRegistry)
 
     def get_model_by_index(self, index: int) -> Optional[ModelConfig]:
         """Get model by index."""
@@ -239,6 +249,38 @@ def load_providers(paths: ConfigPaths) -> ProviderRegistry:
     return merge_providers(*registries)
 
 
+def load_bots(paths: ConfigPaths) -> BotRegistry:
+    """
+    Load bot configs from all config locations and merge them.
+
+    Priority (later takes precedence):
+    1. Package defaults
+    2. User config
+    3. Local config
+    """
+    registries: list[BotRegistry] = []
+
+    if paths.package_dir:
+        package_bots = paths.package_dir / "bots.yaml"
+        if package_bots.exists():
+            registries.append(load_bots_from_file(package_bots))
+
+    if paths.user_dir:
+        user_bots = paths.user_dir / "bots.yaml"
+        if user_bots.exists():
+            registries.append(load_bots_from_file(user_bots))
+
+    if paths.local_dir:
+        local_bots = paths.local_dir / "bots.yaml"
+        if local_bots.exists():
+            registries.append(load_bots_from_file(local_bots))
+
+    if not registries:
+        return BotRegistry()
+
+    return merge_bot_registries(*registries)
+
+
 def load_settings() -> Settings:
     """
     Load settings from all configuration sources.
@@ -280,6 +322,9 @@ def load_settings() -> Settings:
     # Load providers from providers.yaml (new multi-provider system)
     providers = load_providers(paths)
 
+    # Load bots from bots.yaml (new multi-bot system)
+    bot_registry = load_bots(paths)
+
     # Get API settings - prefer from providers if available
     api_key = os.getenv("SYNTHETIC_API_KEY", "")
     api_base_url = os.getenv("API_BASE_URL", "https://api.synthetic.new/openai/v1")
@@ -288,6 +333,24 @@ def load_settings() -> Settings:
     image_vision_model = os.getenv("IMAGE_VISION_MODEL", "").strip() or None
     compact_threshold, compact_threshold_configured = _load_compact_threshold_from_env()
     rag_debug = _load_bool_env("RAG_DEBUG", default=False)
+
+    # If no bots loaded but TELEGRAM_BOT_TOKEN exists, create fallback bot
+    tg_token_env = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    if not bot_registry.get_telegram_bots() and tg_token_env:
+        fallback_bot = create_fallback_telegram_bot(tg_token_env, allowed_users, allow_all_users)
+        bot_registry = BotRegistry(bots={"default": fallback_bot})
+
+    # Sync first telegram bot values into legacy fields
+    first_tg_bot = bot_registry.get_first_telegram_bot()
+    if first_tg_bot:
+        tg_token_env = first_tg_bot.token or tg_token_env
+        if first_tg_bot.access.whitelist_configured:
+            allowed_users = first_tg_bot.access.allowed_users
+            allow_all_users = first_tg_bot.access.allow_all
+            whitelist_configured = True
+        elif first_tg_bot.access.allow_all:
+            allow_all_users = True
+            whitelist_configured = False
 
     # If no providers loaded but we have env vars, create fallback provider
     if not providers.providers and api_key:
@@ -316,11 +379,12 @@ def load_settings() -> Settings:
         compact_threshold=compact_threshold,
         compact_threshold_configured=compact_threshold_configured,
         parallel_workers=int(os.getenv("AGENT_PARALLEL_WORKERS", "4")),
-        telegram_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
+        telegram_token=tg_token_env,
         telegram_allowed_users=allowed_users,
         telegram_allow_all_users=allow_all_users,
         telegram_whitelist_configured=whitelist_configured,
         providers=providers,
+        bot_registry=bot_registry,
         status_max_tasks_main=int(os.getenv("STATUS_MAX_TASKS_MAIN", "-1")),
         status_max_tasks_subagent=int(os.getenv("STATUS_MAX_TASKS_SUBAGENT", "-1")),
         rag_debug=rag_debug,

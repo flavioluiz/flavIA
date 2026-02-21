@@ -9,6 +9,7 @@ from .providers import (
     load_providers_from_file,
     expand_env_vars,
 )
+from .bots import BotConfig, BotRegistry, BotAccessConfig
 
 __all__ = [
     "Settings",
@@ -22,4 +23,7 @@ __all__ = [
     "ProviderModelConfig",
     "load_providers_from_file",
     "expand_env_vars",
+    "BotConfig",
+    "BotRegistry",
+    "BotAccessConfig",
 ]

@@ -1,8 +1,10 @@
 """Telegram bot interface for flavIA."""
 
 import logging
+from typing import Optional
 
 from flavia.config import Settings
+from flavia.config.bots import BotConfig
 from flavia.agent import RecursiveAgent, AgentProfile
 
 logger = logging.getLogger(__name__)
@@ -57,9 +59,11 @@ def _configure_logging() -> None:
 class TelegramBot:
     """Telegram bot wrapper for flavIA agent."""
 
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, bot_config: Optional[BotConfig] = None):
         self.settings = settings
+        self.bot_config = bot_config
         self.agents: dict[int, RecursiveAgent] = {}
+        self._user_agents: dict[int, str] = {}  # user_id → agent name override
 
         try:
             from telegram import Update
@@ -80,11 +84,33 @@ class TelegramBot:
             self.telegram_available = False
             logger.error("python-telegram-bot not installed. Run: pip install 'flavia[telegram]'")
 
+    @property
+    def _token(self) -> str:
+        """Bot token: prefer bot_config over legacy settings."""
+        if self.bot_config and self.bot_config.token:
+            return self.bot_config.token
+        return self.settings.telegram_token
+
+    @property
+    def _default_agent_name(self) -> str:
+        """Default agent name: prefer bot_config over hardcoded 'main'."""
+        if self.bot_config:
+            return self.bot_config.default_agent
+        return "main"
+
+    def _available_agents(self) -> list[str]:
+        """Return agent names this bot permits, filtered by allowed_agents."""
+        all_names = list(self.settings.agents_config.keys())
+        if self.bot_config and self.bot_config.allowed_agents is not None:
+            return [a for a in self.bot_config.allowed_agents if a in all_names]
+        return all_names
+
     def _get_or_create_agent(self, user_id: int) -> RecursiveAgent:
         """Get or create an agent for a user."""
         if user_id not in self.agents:
-            if "main" in self.settings.agents_config:
-                config = self.settings.agents_config["main"]
+            agent_name = self._user_agents.get(user_id, self._default_agent_name)
+            if agent_name in self.settings.agents_config:
+                config = self.settings.agents_config[agent_name]
                 profile = AgentProfile.from_config(config)
                 if "path" not in config:
                     profile.base_dir = self.settings.base_dir
@@ -95,7 +121,7 @@ class TelegramBot:
                     base_dir=self.settings.base_dir,
                     tools=["read_file", "list_files", "search_files", "get_file_info"],
                     subagents={},
-                    name="main",
+                    name=agent_name,
                     max_depth=self.settings.max_depth,
                 )
 
@@ -109,6 +135,16 @@ class TelegramBot:
 
     def _is_authorized(self, user_id: int) -> bool:
         """Check if user is authorized."""
+        if self.bot_config:
+            access = self.bot_config.access
+            if access.allow_all:
+                return True
+            if access.allowed_users:
+                return user_id in access.allowed_users
+            if access.whitelist_configured:
+                return False
+            # No whitelist configured in bot_config: fall through to legacy
+        # Legacy settings
         if self.settings.telegram_allow_all_users:
             return True
         if self.settings.telegram_allowed_users:
@@ -127,7 +163,9 @@ class TelegramBot:
             "/help - Show this help\n"
             "/whoami - Show your Telegram user/chat IDs\n"
             "/reset - Reset your conversation context\n"
-            "/compact - Summarize and compact conversation context\n\n"
+            "/compact - Summarize and compact conversation context\n"
+            "/agents - List available agents\n"
+            "/agent <name> - Switch to a different agent (resets conversation)\n\n"
             "Capabilities:\n"
             "- Reading and analyzing files\n"
             "- Searching content\n"
@@ -263,6 +301,71 @@ class TelegramBot:
             self._log_event(update, "compact:error", str(e)[:200])
             await update.message.reply_text(f"Compaction failed: {str(e)[:200]}")
 
+    async def _agents_command(self, update, context) -> None:
+        """Handle /agents command — list available agents."""
+        self._log_event(update, "command:/agents")
+        user_id = update.effective_user.id
+
+        if not self._is_authorized(user_id):
+            return
+
+        available = self._available_agents()
+        if not available:
+            await update.message.reply_text("No agents configured in agents.yaml.")
+            return
+
+        current = self._user_agents.get(user_id, self._default_agent_name)
+        lines = []
+        for name in available:
+            marker = " (active)" if name == current else ""
+            lines.append(f"- {name}{marker}")
+        await update.message.reply_text("Available agents:\n" + "\n".join(lines))
+
+    async def _agent_command(self, update, context) -> None:
+        """Handle /agent [name] command — show or switch active agent."""
+        self._log_event(update, "command:/agent")
+        user_id = update.effective_user.id
+
+        if not self._is_authorized(user_id):
+            return
+
+        args = (context.args or []) if context else []
+        current = self._user_agents.get(user_id, self._default_agent_name)
+
+        if not args:
+            await update.message.reply_text(f"Current agent: {current}")
+            return
+
+        name = args[0]
+
+        if name not in self.settings.agents_config:
+            available = self._available_agents()
+            available_str = ", ".join(available) if available else "(none)"
+            await update.message.reply_text(
+                f"Unknown agent '{name}'. Available: {available_str}"
+            )
+            return
+
+        if self.bot_config and not self.bot_config.is_agent_allowed(name):
+            allowed = self.bot_config.allowed_agents or []
+            allowed_str = ", ".join(allowed) if allowed else "(none)"
+            await update.message.reply_text(
+                f"Agent '{name}' is not allowed for this bot. Allowed: {allowed_str}"
+            )
+            return
+
+        if name == current:
+            await update.message.reply_text(f"Already using agent '{name}'.")
+            return
+
+        self._user_agents[user_id] = name
+        if user_id in self.agents:
+            del self.agents[user_id]
+
+        await update.message.reply_text(
+            f"Switched to agent '{name}'. Conversation has been reset."
+        )
+
     async def _handle_message(self, update, context) -> None:
         """Handle regular text messages."""
         user_id = update.effective_user.id
@@ -315,18 +418,30 @@ class TelegramBot:
             logger.error("Cannot run: python-telegram-bot not installed")
             return
 
-        if not self.settings.telegram_token:
+        token = self._token
+        if not token:
             logger.error("TELEGRAM_BOT_TOKEN not set")
             return
 
-        if self.settings.telegram_allow_all_users:
+        # Determine effective access settings for logging
+        if self.bot_config:
+            access = self.bot_config.access
+            _allow_all = access.allow_all
+            _allowed_users = access.allowed_users
+            _whitelist_configured = access.whitelist_configured
+        else:
+            _allow_all = self.settings.telegram_allow_all_users
+            _allowed_users = self.settings.telegram_allowed_users
+            _whitelist_configured = self.settings.telegram_whitelist_configured
+
+        if _allow_all:
             logger.warning("Telegram bot is running in PUBLIC mode (no whitelist).")
-        elif self.settings.telegram_allowed_users:
+        elif _allowed_users:
             logger.info(
                 "Telegram whitelist enabled for %d user(s).",
-                len(self.settings.telegram_allowed_users),
+                len(_allowed_users),
             )
-        elif self.settings.telegram_whitelist_configured:
+        elif _whitelist_configured:
             logger.error(
                 "TELEGRAM_ALLOWED_USER_IDS was set but no valid IDs were parsed. "
                 "All users will be denied."
@@ -339,13 +454,15 @@ class TelegramBot:
 
         logger.info("Starting Telegram bot...")
 
-        app = self.Application.builder().token(self.settings.telegram_token).build()
+        app = self.Application.builder().token(token).build()
 
         app.add_handler(self.CommandHandler("start", self._start_command))
         app.add_handler(self.CommandHandler("reset", self._reset_command))
         app.add_handler(self.CommandHandler("help", self._help_command))
         app.add_handler(self.CommandHandler("compact", self._compact_command))
         app.add_handler(self.CommandHandler("whoami", self._whoami_command))
+        app.add_handler(self.CommandHandler("agents", self._agents_command))
+        app.add_handler(self.CommandHandler("agent", self._agent_command))
         app.add_handler(
             self.MessageHandler(self.filters.TEXT & ~self.filters.COMMAND, self._handle_message)
         )
@@ -354,8 +471,8 @@ class TelegramBot:
         app.run_polling(allowed_updates=["message"])
 
 
-def run_telegram_bot(settings: Settings) -> None:
+def run_telegram_bot(settings: Settings, bot_config: Optional[BotConfig] = None) -> None:
     """Run the Telegram bot."""
     _configure_logging()
-    bot = TelegramBot(settings)
+    bot = TelegramBot(settings, bot_config=bot_config)
     bot.run()

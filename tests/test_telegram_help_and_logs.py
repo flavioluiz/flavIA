@@ -7,7 +7,9 @@ from flavia.interfaces.telegram_interface import TelegramBot
 def _make_bot() -> TelegramBot:
     bot = TelegramBot.__new__(TelegramBot)
     bot.settings = Settings()
+    bot.bot_config = None
     bot.agents = {}
+    bot._user_agents = {}
     return bot
 
 

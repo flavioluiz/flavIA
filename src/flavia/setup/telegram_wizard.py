@@ -107,6 +107,64 @@ def test_bot_token(token: str) -> tuple[bool, str]:
         return False, f"Connection error: {str(e).replace(token, '***')}"
 
 
+def _write_bots_yaml(
+    config_dir: Path,
+    bot_name: str,
+    user_ids: list[int],
+    allow_all: bool,
+) -> Path:
+    """
+    Write or update a bot entry in bots.yaml.
+
+    The token is referenced via ${TELEGRAM_BOT_TOKEN} to keep secrets in .env.
+    Structural config (access control, agent) lives in bots.yaml.
+
+    Args:
+        config_dir: Directory where bots.yaml resides
+        bot_name: Bot ID key in the YAML
+        user_ids: List of allowed Telegram user IDs (empty = unrestricted if allow_all)
+        allow_all: True for public access
+
+    Returns:
+        Path to the written bots.yaml
+    """
+    import yaml
+
+    bots_path = config_dir / "bots.yaml"
+
+    # Load existing or start fresh
+    if bots_path.exists():
+        try:
+            existing = yaml.safe_load(bots_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            existing = {}
+    else:
+        existing = {}
+
+    bots_section = existing.get("bots") or {}
+
+    bots_section[bot_name] = {
+        "platform": "telegram",
+        "token": "${TELEGRAM_BOT_TOKEN}",
+        "default_agent": "main",
+        "allowed_agents": "all",
+        "access": {
+            "allowed_users": user_ids,
+            "allow_all": allow_all,
+        },
+    }
+
+    existing["bots"] = bots_section
+
+    header = (
+        "# flavIA Bot Configuration\n"
+        "# Token secrets stay in .env; structural config lives here.\n"
+        "# See 'flavia --init' for full schema documentation.\n\n"
+    )
+    bots_path.write_text(header + yaml.dump(existing, default_flow_style=False), encoding="utf-8")
+    return bots_path
+
+
 def _get_config_file_path(location: str, target_dir: Optional[Path] = None) -> Path:
     """Get the path to the .env file based on location preference."""
     if location == "global":
@@ -296,6 +354,11 @@ def run_telegram_wizard(target_dir: Optional[Path] = None) -> bool:
             console.print("[yellow]Setup cancelled.[/yellow]")
             return False
 
+    # Ask for bot name
+    console.print("\n[bold]Bot Name[/bold]")
+    console.print("[dim]Used as an identifier in bots.yaml (e.g., 'default', 'research-bot')[/dim]")
+    bot_name = safe_prompt("Enter bot name", default="default").strip() or "default"
+
     # Select save location
     console.print("\n[bold]Where to save configuration?[/bold]")
     console.print("  [1] Local (.flavia/.env) - Project-specific")
@@ -304,7 +367,7 @@ def run_telegram_wizard(target_dir: Optional[Path] = None) -> bool:
     choice = safe_prompt("Enter number", default="1")
     location = "global" if choice == "2" else "local"
 
-    # Prepare updates
+    # Prepare .env updates (token secret stays here)
     updates: dict[str, Optional[str]] = {
         "TELEGRAM_BOT_TOKEN": token,
     }
@@ -316,14 +379,20 @@ def run_telegram_wizard(target_dir: Optional[Path] = None) -> bool:
         updates["TELEGRAM_ALLOW_ALL_USERS"] = "true"
         updates["TELEGRAM_ALLOWED_USER_IDS"] = None  # Comment out if present
 
-    # Save configuration
+    # Save .env configuration (keeps legacy env vars for backward compat)
     env_path = _get_config_file_path(location, target_dir)
     _update_env_file(env_path, updates)
+
+    # Save bots.yaml (structural config with ${TELEGRAM_BOT_TOKEN} reference)
+    config_dir = env_path.parent
+    bots_path = _write_bots_yaml(config_dir, bot_name, user_ids, allow_all)
 
     console.print(
         Panel.fit(
             "[bold green]Telegram bot configured![/bold green]\n\n"
-            f"Saved to: [cyan]{env_path}[/cyan]\n\n"
+            f"Token saved to: [cyan]{env_path}[/cyan]\n"
+            f"Bot config saved to: [cyan]{bots_path}[/cyan]\n\n"
+            f"Bot name: [bold]{bot_name}[/bold]\n"
             f"Access: {'Restricted to ' + str(len(user_ids)) + ' user(s)' if user_ids else '[yellow]Public[/yellow]'}\n\n"
             "[bold]To start the bot:[/bold]\n"
             "  flavia --telegram",

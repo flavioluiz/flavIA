@@ -25,6 +25,7 @@ class ConfigPaths:
     models_file: Optional[Path] = None
     agents_file: Optional[Path] = None
     providers_file: Optional[Path] = None
+    bots_file: Optional[Path] = None
 
     def __post_init__(self):
         """Resolve file paths from directories."""
@@ -33,6 +34,7 @@ class ConfigPaths:
         self.models_file = self._find_file("models.yaml")
         self.agents_file = self._find_file("agents.yaml")
         self.providers_file = self._find_file("providers.yaml")
+        self.bots_file = self._find_file("bots.yaml")
 
     def _find_file(self, filename: str) -> Optional[Path]:
         """Find a config file in priority order."""
@@ -254,6 +256,39 @@ main:
 """
         (config_dir / "agents.yaml").write_text(agents_content)
 
+        # Create bots.yaml (commented-out example; empty bots falls back to env vars)
+        bots_content = """\
+# flavIA Bot Configuration
+# Uncomment and edit to enable YAML-based bot config.
+# Token secrets stay in .env; structural config lives here.
+#
+# Schema:
+#   bots:
+#     <bot-id>:
+#       platform: telegram
+#       token: "${TELEGRAM_BOT_TOKEN}"
+#       default_agent: main
+#       allowed_agents: [main, researcher]  # or "all" (default)
+#       access:
+#         allowed_users: [123456789]
+#         allow_all: false
+#
+# Example (uncomment to activate):
+# bots:
+#   default:
+#     platform: telegram
+#     token: "${TELEGRAM_BOT_TOKEN}"
+#     default_agent: main
+#     allowed_agents: all
+#     access:
+#       allowed_users: []
+#       allow_all: false
+
+# Empty registry — falls back to TELEGRAM_BOT_TOKEN env var
+bots: {}
+"""
+        (config_dir / "bots.yaml").write_text(bots_content)
+
         # Create .gitignore for the config dir
         gitignore_content = """\
 # Ignore sensitive files
@@ -269,6 +304,7 @@ file_backups/
         print(f"  {config_dir}/.env          - API keys and settings")
         print(f"  {config_dir}/models.yaml   - Available models")
         print(f"  {config_dir}/agents.yaml   - Agent definitions")
+        print(f"  {config_dir}/bots.yaml     - Telegram/bot configuration")
         print(f"\nNext steps:")
         print(f"  1. Edit {config_dir}/.env and add your API key")
         print(f"  2. Run 'flavia' to start the CLI")

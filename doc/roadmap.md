@@ -39,7 +39,7 @@ flavIA e um assistente de pesquisa academica baseado em LLM, projetado para tran
 |--------|------|-------------|-------|
 | **10.1** Structured Agent Responses | Telegram | Medium | Habilita acoes alem de texto (envio de arquivos) |
 | **10.3** Telegram File Delivery Handler | Telegram | Medium | Entrega de arquivos no chat |
-| **3.1** YAML Bot Configuration | Messaging | Medium | Base para multi-bot e per-conversation agents |
+| **3.3** Multi-Bot Support | Messaging | Medium | Suportar multiplos bots do Telegram em paralelo |
 | **9.7** BibTeX Reference Management | Pesquisa | Medium | Fecha o ciclo de citacoes e referencias no fluxo academico |
 
 ---
@@ -62,14 +62,14 @@ Redesenho do sistema de configuracao de agentes para definicoes mais ricas e man
 
 Transformar a integracao Telegram em um framework multi-plataforma.
 
-| ID | Tarefa | Dificuldade | Dependencias |
-|----|--------|-------------|--------------|
-| 3.1 | YAML Bot Configuration | Medium | — |
-| 3.2 | Per-Conversation Agents | Medium | 3.1 |
-| 3.3 | Multi-Bot Support | Medium | 3.1, 3.2 |
-| 3.4 | Abstract Messaging Interface | Hard | 3.1, 3.2 |
-| 3.5 | WhatsApp Integration | Hard | 3.4 |
-| 3.6 | Web API Interface | Medium | 3.4 |
+| ID | Tarefa | Dificuldade | Dependencias | Status |
+|----|--------|-------------|--------------|--------|
+| 3.1 | YAML Bot Configuration | Medium | — | ✅ DONE |
+| 3.2 | Per-Conversation Agents | Medium | 3.1 | ✅ DONE |
+| 3.3 | Multi-Bot Support | Medium | 3.1, 3.2 | |
+| 3.4 | Abstract Messaging Interface | Hard | 3.1, 3.2 | |
+| 3.5 | WhatsApp Integration | Hard | 3.4 | |
+| 3.6 | Web API Interface | Medium | 3.4 | |
 
 ---
 
@@ -144,10 +144,10 @@ Area 2 -- Agent System:
                               └── 2.3 (Meta-Agent)
 
 Area 3 -- Messaging Platforms:
-  3.1 (YAML Bot Config) ──┬── 3.2 (Per-Conv Agent)
-                          ├── 3.3 (Multi-Bot)
-                          └── 3.4 (Abstract Interface) ──┬── 3.5 (WhatsApp)
-                                                         └── 3.6 (Web API)
+  3.1 (YAML Bot Config) ✅ ──┬── 3.2 (Per-Conv Agent) ✅
+                             ├── 3.3 (Multi-Bot)
+                             └── 3.4 (Abstract Interface) ──┬── 3.5 (WhatsApp)
+                                                            └── 3.6 (Web API)
 
 Area 4 -- CLI:
   4.5 (Standard Default Agent) ── (independente)
@@ -180,10 +180,10 @@ Area 10 -- Telegram File Delivery:
 
 | Metrica | Valor |
 |---------|-------|
-| Tarefas pendentes | 24 |
+| Tarefas pendentes | 22 |
 | Areas ativas | 7 |
 | Easy | 2 pendentes |
-| Medium | 14 pendentes |
+| Medium | 12 pendentes |
 | Hard | 8 pendentes |
 
 ---
