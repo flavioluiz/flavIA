@@ -7,6 +7,7 @@ from ._conversion_helpers import (
     load_catalog_with_permissions,
     resolve_and_find_entry,
     convert_and_update_catalog,
+    parse_bool_arg,
 )
 
 if TYPE_CHECKING:
@@ -53,7 +54,7 @@ class ConvertPdfTool(BaseTool):
         if not path_str:
             return "Error: path is required"
 
-        use_ocr = bool(args.get("use_ocr", False))
+        use_ocr = parse_bool_arg(args.get("use_ocr"), default=False)
 
         catalog, config_dir, converted_dir, base_dir, err = load_catalog_with_permissions(
             agent_context

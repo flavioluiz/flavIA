@@ -9,6 +9,7 @@ Dependencies (optional extras -- ``pip install 'flavia[online]'``):
 """
 
 import hashlib
+import ipaddress
 import logging
 import re
 from datetime import datetime
@@ -238,6 +239,32 @@ class WebPageConverter(OnlineSourceConverter):
         Returns:
             HTML string, or None on failure.
         """
+        parsed = urlparse(url)
+        hostname = (parsed.hostname or "").strip().lower()
+        if not hostname:
+            logger.error("Invalid URL: missing hostname")
+            return None
+
+        if hostname in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}:
+            logger.warning("Blocked fetch to local hostname: %s", hostname)
+            return None
+
+        try:
+            host_ip = ipaddress.ip_address(hostname)
+            if (
+                host_ip.is_private
+                or host_ip.is_loopback
+                or host_ip.is_link_local
+                or host_ip.is_reserved
+                or host_ip.is_multicast
+                or host_ip.is_unspecified
+            ):
+                logger.warning("Blocked fetch to non-public IP address: %s", hostname)
+                return None
+        except ValueError:
+            # Non-IP hostnames are allowed.
+            pass
+
         try:
             import httpx
         except ImportError:

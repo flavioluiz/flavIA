@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import httpx
 
 from flavia.content.converters.online import (
     OnlineSourceConverter,
@@ -249,6 +250,30 @@ class TestWebPageConverter:
         assert not converter.can_handle_source("ftp://example.com")
         assert not converter.can_handle_source("file:///path/to/file")
         assert not converter.can_handle_source("/local/path")
+
+    def test_fetch_html_blocks_localhost(self, monkeypatch):
+        """Fetching localhost URLs is blocked before any network request."""
+        converter = WebPageConverter()
+
+        class _NoNetworkClient:
+            def __init__(self, *args, **kwargs):
+                raise AssertionError("httpx.Client should not be instantiated")
+
+        monkeypatch.setattr(httpx, "Client", _NoNetworkClient)
+
+        assert converter._fetch_html("http://localhost:8000/private") is None
+
+    def test_fetch_html_blocks_private_ip(self, monkeypatch):
+        """Fetching private/link-local IP URLs is blocked before network request."""
+        converter = WebPageConverter()
+
+        class _NoNetworkClient:
+            def __init__(self, *args, **kwargs):
+                raise AssertionError("httpx.Client should not be instantiated")
+
+        monkeypatch.setattr(httpx, "Client", _NoNetworkClient)
+
+        assert converter._fetch_html("http://169.254.169.254/latest/meta-data") is None
 
     def test_get_metadata_returns_source_info(self):
         """Get metadata returns source type and URL."""

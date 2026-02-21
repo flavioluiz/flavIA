@@ -80,6 +80,8 @@ class FetchOnlineSourceTool(BaseTool):
                     f"URL may be unsupported or source_type is invalid. "
                     f"Try specifying source_type explicitly ('youtube' or 'webpage')."
                 )
+            # Persist registration even if fetch exits early (e.g., missing deps).
+            catalog.save(config_dir)
 
         converter = converter_registry.get_for_source(entry.source_type)
         if converter is None:

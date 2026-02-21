@@ -140,3 +140,18 @@ def convert_and_update_catalog(
         catalog.save(config_dir)
 
     return rel_converted, None
+
+
+def parse_bool_arg(value: Any, default: bool = False) -> bool:
+    """Coerce common boolean-like values from tool args safely."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "n", "off", ""}:
+            return False
+    return bool(value)

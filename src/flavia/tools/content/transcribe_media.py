@@ -8,6 +8,7 @@ from ._conversion_helpers import (
     load_catalog_with_permissions,
     resolve_and_find_entry,
     convert_and_update_catalog,
+    parse_bool_arg,
 )
 
 if TYPE_CHECKING:
@@ -58,7 +59,7 @@ class TranscribeMediaTool(BaseTool):
         if not path_str:
             return "Error: path is required"
 
-        extract_frames = bool(args.get("extract_frames", False))
+        extract_frames = parse_bool_arg(args.get("extract_frames"), default=False)
 
         catalog, config_dir, converted_dir, base_dir, err = load_catalog_with_permissions(
             agent_context
