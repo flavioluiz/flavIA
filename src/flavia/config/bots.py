@@ -14,11 +14,13 @@ class BotAccessConfig:
 
     allowed_users: list[int] = field(default_factory=list)
     allow_all: bool = False
+    # True when access.allowed_users is explicitly configured in YAML/env.
+    allowed_users_configured: bool = False
 
     @property
     def whitelist_configured(self) -> bool:
         """True if an explicit user whitelist was provided."""
-        return bool(self.allowed_users)
+        return self.allowed_users_configured or bool(self.allowed_users)
 
 
 @dataclass
@@ -81,21 +83,59 @@ def _parse_allowed_agents(value: Any) -> Optional[list[str]]:
     return None
 
 
+def _parse_allowed_users(value: Any) -> list[int]:
+    """Parse allowed_users into a list[int], skipping invalid entries."""
+    if value is None:
+        return []
+
+    if isinstance(value, (list, tuple, set)):
+        items = value
+    else:
+        items = [value]
+
+    parsed: list[int] = []
+    for item in items:
+        try:
+            parsed.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    return parsed
+
+
+def _parse_bool(value: Any, default: bool = False) -> bool:
+    """Parse boolean values safely from YAML-friendly inputs."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off"}:
+            return False
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return default
+
+
 def load_bot_config(data: dict[str, Any], bot_id: str) -> BotConfig:
     """Load a single bot configuration from parsed YAML data."""
-    platform = data.get("platform", "telegram")
-    token_raw = data.get("token", "")
+    platform = str(data.get("platform", "telegram"))
+    token_raw = str(data.get("token", ""))
     token, token_env_var = expand_env_vars(token_raw)
-    default_agent = data.get("default_agent", "main")
+    default_agent = str(data.get("default_agent", "main"))
     allowed_agents = _parse_allowed_agents(data.get("allowed_agents"))
 
     access_data = data.get("access", {})
-    allowed_users_raw = access_data.get("allowed_users", [])
-    # Ensure all user IDs are ints
-    allowed_users = [int(u) for u in allowed_users_raw if u is not None]
+    if not isinstance(access_data, dict):
+        access_data = {}
+    allowed_users_configured = "allowed_users" in access_data
+    allowed_users_raw = access_data.get("allowed_users")
+    allowed_users = _parse_allowed_users(allowed_users_raw)
     access = BotAccessConfig(
         allowed_users=allowed_users,
-        allow_all=bool(access_data.get("allow_all", False)),
+        allow_all=_parse_bool(access_data.get("allow_all", False), default=False),
+        allowed_users_configured=allowed_users_configured,
     )
 
     return BotConfig(
@@ -128,10 +168,21 @@ def load_bots_from_file(file_path: Path) -> BotRegistry:
     except Exception:
         return BotRegistry()
 
+    if not isinstance(data, dict):
+        return BotRegistry()
+
+    bots_data = data.get("bots") or {}
+    if not isinstance(bots_data, dict):
+        return BotRegistry()
+
     bots: dict[str, BotConfig] = {}
-    for bot_id, bot_data in (data.get("bots") or {}).items():
-        if isinstance(bot_data, dict):
-            bots[bot_id] = load_bot_config(bot_data, bot_id)
+    for bot_id, bot_data in bots_data.items():
+        if not isinstance(bot_data, dict):
+            continue
+        try:
+            bots[str(bot_id)] = load_bot_config(bot_data, str(bot_id))
+        except Exception:
+            continue
 
     return BotRegistry(bots=bots)
 
@@ -140,6 +191,7 @@ def create_fallback_telegram_bot(
     token: str,
     allowed_users: list[int],
     allow_all: bool,
+    whitelist_configured: bool = False,
 ) -> BotConfig:
     """
     Create a BotConfig from legacy environment variables.
@@ -156,6 +208,7 @@ def create_fallback_telegram_bot(
         access=BotAccessConfig(
             allowed_users=allowed_users,
             allow_all=allow_all,
+            allowed_users_configured=whitelist_configured,
         ),
     )
 

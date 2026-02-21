@@ -281,7 +281,7 @@ main:
 #     default_agent: main
 #     allowed_agents: all
 #     access:
-#       allowed_users: []
+#       allowed_users: [123456789]
 #       allow_all: false
 
 # Empty registry — falls back to TELEGRAM_BOT_TOKEN env var

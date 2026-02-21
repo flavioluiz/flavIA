@@ -337,7 +337,12 @@ def load_settings() -> Settings:
     # If no bots loaded but TELEGRAM_BOT_TOKEN exists, create fallback bot
     tg_token_env = os.getenv("TELEGRAM_BOT_TOKEN", "")
     if not bot_registry.get_telegram_bots() and tg_token_env:
-        fallback_bot = create_fallback_telegram_bot(tg_token_env, allowed_users, allow_all_users)
+        fallback_bot = create_fallback_telegram_bot(
+            tg_token_env,
+            allowed_users,
+            allow_all_users,
+            whitelist_configured=whitelist_configured,
+        )
         bot_registry = BotRegistry(bots={"default": fallback_bot})
 
     # Sync first telegram bot values into legacy fields

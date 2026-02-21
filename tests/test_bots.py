@@ -31,6 +31,11 @@ def test_bot_access_config_whitelist_configured_false_when_empty():
     assert access.whitelist_configured is False
 
 
+def test_bot_access_config_whitelist_configured_true_when_explicit_empty():
+    access = BotAccessConfig(allowed_users=[], allowed_users_configured=True)
+    assert access.whitelist_configured is True
+
+
 # ---------------------------------------------------------------------------
 # BotConfig.is_agent_allowed
 # ---------------------------------------------------------------------------
@@ -84,6 +89,21 @@ def test_load_bot_config_with_access():
     assert bot.access.whitelist_configured is True
 
 
+def test_load_bot_config_with_explicit_empty_allowed_users_marks_whitelist():
+    data = {
+        "platform": "telegram",
+        "token": "tok",
+        "access": {
+            "allowed_users": [],
+            "allow_all": False,
+        },
+    }
+    bot = load_bot_config(data, "restricted")
+    assert bot.access.allowed_users == []
+    assert bot.access.allow_all is False
+    assert bot.access.whitelist_configured is True
+
+
 def test_load_bot_config_allowed_agents_list():
     data = {
         "platform": "telegram",
@@ -112,6 +132,44 @@ def test_load_bot_config_env_var_expansion(monkeypatch):
     bot = load_bot_config(data, "env-bot")
     assert bot.token == "999:XYZ"
     assert bot.token_env_var == "MY_BOT_TOKEN"
+
+
+def test_load_bot_config_invalid_allowed_users_is_ignored():
+    data = {
+        "platform": "telegram",
+        "token": "tok",
+        "access": {
+            "allowed_users": ["abc", None, 123],
+            "allow_all": False,
+        },
+    }
+    bot = load_bot_config(data, "b")
+    assert bot.access.allowed_users == [123]
+    assert bot.access.whitelist_configured is True
+
+
+def test_load_bot_config_allow_all_parses_string_false():
+    data = {
+        "platform": "telegram",
+        "token": "tok",
+        "access": {
+            "allow_all": "false",
+        },
+    }
+    bot = load_bot_config(data, "b")
+    assert bot.access.allow_all is False
+
+
+def test_load_bot_config_allow_all_parses_string_true():
+    data = {
+        "platform": "telegram",
+        "token": "tok",
+        "access": {
+            "allow_all": "true",
+        },
+    }
+    bot = load_bot_config(data, "b")
+    assert bot.access.allow_all is True
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +223,46 @@ def test_load_bots_from_file_invalid_yaml(tmp_path):
     assert registry.bots == {}
 
 
+def test_load_bots_from_file_non_mapping_root(tmp_path):
+    bots_file = tmp_path / "bots.yaml"
+    bots_file.write_text("- not-a-dict\n", encoding="utf-8")
+    registry = load_bots_from_file(bots_file)
+    assert registry.bots == {}
+
+
+def test_load_bots_from_file_non_mapping_bots_section(tmp_path):
+    bots_file = tmp_path / "bots.yaml"
+    bots_file.write_text("bots: []\n", encoding="utf-8")
+    registry = load_bots_from_file(bots_file)
+    assert registry.bots == {}
+
+
+def test_load_bots_from_file_skips_invalid_bot_entries(tmp_path):
+    yaml_content = textwrap.dedent("""\
+        bots:
+          valid:
+            platform: telegram
+            token: "123:ABC"
+            access:
+              allowed_users: [100]
+              allow_all: false
+          broken:
+            platform: telegram
+            token: "123:ABC"
+            access:
+              allowed_users: "x,y,z"
+              allow_all: false
+          not-a-dict: "hello"
+    """)
+    bots_file = tmp_path / "bots.yaml"
+    bots_file.write_text(yaml_content, encoding="utf-8")
+    registry = load_bots_from_file(bots_file)
+    assert "valid" in registry.bots
+    assert "broken" in registry.bots
+    assert "not-a-dict" not in registry.bots
+    assert registry.bots["broken"].access.allowed_users == []
+
+
 # ---------------------------------------------------------------------------
 # create_fallback_telegram_bot
 # ---------------------------------------------------------------------------
@@ -186,6 +284,11 @@ def test_create_fallback_telegram_bot_allow_all():
     bot = create_fallback_telegram_bot("tok", [], True)
     assert bot.access.allow_all is True
     assert bot.access.allowed_users == []
+
+
+def test_create_fallback_telegram_bot_whitelist_flag():
+    bot = create_fallback_telegram_bot("tok", [], False, whitelist_configured=True)
+    assert bot.access.whitelist_configured is True
 
 
 # ---------------------------------------------------------------------------

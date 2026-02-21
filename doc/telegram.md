@@ -63,6 +63,9 @@ bots:
       allow_all: true
 ```
 
+Current status: `flavia --telegram` runs the first configured Telegram bot.
+Parallel multi-bot runtime is planned for roadmap task `3.3`.
+
 ## Bot commands
 
 | Command | Description |
@@ -99,6 +102,13 @@ Controls which agents a bot's users can switch to via `/agent <name>`:
 
 - `all` (default, or omit the field): no restriction
 - `[main, researcher]`: only those agent names are permitted
+
+### Access control semantics (`access`)
+
+- `allow_all: true`: public bot
+- `allow_all: false` + `allowed_users: [..]`: only listed users
+- `allow_all: false` + `allowed_users: []`: deny all users (safe default if explicitly set)
+- Omit `allowed_users`: legacy env whitelist rules may still apply for backward compatibility
 
 ### Backward compatibility
 

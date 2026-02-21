@@ -301,3 +301,38 @@ def test_empty_bots_yaml_falls_back_to_env(tmp_path, monkeypatch):
     first_tg = settings.bot_registry.get_first_telegram_bot()
     assert first_tg is not None
     assert first_tg.token == "env:tok"
+
+
+def test_bots_yaml_explicit_empty_whitelist_denies_all(tmp_path, monkeypatch):
+    """Explicit allowed_users: [] should be treated as configured deny-all."""
+    import textwrap
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("TELEGRAM_ALLOWED_USER_IDS", raising=False)
+    monkeypatch.delenv("TELEGRAM_ALLOW_ALL_USERS", raising=False)
+
+    local_dir = tmp_path / ".flavia"
+    local_dir.mkdir()
+    (local_dir / "bots.yaml").write_text(
+        textwrap.dedent("""\
+            bots:
+              secure:
+                platform: telegram
+                token: "mytoken"
+                access:
+                  allowed_users: []
+                  allow_all: false
+        """),
+        encoding="utf-8",
+    )
+
+    settings = load_settings()
+
+    first_tg = settings.bot_registry.get_first_telegram_bot()
+    assert first_tg is not None
+    assert first_tg.access.allowed_users == []
+    assert first_tg.access.whitelist_configured is True
+    assert settings.telegram_allowed_users == []
+    assert settings.telegram_allow_all_users is False
+    assert settings.telegram_whitelist_configured is True
