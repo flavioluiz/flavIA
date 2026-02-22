@@ -54,10 +54,9 @@ bots:
 - Graceful shutdown on Ctrl+C stops all bots
 
 **Testing**:
-- Multiple bots can be started simultaneously
-- Each bot responds independently to messages
-- Bot-specific access control is enforced per bot
-- Graceful shutdown stops all running bots
-- Added 5 tests in `test_bot_runner.py`
+- Unit tests cover bot selection (all vs specific), invalid bot handling, and platform filtering
+- Async runner tests verify exception propagation across concurrent bot tasks
+- Legacy `run_telegram_bot()` entrypoint compatibility is covered
+- CLI regression test ensures Telegram startup failures return non-zero exit code
 
 **New dependencies**: None (uses existing python-telegram-bot)

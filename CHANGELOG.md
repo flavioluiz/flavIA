@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Abstract Messaging Interface (Task 3.4)**: Introduced a reusable messaging bot abstraction:
+  - New `interfaces/base_bot.py` with `BaseMessagingBot`, `BotResponse`, `BotCommand`, and `SendFileAction`
+  - `TelegramBot` now subclasses `BaseMessagingBot` while keeping Telegram-specific API handling
+  - Shared logic now covers access checks, per-user agent lifecycle, command metadata, and message chunking
+  - Regression fixes preserved legacy Telegram behavior (`/whoami` in help and resilient message flow when typing indicator fails)
 - **Multi-Bot Support (Task 3.3)**: Multiple Telegram bot instances can now run simultaneously:
   - New `interfaces/bot_runner.py` module with async bot execution utilities
   - `run_telegram_bots(settings, bot_name=None)` runs all configured bots or a specific one
@@ -15,8 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Each bot instance has independent configuration (token, agent, access control, per-user state)
   - Bots share the same `Settings` object (providers, models, agents.yaml)
   - Uses `asyncio.gather()` for concurrent execution with graceful shutdown on Ctrl+C
-  - Backward compatible: legacy `run_telegram_bot()` still works via `run_telegram_bots(settings, bot_name=None)`
-  - 5 new tests in `tests/test_bot_runner.py`
+  - Backward compatible: legacy `run_telegram_bot()` remains available as the single-bot entrypoint
+  - Runner and CLI regression coverage expanded in `tests/test_bot_runner.py` and `tests/test_provider_regressions.py`
 - **5 Content Conversion Agent Tools (Task 11.1-11.5)**: Complete upload/ingest loop for agents:
   - `add_online_source`: Register URL (YouTube, webpage) in catalog without fetching
   - `fetch_online_source`: Download URL and convert to markdown with auto-registration

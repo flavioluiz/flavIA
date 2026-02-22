@@ -47,8 +47,23 @@ def _is_connect_error(exc: BaseException) -> bool:
 
 
 def _build_telegram_application(bot: TelegramBot, token: str):
-    """Build Telegram application and register handlers."""
-    app = bot.Application.builder().token(token).build()
+    """Build Telegram application and register handlers with isolated httpx client."""
+    # Create isolated httpx client for this bot instance to avoid connection pool sharing
+    # when running multiple bots concurrently
+    from telegram.request import HTTPXRequest
+
+    # Create separate HTTPXRequest instance with its own connection pool
+    httpx_request = HTTPXRequest(
+        connection_pool_size=8,
+        connect_timeout=10.0,
+        read_timeout=60.0,
+        write_timeout=60.0,
+        pool_timeout=5.0,
+    )
+
+    builder = bot.Application.builder().token(token).request(httpx_request)
+
+    app = builder.build()
 
     app.add_handler(bot.CommandHandler("start", bot._start_command))
     app.add_handler(bot.CommandHandler("reset", bot._reset_command))

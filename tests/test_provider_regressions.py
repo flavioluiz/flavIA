@@ -3,6 +3,7 @@
 import argparse
 
 from flavia.cli import apply_args_to_settings, main
+from flavia.config.bots import BotConfig, BotRegistry
 from flavia.config.providers import ModelConfig, ProviderConfig, ProviderRegistry
 from flavia.config.settings import Settings, load_settings
 from flavia.setup.provider_wizard import _save_provider_config, run_provider_wizard
@@ -359,6 +360,63 @@ def test_main_validates_promoted_subagent_model_provider_key(monkeypatch, capsys
 
     assert main() == 1
     assert "provider 'openai'" in capsys.readouterr().out
+
+
+def test_main_returns_error_when_telegram_runner_fails(monkeypatch):
+    args = argparse.Namespace(
+        init=False,
+        telegram="missing-bot",
+        model=None,
+        verbose=False,
+        depth=None,
+        path=None,
+        no_subagents=False,
+        agent=None,
+        parallel_workers=None,
+        list_models=False,
+        list_tools=False,
+        list_providers=False,
+        setup_provider=False,
+        setup_telegram=False,
+        manage_provider=None,
+        test_provider=None,
+        config=False,
+        version=False,
+        update=False,
+        update_convert=False,
+        update_summarize=False,
+        update_full=False,
+    )
+    settings = Settings(
+        api_key="synthetic-key",
+        providers=ProviderRegistry(
+            providers={
+                "synthetic": _make_provider(
+                    "synthetic", "synthetic-key", "hf:moonshotai/Kimi-K2.5"
+                ),
+            },
+            default_provider_id="synthetic",
+        ),
+        default_model="synthetic:hf:moonshotai/Kimi-K2.5",
+        bot_registry=BotRegistry(
+            bots={"default": BotConfig(id="default", platform="telegram", token="tok")}
+        ),
+    )
+    calls: list[str] = []
+
+    monkeypatch.setattr("flavia.cli.ensure_project_venv_and_reexec", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("flavia.cli.parse_args", lambda: args)
+    monkeypatch.setattr("flavia.cli.load_settings", lambda: settings)
+    monkeypatch.setattr(
+        "flavia.cli._ensure_default_connection_checked_once", lambda _settings: None
+    )
+    monkeypatch.setattr(
+        "flavia.interfaces.run_telegram_bots",
+        lambda _settings, bot_name=None: calls.append(bot_name) or False,
+    )
+
+    assert main() == 1
+    assert calls == ["missing-bot"]
 
 
 def test_save_provider_config_uses_target_dir_for_local_location(tmp_path):

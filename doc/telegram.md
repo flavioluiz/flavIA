@@ -54,14 +54,14 @@ bots:
       allowed_users: [111111111, 222222222]
       allow_all: false
 
-   public-bot:
-     platform: telegram
-     token: "${PUBLIC_BOT_TOKEN}"
-     default_agent: main
-     allowed_agents: all
-     access:
-       allow_all: true
- ```
+  public-bot:
+    platform: telegram
+    token: "${PUBLIC_BOT_TOKEN}"
+    default_agent: main
+    allowed_agents: all
+    access:
+      allow_all: true
+```
 
 ### Running multiple bots
 
@@ -86,7 +86,7 @@ All bots run concurrently in the same process, each with independent:
 
 Press Ctrl+C to stop all running bots gracefully.
 
- ## Bot commands
+## Bot commands
 
 | Command | Description |
 |---------|-------------|

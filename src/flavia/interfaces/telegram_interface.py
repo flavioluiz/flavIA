@@ -1,11 +1,14 @@
 """Telegram bot interface for flavIA."""
 
 import logging
-from typing import Optional
+from pathlib import Path
+from typing import Any, Optional
 
-from flavia.agent import AgentProfile, RecursiveAgent
+from flavia.agent import RecursiveAgent
 from flavia.config import Settings
 from flavia.config.bots import BotConfig
+
+from .base_bot import BaseMessagingBot, BotCommand, BotResponse, SendFileAction
 
 logger = logging.getLogger(__name__)
 
@@ -56,14 +59,21 @@ def _configure_logging() -> None:
         logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
 
-class TelegramBot:
+class TelegramBot(BaseMessagingBot):
     """Telegram bot wrapper for flavIA agent."""
 
     def __init__(self, settings: Settings, bot_config: Optional[BotConfig] = None):
-        self.settings = settings
-        self.bot_config = bot_config
-        self.agents: dict[int, RecursiveAgent] = {}
-        self._user_agents: dict[int, str] = {}  # user_id → agent name override
+        if bot_config is None:
+            from flavia.config.bots import create_fallback_telegram_bot
+
+            bot_config = create_fallback_telegram_bot(
+                token=settings.telegram_token,
+                allowed_users=settings.telegram_allowed_users,
+                allow_all=settings.telegram_allow_all_users,
+                whitelist_configured=settings.telegram_whitelist_configured,
+            )
+        super().__init__(settings, bot_config)
+        self._current_update: Any = None
 
         try:
             from telegram import Update
@@ -85,124 +95,56 @@ class TelegramBot:
             logger.error("python-telegram-bot not installed. Run: pip install 'flavia[telegram]'")
 
     @property
+    def platform_name(self) -> str:
+        """Platform identifier."""
+        return "telegram"
+
+    @property
+    def max_message_length(self) -> int:
+        """Telegram API message length limit."""
+        return 4096
+
+    @property
     def _token(self) -> str:
         """Bot token: prefer bot_config over legacy settings."""
         if self.bot_config and self.bot_config.token:
             return self.bot_config.token
         return self.settings.telegram_token
 
-    @property
-    def _default_agent_name(self) -> str:
-        """Default agent name: prefer bot_config over hardcoded 'main'."""
-        if self.bot_config:
-            return self.bot_config.default_agent
-        return "main"
+    def _send_message(self, user_id: int, message: str) -> None:
+        """Send a text message via Telegram API (store for async context).
 
-    def _all_agent_configs(self) -> dict[str, dict]:
-        """Return top-level agents plus main.subagents promoted as selectable agents."""
-        all_configs: dict[str, dict] = {}
+        Since Telegram's API is async, we queue the message for the async handler.
+        """
+        raise NotImplementedError("TelegramBot uses async reply methods via update context.")
 
-        for name, cfg in self.settings.agents_config.items():
-            if isinstance(cfg, dict):
-                all_configs[name] = cfg
+    def _send_file(self, user_id: int, file_action: SendFileAction) -> None:
+        """Send a file via Telegram API (store for async context).
 
-        main_cfg = self.settings.agents_config.get("main")
-        if not isinstance(main_cfg, dict):
-            return all_configs
+        Since Telegram's API is async, we queue the action for the async handler.
+        """
+        raise NotImplementedError("TelegramBot uses async reply methods via update context.")
 
-        subagents = main_cfg.get("subagents", {})
-        if not isinstance(subagents, dict):
-            return all_configs
+    def _get_commands(self) -> list[BotCommand]:
+        """Return Telegram command list including /whoami."""
+        return [
+            BotCommand("start", "Show welcome message and your IDs"),
+            BotCommand("help", "Show this help"),
+            BotCommand("whoami", "Show your Telegram user/chat IDs"),
+            BotCommand("reset", "Reset your conversation context"),
+            BotCommand("compact", "Summarize and compact conversation context"),
+            BotCommand("agents", "List available agents", "/agents"),
+            BotCommand(
+                "agent",
+                "Switch to a different agent (resets conversation)",
+                "/agent <name>",
+                ["/agent researcher", "/agent main"],
+            ),
+        ]
 
-        for name, cfg in subagents.items():
-            if not isinstance(cfg, dict):
-                continue
-            if name in all_configs:
-                continue
-            promoted = cfg.copy()
-            if "model" not in promoted and "model" in main_cfg:
-                promoted["model"] = main_cfg["model"]
-            promoted.pop("subagents", None)
-            all_configs[name] = promoted
-
-        return all_configs
-
-    def _available_agents(self) -> list[str]:
-        """Return agent names this bot permits, filtered by allowed_agents."""
-        all_configs = self._all_agent_configs()
-        all_names = list(all_configs.keys())
-        if self.bot_config and self.bot_config.allowed_agents is not None:
-            return [a for a in self.bot_config.allowed_agents if a in all_configs]
-        return all_names
-
-    def _get_or_create_agent(self, user_id: int) -> RecursiveAgent:
-        """Get or create an agent for a user."""
-        if user_id not in self.agents:
-            agent_name = self._user_agents.get(user_id, self._default_agent_name)
-            all_configs = self._all_agent_configs()
-            config = all_configs.get(agent_name)
-            if config:
-                profile = AgentProfile.from_config(config)
-                if "path" not in config:
-                    profile.base_dir = self.settings.base_dir
-            else:
-                profile = AgentProfile(
-                    context="You are a helpful assistant that can read and analyze files.",
-                    model=self.settings.default_model,
-                    base_dir=self.settings.base_dir,
-                    tools=["read_file", "list_files", "search_files", "get_file_info"],
-                    subagents={},
-                    name=agent_name,
-                    max_depth=self.settings.max_depth,
-                )
-
-            self.agents[user_id] = RecursiveAgent(
-                settings=self.settings,
-                profile=profile,
-                agent_id=f"tg-{user_id}",
-            )
-
-        return self.agents[user_id]
-
-    def _is_authorized(self, user_id: int) -> bool:
-        """Check if user is authorized."""
-        if self.bot_config:
-            access = self.bot_config.access
-            if access.allow_all:
-                return True
-            if access.allowed_users:
-                return user_id in access.allowed_users
-            if access.whitelist_configured:
-                return False
-            # No whitelist configured in bot_config: fall through to legacy
-        # Legacy settings
-        if self.settings.telegram_allow_all_users:
-            return True
-        if self.settings.telegram_allowed_users:
-            return user_id in self.settings.telegram_allowed_users
-        if self.settings.telegram_whitelist_configured:
-            return False
-        # Backward-compatible default: no whitelist configured means public bot.
-        return True
-
-    def _build_help_text(self) -> str:
-        """Build Telegram help text with all available commands."""
-        return (
-            "Welcome to flavIA Telegram mode.\n\n"
-            "Commands:\n"
-            "/start - Show welcome message and your IDs\n"
-            "/help - Show this help\n"
-            "/whoami - Show your Telegram user/chat IDs\n"
-            "/reset - Reset your conversation context\n"
-            "/compact - Summarize and compact conversation context\n"
-            "/agents - List available agents\n"
-            "/agent <name> - Switch to a different agent (resets conversation)\n\n"
-            "Capabilities:\n"
-            "- Reading and analyzing files\n"
-            "- Searching content\n"
-            "- Listing directories\n\n"
-            "Send a message to start."
-        )
+    def _build_telegram_help_text(self) -> str:
+        """Build Telegram-specific help text with Telegram-specific commands."""
+        return self._build_help_text()
 
     def _message_preview(self, text: str, max_len: int = 120) -> str:
         """Build one-line preview for logs."""
@@ -211,7 +153,7 @@ class TelegramBot:
             return normalized
         return normalized[: max_len - 3] + "..."
 
-    def _log_event(self, update, action: str, extra: str = "") -> None:
+    def _log_event_telegram(self, update, action: str, extra: str = "") -> None:
         """Log basic Telegram event details to terminal."""
         user = update.effective_user
         chat = update.effective_chat
@@ -235,7 +177,7 @@ class TelegramBot:
         try:
             await update.message.chat.send_action("typing")
         except Exception as e:
-            self._log_event(update, "typing:error", str(e)[:160])
+            self._log_event_telegram(update, "typing:error", str(e)[:160])
 
     async def _error_handler(self, update, context) -> None:
         """Application-level fallback for unhandled Telegram callback errors."""
@@ -247,7 +189,7 @@ class TelegramBot:
 
     async def _whoami_command(self, update, context) -> None:
         """Show IDs needed for Telegram whitelist configuration."""
-        self._log_event(update, "command:/whoami")
+        self._log_event_telegram(update, "command:/whoami")
         user_id = update.effective_user.id if update.effective_user else None
         chat_id = update.effective_chat.id if update.effective_chat else None
         await update.message.reply_text(
@@ -259,7 +201,7 @@ class TelegramBot:
 
     async def _start_command(self, update, context) -> None:
         """Handle /start command."""
-        self._log_event(update, "command:/start")
+        self._log_event_telegram(update, "command:/start")
         user_id = update.effective_user.id
         chat_id = update.effective_chat.id if update.effective_chat else None
 
@@ -273,7 +215,7 @@ class TelegramBot:
             return
 
         await update.message.reply_text(
-            self._build_help_text() + "\n\n"
+            self._build_telegram_help_text() + "\n\n"
             f"Your User ID: {user_id}\n"
             f"Your Chat ID: {chat_id}\n\n"
             "Use TELEGRAM_ALLOWED_USER_IDS to whitelist specific users."
@@ -281,30 +223,28 @@ class TelegramBot:
 
     async def _reset_command(self, update, context) -> None:
         """Handle /reset command."""
-        self._log_event(update, "command:/reset")
+        self._log_event_telegram(update, "command:/reset")
         user_id = update.effective_user.id
 
         if not self._is_authorized(user_id):
             return
 
-        if user_id in self.agents:
-            self.agents[user_id].reset()
-
+        self._reset_agent(user_id)
         await update.message.reply_text("Conversation reset!")
 
     async def _help_command(self, update, context) -> None:
         """Handle /help command."""
-        self._log_event(update, "command:/help")
+        self._log_event_telegram(update, "command:/help")
         user_id = update.effective_user.id
 
         if not self._is_authorized(user_id):
             return
 
-        await update.message.reply_text(self._build_help_text())
+        await update.message.reply_text(self._build_telegram_help_text())
 
     async def _compact_command(self, update, context) -> None:
         """Handle /compact command -- compact the conversation context."""
-        self._log_event(update, "command:/compact")
+        self._log_event_telegram(update, "command:/compact")
         user_id = update.effective_user.id
 
         if not self._is_authorized(user_id):
@@ -337,24 +277,24 @@ class TelegramBot:
                 f"Summary:\n{summary_preview}"
             )
             await update.message.reply_text(reply)
-            self._log_event(
+            self._log_event_telegram(
                 update,
                 "compact",
                 f"before={before_pct:.0f}% after={after_pct:.1f}%",
             )
         except Exception as e:
-            self._log_event(update, "compact:error", str(e)[:200])
+            self._log_event_telegram(update, "compact:error", str(e)[:200])
             await update.message.reply_text(f"Compaction failed: {str(e)[:200]}")
 
     async def _agents_command(self, update, context) -> None:
         """Handle /agents command — list available agents."""
-        self._log_event(update, "command:/agents")
+        self._log_event_telegram(update, "command:/agents")
         user_id = update.effective_user.id
 
         if not self._is_authorized(user_id):
             return
 
-        available = self._available_agents()
+        available = super()._available_agents()
         if not available:
             await update.message.reply_text("No agents configured in agents.yaml.")
             return
@@ -368,7 +308,7 @@ class TelegramBot:
 
     async def _agent_command(self, update, context) -> None:
         """Handle /agent [name] command — show or switch active agent."""
-        self._log_event(update, "command:/agent")
+        self._log_event_telegram(update, "command:/agent")
         user_id = update.effective_user.id
 
         if not self._is_authorized(user_id):
@@ -382,14 +322,11 @@ class TelegramBot:
             return
 
         name = args[0]
-        all_configs = self._all_agent_configs()
 
-        if name not in all_configs:
-            available = self._available_agents()
+        if name not in super()._all_agent_configs():
+            available = super()._available_agents()
             available_str = ", ".join(available) if available else "(none)"
-            await update.message.reply_text(
-                f"Unknown agent '{name}'. Available: {available_str}"
-            )
+            await update.message.reply_text(f"Unknown agent '{name}'. Available: {available_str}")
             return
 
         if self.bot_config and not self.bot_config.is_agent_allowed(name):
@@ -400,26 +337,17 @@ class TelegramBot:
             )
             return
 
-        if name == current:
-            await update.message.reply_text(f"Already using agent '{name}'.")
-            return
-
-        self._user_agents[user_id] = name
-        if user_id in self.agents:
-            del self.agents[user_id]
-
-        await update.message.reply_text(
-            f"Switched to agent '{name}'. Conversation has been reset."
-        )
+        success, message = super()._switch_agent(user_id, args[0])
+        await update.message.reply_text(message)
 
     async def _handle_message(self, update, context) -> None:
-        """Handle regular text messages."""
+        """Handle regular text messages using base bot infrastructure."""
         user_id = update.effective_user.id
         user_message = update.message.text
 
         if not self._is_authorized(user_id):
             chat_id = update.effective_chat.id if update.effective_chat else None
-            self._log_event(update, "blocked", "unauthorized user")
+            self._log_event_telegram(update, "blocked", "unauthorized user")
             await update.message.reply_text(
                 f"You are not authorized.\nUser ID: {user_id}\nChat ID: {chat_id}"
             )
@@ -428,7 +356,7 @@ class TelegramBot:
         if not user_message:
             return
 
-        self._log_event(
+        self._log_event_telegram(
             update,
             "message:received",
             f'text="{self._message_preview(user_message)}"',
@@ -436,30 +364,74 @@ class TelegramBot:
 
         try:
             await self._safe_send_typing(update)
-            agent = self._get_or_create_agent(user_id)
-            response = agent.run(user_message)
-            response += _build_token_footer(agent)
-            response += _build_compaction_warning(agent)
-            self._log_event(
+
+            response = super()._handle_message_common(user_id, user_message)
+
+            self._log_event_telegram(
                 update,
                 "message:answered",
-                f"chars={len(response)}",
+                f"chars={len(response.text)}",
             )
 
-            if len(response) > 4000:
-                chunks = [response[i : i + 4000] for i in range(0, len(response), 4000)]
-                for chunk in chunks:
-                    await update.message.reply_text(chunk)
-            else:
-                await update.message.reply_text(response)
+            await self._send_response_telegram(update, response)
 
         except Exception as e:
-            self._log_event(update, "message:error", str(e)[:200])
+            self._log_event_telegram(update, "message:error", str(e)[:200])
             logger.error(f"Error: {e}")
             try:
                 await update.message.reply_text(f"Error: {str(e)[:200]}")
             except Exception as reply_error:
-                self._log_event(update, "message:error:reply_failed", str(reply_error)[:200])
+                self._log_event_telegram(
+                    update, "message:error:reply_failed", str(reply_error)[:200]
+                )
+
+    async def _send_response_telegram(self, update, response: BotResponse) -> None:
+        """Send BotResponse via Telegram API with chunking and file actions."""
+        agent = (
+            self.agents.get(update.effective_user.id) if update and update.effective_user else None
+        )
+
+        full_text = response.text
+        if agent:
+            full_text += _build_token_footer(agent)
+            full_text += _build_compaction_warning(agent)
+
+        for chunk in self._chunk_text(full_text):
+            try:
+                await update.message.reply_text(chunk)
+            except Exception as e:
+                self._log_event_telegram(update, "message:send_error", str(e)[:200])
+                break
+
+        for action in response.actions:
+            try:
+                await self._reply_document_file(update, action)
+                self._log_event_telegram(update, "file:sent", f"path={action.path}")
+            except Exception as e:
+                self._log_event_telegram(update, "file:error", str(e)[:200])
+
+    async def _reply_document_file(self, update, file_action: SendFileAction) -> None:
+        """Send a file as a Telegram document (Task 10.3)."""
+        path = Path(file_action.path)
+        if not path.exists():
+            await update.message.reply_text(f"Error: file not found: {file_action.filename}")
+            return
+
+        try:
+            with open(path, "rb") as f:
+                await update.message.reply_document(
+                    document=f,
+                    filename=file_action.filename,
+                    caption=file_action.caption or None,
+                )
+            self._log_event_telegram(
+                update,
+                "file:sent",
+                f"path={file_action.path} size={path.stat().st_size}",
+            )
+        except Exception as e:
+            self._log_event_telegram(update, "file:error", str(e)[:200])
+            await update.message.reply_text(f"Error sending file: {str(e)[:200]}")
 
     def run(self) -> None:
         """Run the Telegram bot."""

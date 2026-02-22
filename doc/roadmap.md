@@ -67,7 +67,7 @@ Transformar a integracao Telegram em um framework multi-plataforma.
 | 3.1 | YAML Bot Configuration | Medium | — | ✅ DONE |
 | 3.2 | Per-Conversation Agents | Medium | 3.1 | ✅ DONE |
 | 3.3 | Multi-Bot Support | Medium | 3.1, 3.2 | ✅ DONE |
-| 3.4 | Abstract Messaging Interface | Hard | 3.1, 3.2 | |
+| 3.4 | Abstract Messaging Interface | Hard | 3.1, 3.2 | ✅ DONE |
 | 3.5 | WhatsApp Integration | Hard | 3.4 | |
 | 3.6 | Web API Interface | Medium | 3.4 | |
 

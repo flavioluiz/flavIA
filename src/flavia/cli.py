@@ -732,7 +732,8 @@ def main() -> int:
 
         # Parse bot_name: "all" or None means run all bots
         bot_name = args.telegram if args.telegram != "all" else None
-        run_telegram_bots(settings, bot_name=bot_name)
+        if not run_telegram_bots(settings, bot_name=bot_name):
+            return 1
     else:
         _ensure_default_connection_checked_once(settings)
         from flavia.interfaces import run_cli

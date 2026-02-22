@@ -91,9 +91,9 @@ The `--telegram` flag starts all configured Telegram bots by default, or `--tele
 
 ---
 
-### Task 3.4 -- Abstract Messaging Interface
+### Task 3.4 -- Abstract Messaging Interface ✅
 
-**Difficulty**: Hard | **Dependencies**: Task 3.1, Task 3.2
+**Difficulty**: Hard | **Dependencies**: Task 3.1, Task 3.2 | **Status**: Done
 
 Extract a `BaseMessagingBot` abstract class from `TelegramBot` that defines the common interface for all messaging platforms. This becomes the foundation for WhatsApp, Web API, and any future platform.
 
@@ -118,6 +118,8 @@ Platform-specific subclasses handle only API communication (receiving messages, 
 **Key files to modify/create**:
 - `interfaces/base_bot.py` (new ABC)
 - `interfaces/telegram_interface.py` -- refactor to extend `BaseMessagingBot`
+
+**See documentation**: [Task 3.4 Details](../completed/task-3.4-abstract-messaging-interface.md)
 
 ---
 
