@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from flavia.agent import AgentProfile, RecursiveAgent
+from flavia.agent import AgentProfile, RecursiveAgent, SendFileAction
 from flavia.config import Settings
 from flavia.config.bots import BotConfig
 
@@ -25,18 +25,6 @@ class BotCommand:
     short_desc: str
     usage: str = ""
     examples: list[str] = field(default_factory=list)
-
-
-@dataclass
-class SendFileAction:
-    """Instruction to send a file through the messaging interface.
-
-    Used by Task 10.2/10.3 for file delivery functionality.
-    """
-
-    path: str
-    filename: str
-    caption: str = ""
 
 
 @dataclass
@@ -362,10 +350,16 @@ class BaseMessagingBot(ABC):
     def _process_agent_response(self, user_id: Any, response_text: str) -> BotResponse:
         """Process raw agent response into BotResponse.
 
-        This is a placeholder for Task 10.1 (Structured Agent Responses).
-        Currently just wraps the text; future versions will parse for SendFileAction.
+        Reads pending_actions from the agent's context and packages them
+        into BotResponse for execution by _send_response().
         """
-        return BotResponse(text=response_text)
+        agent = self.agents.get(user_id)
+        actions: list[SendFileAction] = []
+        if agent is not None:
+            ctx = getattr(agent, "context", None)
+            if ctx is not None:
+                actions = list(getattr(ctx, "pending_actions", []))
+        return BotResponse(text=response_text, actions=actions)
 
     def _handle_message_common(self, user_id: Any, message: str) -> BotResponse:
         """Common message processing flow used by all platforms.

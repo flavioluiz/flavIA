@@ -159,6 +159,7 @@ class RecursiveAgent(BaseAgent):
         self.compaction_warning_pending = False
         self.compaction_warning_prompt_tokens = 0
         self._compaction_warning_injected = False
+        self.context.pending_actions.clear()
         if not continue_from_current:
             self.messages.append({"role": "user", "content": user_message})
 

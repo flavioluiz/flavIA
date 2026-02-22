@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Structured Agent Responses (Task 10.1)**: Context-based approach for tool-triggered side effects:
+  - `SendFileAction` dataclass moved to `agent/context.py` (canonical location); re-exported from `flavia.agent` and `flavia.interfaces` for full backward compatibility
+  - `AgentContext.pending_actions: list[SendFileAction]` field — tools append actions here during `run()`
+  - `RecursiveAgent.run()` clears `pending_actions` at the start of each call
+  - `BaseMessagingBot._process_agent_response()` now reads `pending_actions` from the agent's context and packages them into `BotResponse.actions` for execution by `_send_response()`
+  - `run()` return type unchanged (`str`) — all existing CLI/wizard/test call sites unaffected
+  - Enables Task 10.2 `send_file` tool: tools simply append to `agent_context.pending_actions`
 - **Abstract Messaging Interface (Task 3.4)**: Introduced a reusable messaging bot abstraction:
   - New `interfaces/base_bot.py` with `BaseMessagingBot`, `BotResponse`, `BotCommand`, and `SendFileAction`
   - `TelegramBot` now subclasses `BaseMessagingBot` while keeping Telegram-specific API handling

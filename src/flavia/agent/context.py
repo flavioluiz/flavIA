@@ -13,6 +13,15 @@ if _TYPE_CHECKING:
 
 
 @dataclass
+class SendFileAction:
+    """Instruction to send a file through the messaging interface."""
+
+    path: str
+    filename: str
+    caption: str = ""
+
+
+@dataclass
 class AgentContext:
     """Runtime context for an agent."""
 
@@ -37,6 +46,7 @@ class AgentContext:
     rag_citation_counter: int = 0
     converted_access_mode: str = "hybrid"
     allow_converted_read: bool = False
+    pending_actions: list[SendFileAction] = field(default_factory=list)
 
     @classmethod
     def from_profile(

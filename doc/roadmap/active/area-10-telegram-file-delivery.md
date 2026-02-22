@@ -6,11 +6,18 @@ Enable the Telegram bot to send files directly in the chat. The user asks the ag
 
 ---
 
-### Task 10.1 -- Structured Agent Responses
+### Task 10.1 -- Structured Agent Responses ✅ DONE
 
 **Difficulty**: Medium | **Dependencies**: None (foundational for all file delivery tasks)
 
-Replace the plain `str` return from `agent.run()` with a structured `AgentResponse` that can carry both text and actionable side effects.
+**Implemented** (context-based approach): `SendFileAction` lives in `agent/context.py` and is
+exported via `flavia.agent`. `AgentContext.pending_actions` carries queued file deliveries.
+`RecursiveAgent.run()` clears `pending_actions` at start. `_process_agent_response()` reads from
+context and returns a `BotResponse` with actions. Full backward compat — `run()` still returns
+`str`, all 1315+ tests pass. See completed doc at
+`doc/roadmap/completed/task-10.1-structured-agent-responses.md`.
+
+~~Replace the plain `str` return from `agent.run()` with a structured `AgentResponse` that can carry both text and actionable side effects.~~
 
 **Design**:
 
