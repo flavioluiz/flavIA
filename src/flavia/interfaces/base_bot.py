@@ -5,6 +5,7 @@ Platform-specific subclasses only need to implement API communication layer.
 """
 
 import logging
+from inspect import isawaitable
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -100,14 +101,14 @@ class BaseMessagingBot(ABC):
         """Start the bot (blocks until Ctrl+C or equivalent interruption)."""
 
     @abstractmethod
-    def _send_message(self, user_id: Any, message: str) -> None:
+    def _send_message(self, user_id: Any, message: str) -> Any:
         """Send a text message to a user.
 
         Platform-specific implementation.
         """
 
     @abstractmethod
-    def _send_file(self, user_id: Any, file_action: SendFileAction) -> None:
+    def _send_file(self, user_id: Any, file_action: SendFileAction) -> Any:
         """Send a file to a user.
 
         Platform-specific implementation (Task 10.3).
@@ -118,6 +119,10 @@ class BaseMessagingBot(ABC):
         if self.bot_config:
             return self.bot_config.default_agent
         return "main"
+
+    def _agent_id_prefix(self) -> str:
+        """Agent ID prefix used for per-platform agent instances."""
+        return self.platform_name
 
     def _get_or_create_agent(self, user_id: Any) -> RecursiveAgent:
         """Get or create an agent for a user."""
@@ -144,7 +149,7 @@ class BaseMessagingBot(ABC):
             self.agents[user_id] = RecursiveAgent(
                 settings=self.settings,
                 profile=profile,
-                agent_id=f"{self.platform_name}-{user_id}",
+                agent_id=f"{self._agent_id_prefix()}-{user_id}",
             )
 
         return self.agents[user_id]
@@ -223,7 +228,7 @@ class BaseMessagingBot(ABC):
             return [a for a in self.bot_config.allowed_agents if a in all_names]
         return all_names
 
-    def _is_authorized(self, user_id: int) -> bool:
+    def _is_authorized(self, user_id: Any) -> bool:
         """Check if user is authorized to use this bot."""
         if self.bot_config:
             access = self.bot_config.access
@@ -330,20 +335,22 @@ class BaseMessagingBot(ABC):
 
             agent = self.agents[user_id]
             try:
+                before_tokens = agent.last_prompt_tokens
+                max_tokens = agent.max_context_tokens
+                before_pct = ((before_tokens / max_tokens) * 100) if max_tokens > 0 else 0
+
                 summary = agent.compact_conversation()
                 if not summary:
                     return "Nothing to compact (conversation is empty)."
 
-                before_pct = (
-                    (agent.context_utilization * 100) if agent.max_context_tokens > 0 else 0
-                )
-                after_pct = (agent.context_utilization * 100) if agent.max_context_tokens > 0 else 0
+                after_tokens = agent.last_prompt_tokens
+                after_pct = ((after_tokens / max_tokens) * 100) if max_tokens > 0 else 0
 
                 summary_preview = summary[:500] + ("..." if len(summary) > 500 else "")
                 return (
                     "\u2705 Conversation compacted.\n\n"
-                    f"Before: {agent.last_prompt_tokens:,}/{agent.max_context_tokens:,} ({before_pct:.0f}%)\n"
-                    f"After: {agent.last_prompt_tokens:,}/{agent.max_context_tokens:,} ({after_pct:.1f}%)\n\n"
+                    f"Before: {before_tokens:,}/{max_tokens:,} ({before_pct:.0f}%)\n"
+                    f"After: {after_tokens:,}/{max_tokens:,} ({after_pct:.1f}%)\n\n"
                     f"Summary:\n{summary_preview}"
                 )
             except Exception as e:
@@ -376,18 +383,22 @@ class BaseMessagingBot(ABC):
         self._log_event(user_id, "message:processed", f"chars={len(response.text)}")
         return response
 
-    def _send_response(self, user_id: Any, response: BotResponse) -> None:
+    async def _send_response(self, user_id: Any, response: BotResponse) -> None:
         """Send message with chunking and execute actions (e.g., file delivery)."""
         for chunk in self._chunk_text(response.text):
             try:
-                self._send_message(user_id, chunk)
+                maybe_awaitable = self._send_message(user_id, chunk)
+                if isawaitable(maybe_awaitable):
+                    await maybe_awaitable
             except Exception as e:
                 self._log_event(user_id, "message:send_error", str(e)[:200])
                 break
 
         for action in response.actions:
             try:
-                self._send_file(user_id, action)
+                maybe_awaitable = self._send_file(user_id, action)
+                if isawaitable(maybe_awaitable):
+                    await maybe_awaitable
                 self._log_event(user_id, "file:sent", f"path={action.path}")
             except Exception as e:
                 self._log_event(user_id, "file:error", str(e)[:200])
