@@ -379,6 +379,7 @@ class BaseMessagingBot(ABC):
 
     async def _send_response(self, user_id: Any, response: BotResponse) -> None:
         """Send message with chunking and execute actions (e.g., file delivery)."""
+        message_send_failed = False
         for chunk in self._chunk_text(response.text):
             try:
                 maybe_awaitable = self._send_message(user_id, chunk)
@@ -386,7 +387,12 @@ class BaseMessagingBot(ABC):
                     await maybe_awaitable
             except Exception as e:
                 self._log_event(user_id, "message:send_error", str(e)[:200])
+                message_send_failed = True
                 break
+
+        if message_send_failed and response.actions:
+            self._log_event(user_id, "file:skipped", "reason=message_send_failed")
+            return
 
         for action in response.actions:
             try:

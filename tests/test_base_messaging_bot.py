@@ -129,3 +129,31 @@ def test_send_response_supports_async_platform_senders():
 
     assert bot.sent_messages == ["abcde", "fghij"]
     assert bot.sent_files == ["report.txt"]
+
+
+def test_send_response_skips_files_when_message_send_fails():
+    class _FailingMessageBot(_DummyBot):
+        def __init__(self, settings, bot_config):
+            super().__init__(settings, bot_config)
+            self.sent_files: list[str] = []
+
+        async def _send_message(self, user_id, message: str) -> None:
+            _ = (user_id, message)
+            raise RuntimeError("simulated message send failure")
+
+        async def _send_file(self, user_id, file_action) -> None:
+            _ = user_id
+            self.sent_files.append(file_action.filename)
+
+    bot = _FailingMessageBot(
+        settings=Settings(),
+        bot_config=BotConfig(id="dummy-bot", platform="telegram", token="tok"),
+    )
+    response = BotResponse(
+        text="hello",
+        actions=[SendFileAction(path="/tmp/report.txt", filename="report.txt")],
+    )
+
+    asyncio.run(bot._send_response(1, response))
+
+    assert bot.sent_files == []

@@ -2,7 +2,10 @@
 
 Enable the Telegram bot to send files directly in the chat. The user asks the agent for a file (e.g., "send me the final report for project X"), the agent uses existing tools (`query_catalog`, `list_files`, `search_files`) to locate the file and confirm with the user, then calls the `send_file` tool to deliver it as a Telegram document.
 
-**Current limitation**: `RecursiveAgent.run()` returns a plain `str`. There is no mechanism for a tool to trigger a side effect (like sending a file) back through the messaging interface. This area introduces structured agent responses to bridge that gap.
+**Current status**: Task 10.1 is complete. `RecursiveAgent.run()` still returns `str`, and side
+effects are now supported via `AgentContext.pending_actions` (context-based structured responses).
+Remaining work in this area is Task 10.2 (`send_file` tool) and Task 10.3 (Telegram delivery
+handler hardening/completion).
 
 ---
 
@@ -19,46 +22,43 @@ context and returns a `BotResponse` with actions. Full backward compat — `run(
 
 ~~Replace the plain `str` return from `agent.run()` with a structured `AgentResponse` that can carry both text and actionable side effects.~~
 
-**Design**:
+**Implemented design**:
 
 ```python
 @dataclass
 class SendFileAction:
-    """Instruction to send a file through the messaging interface."""
-    path: str          # Absolute path to the file
-    filename: str      # Display name for the recipient
-    caption: str = ""  # Optional caption/description
+    path: str
+    filename: str
+    caption: str = ""
 
 @dataclass
-class AgentAction:
-    """Union of possible agent actions."""
-    send_file: SendFileAction | None = None
-    # Future actions can be added here (e.g., send_image, request_confirmation)
+class AgentContext:
+    ...
+    pending_actions: list[SendFileAction] = field(default_factory=list)
 
-@dataclass
-class AgentResponse:
-    """Structured response from an agent run."""
-    text: str                          # The text response (always present)
-    actions: list[AgentAction] = field(default_factory=list)
+# in RecursiveAgent.run()
+self.context.pending_actions.clear()
 
-    @property
-    def has_actions(self) -> bool:
-        return len(self.actions) > 0
+# in BaseMessagingBot._process_agent_response()
+actions = list(agent.context.pending_actions)
+return BotResponse(text=response_text, actions=actions)
 ```
 
-**Backward compatibility**: All existing consumers of `agent.run()` must continue to work.
+**Backward compatibility**:
 
-- `CLIInterface`: uses `response.text` only (file actions are not applicable in CLI; the tool returns a message like "File path: /abs/path/to/file.pdf" as fallback)
-- `TelegramBot._handle_message()`: uses `response.text` for the text reply, then iterates `response.actions` to execute side effects (Task 10.3)
+- `run()` return type remains `str` (no caller breakage).
+- `SendFileAction` stays importable from `flavia.agent`, `flavia.agent.context`,
+  `flavia.interfaces`, and `flavia.interfaces.base_bot`.
+- `BaseMessagingBot` consumes queued actions from context and executes them after text response.
 
-**Implementation approach**: The simplest path is to have `RecursiveAgent.run()` return `AgentResponse` and update the two call sites (CLI and Telegram). An alternative is to keep returning `str` and use a shared `AgentContext.pending_actions` list that the caller inspects after `run()` completes -- this avoids changing the return type signature. Both approaches should be evaluated at implementation time; the context-based approach may be simpler for backward compatibility.
+**Task 10.1 files changed**:
 
-**Key files to modify**:
-- `agent/base.py` -- define `AgentResponse`, `AgentAction`, `SendFileAction`
-- `agent/recursive.py` -- populate `AgentResponse` from `run()`
-- `agent/context.py` -- if using the context-based approach, add `pending_actions: list[AgentAction]`
-- `interfaces/cli_interface.py` -- adapt to `AgentResponse` or read `pending_actions`
-- `interfaces/telegram_interface.py` -- adapt to `AgentResponse` or read `pending_actions`
+- `src/flavia/agent/context.py`
+- `src/flavia/agent/recursive.py`
+- `src/flavia/agent/__init__.py`
+- `src/flavia/interfaces/base_bot.py`
+- `tests/test_structured_agent_response.py`
+- `doc/roadmap/completed/task-10.1-structured-agent-responses.md`
 
 ---
 
